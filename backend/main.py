@@ -9,6 +9,7 @@ import json
 from datetime import datetime, timedelta
 
 from rag_handler import RAGHandler
+from drive_handler import DriveHandler
 from auth import (
     create_access_token,
     get_current_user,
@@ -19,19 +20,20 @@ from auth import (
 )
 
 # Initialize FastAPI app
-app = FastAPI(title="EduAssistant AI API")
+app = FastAPI(title="DNA da Força AI API")
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize RAG handler
+# Initialize handlers
 rag_handler = None
+drive_handler = DriveHandler()
 
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -65,16 +67,36 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/initialize")
-async def initialize_system(api_key: str = Form(...), current_user: User = Depends(get_current_user)):
-    """Initialize the RAG system with OpenAI API key"""
+async def initialize_system(
+    api_key: str = Form(...),
+    drive_url: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user)
+):
+    """Initialize the RAG system with OpenAI API key and optional Drive materials"""
     global rag_handler
+    
     try:
+        # Initialize RAG handler
         rag_handler = RAGHandler(api_key)
+        
+        # Process local materials first
         success, messages = rag_handler.process_and_initialize("data/materials")
+        
+        # If Drive URL provided, download and process those materials too
+        if drive_url:
+            messages.append("Processing Google Drive materials...")
+            downloaded_files = drive_handler.process_folder(drive_url)
+            messages.append(f"Downloaded {len(downloaded_files)} files from Drive")
+            
+            # Process the new materials
+            success, drive_messages = rag_handler.process_and_initialize("data/materials")
+            messages.extend(drive_messages)
+        
         if success:
             return {"status": "success", "messages": messages}
         else:
             raise HTTPException(status_code=500, detail=messages[-1])
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
