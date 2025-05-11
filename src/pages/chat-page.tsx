@@ -4,6 +4,7 @@ import { useChatStore } from '../store/chat-store';
 import { ChatInput } from '../components/chat/chat-input';
 import { ChatHistory } from '../components/chat/chat-history';
 import { Button } from '../components/ui/button';
+import { BackButton } from '../components/ui/back-button';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -77,8 +78,11 @@ export const ChatPage: React.FC = () => {
     <div className="h-full flex flex-col">
       {/* Header with sessions */}
       <header className="bg-white border-b border-gray-200 p-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-gray-900">Chatbot Educacional</h1>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <BackButton />
+            <h1 className="text-xl font-semibold text-gray-900 mt-2">Assistente de Treino</h1>
+          </div>
           
           <Button
             onClick={handleNewSession}
