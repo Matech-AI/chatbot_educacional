@@ -24,14 +24,35 @@ export async function uploadMaterial(
   }
 ) {
   try {
+    // Create bucket if it doesn't exist
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const materialsBucket = buckets?.find(b => b.name === 'materials');
+    
+    if (!materialsBucket) {
+      const { data: newBucket, error: bucketError } = await supabase.storage.createBucket('materials', {
+        public: false,
+        allowedMimeTypes: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']
+      });
+      
+      if (bucketError) throw bucketError;
+    }
+
     // Upload file to Supabase Storage
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}.${fileExt}`;
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('materials')
-      .upload(fileName, file);
+      .upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
 
     if (uploadError) throw uploadError;
+
+    // Get the public URL for the uploaded file
+    const { data: { publicUrl } } = supabase.storage
+      .from('materials')
+      .getPublicUrl(fileName);
 
     // Create material record in database
     const { data, error } = await supabase
@@ -40,7 +61,7 @@ export async function uploadMaterial(
         title: metadata.title,
         description: metadata.description,
         type: fileExt,
-        path: uploadData.path,
+        path: publicUrl,
         size: file.size,
         tags: metadata.tags
       })
@@ -57,12 +78,36 @@ export async function uploadMaterial(
 }
 
 export async function deleteMaterial(id: string) {
-  const { error } = await supabase
-    .from('materials')
-    .delete()
-    .eq('id', id);
+  try {
+    // Get the material to find its file path
+    const { data: material, error: fetchError } = await supabase
+      .from('materials')
+      .select('path')
+      .eq('id', id)
+      .single();
 
-  if (error) {
+    if (fetchError) throw fetchError;
+
+    // Extract filename from path
+    const fileName = material.path.split('/').pop();
+
+    // Delete file from storage
+    if (fileName) {
+      const { error: storageError } = await supabase.storage
+        .from('materials')
+        .remove([fileName]);
+
+      if (storageError) throw storageError;
+    }
+
+    // Delete database record
+    const { error: deleteError } = await supabase
+      .from('materials')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) throw deleteError;
+  } catch (error) {
     console.error('Error deleting material:', error);
     throw error;
   }
