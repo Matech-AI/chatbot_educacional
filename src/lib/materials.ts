@@ -24,6 +24,11 @@ export async function uploadMaterial(
   }
 ) {
   try {
+    // Get current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('User not authenticated');
+
     // Create bucket if it doesn't exist
     const { data: buckets } = await supabase.storage.listBuckets();
     const materialsBucket = buckets?.find(b => b.name === 'materials');
@@ -37,9 +42,9 @@ export async function uploadMaterial(
       if (bucketError) throw bucketError;
     }
 
-    // Upload file to Supabase Storage
+    // Upload file to Supabase Storage in user's folder
     const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}.${fileExt}`;
+    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('materials')
       .upload(fileName, file, {
@@ -63,7 +68,8 @@ export async function uploadMaterial(
         type: fileExt,
         path: publicUrl,
         size: file.size,
-        tags: metadata.tags
+        tags: metadata.tags,
+        uploaded_by: user.id
       })
       .select()
       .single();
@@ -91,11 +97,16 @@ export async function deleteMaterial(id: string) {
     // Extract filename from path
     const fileName = material.path.split('/').pop();
 
+    // Get current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('User not authenticated');
+
     // Delete file from storage
     if (fileName) {
       const { error: storageError } = await supabase.storage
         .from('materials')
-        .remove([fileName]);
+        .remove([`${user.id}/${fileName}`]);
 
       if (storageError) throw storageError;
     }
