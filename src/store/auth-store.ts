@@ -75,14 +75,14 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   checkAuth: async () => {
     try {
-      const profile = await getCurrentProfile();
-      if (!profile) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         set({ isAuthenticated: false, user: null });
         return;
       }
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const profile = await getCurrentProfile();
+      if (!profile) {
         set({ isAuthenticated: false, user: null });
         return;
       }
@@ -90,9 +90,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         isAuthenticated: true,
         user: {
-          id: user.id,
+          id: session.user.id,
           name: profile.full_name,
-          email: user.email!,
+          email: session.user.email!,
           role: profile.role as UserRole,
           avatarUrl: profile.avatar_url || undefined
         }

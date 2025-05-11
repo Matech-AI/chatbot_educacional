@@ -35,9 +35,16 @@ export const isAuthenticated = async () => {
 // Helper function to get current user profile
 export const getCurrentProfile = async () => {
   try {
+    // First check if there's an active session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      return null;
+    }
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError) throw authError;
-    if (!user) return null;
+    if (authError || !user) {
+      return null;
+    }
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
@@ -45,7 +52,11 @@ export const getCurrentProfile = async () => {
       .eq('id', user.id)
       .single();
 
-    if (profileError) throw profileError;
+    if (profileError) {
+      console.error('Error fetching profile:', profileError);
+      return null;
+    }
+
     return profile;
   } catch (error) {
     console.error('Error fetching profile:', error);
