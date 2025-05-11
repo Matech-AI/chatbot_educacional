@@ -3,45 +3,23 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Cloud, AlertCircle } from 'lucide-react';
-import { syncDriveMaterials, validateDriveCredentials } from '../../lib/drive';
 import { motion } from 'framer-motion';
+import { useMaterialsStore } from '../../store/materials-store';
 
 interface DriveSyncProps {
   onSync: () => void;
-  isLoading?: boolean;
 }
 
-export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
+export const DriveSync: React.FC<DriveSyncProps> = ({ onSync }) => {
+  const { syncWithDrive, isProcessing, error } = useMaterialsStore();
   const [folderId, setFolderId] = useState('');
   const [credentials, setCredentials] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
 
   const handleSync = async () => {
-    try {
-      setError(null);
-      setIsSyncing(true);
-
-      // Validate credentials format
-      if (!validateDriveCredentials(credentials)) {
-        throw new Error('Credenciais do Google Cloud inválidas');
-      }
-
-      // Validate folder ID format
-      if (!folderId.match(/^[a-zA-Z0-9_-]+$/)) {
-        throw new Error('ID da pasta do Drive inválido');
-      }
-
-      await syncDriveMaterials(folderId, credentials);
-      onSync();
-      
-      // Clear form
+    if (await syncWithDrive(folderId, credentials)) {
       setFolderId('');
       setCredentials('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao sincronizar com o Drive');
-    } finally {
-      setIsSyncing(false);
+      onSync();
     }
   };
 
@@ -52,16 +30,13 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            ID da Pasta do Drive
+            ID da Pasta
           </label>
           <Input
             value={folderId}
             onChange={(e) => setFolderId(e.target.value)}
             placeholder="Ex: 1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
           />
-          <p className="text-xs text-gray-500 mt-1">
-            ID da pasta contendo os materiais de treino
-          </p>
         </div>
 
         <div>
@@ -71,13 +46,10 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
           <Textarea
             value={credentials}
             onChange={(e) => setCredentials(e.target.value)}
-            placeholder="Cole aqui o conteúdo do arquivo credentials.json"
+            placeholder="Cole o conteúdo do arquivo credentials.json"
             rows={8}
             className="font-mono text-sm"
           />
-          <p className="text-xs text-gray-500 mt-1">
-            Credenciais obtidas do Console do Google Cloud
-          </p>
         </div>
 
         {error && (
@@ -93,8 +65,8 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
 
         <Button
           onClick={handleSync}
-          disabled={!folderId || !credentials || isSyncing || isLoading}
-          isLoading={isSyncing || isLoading}
+          disabled={!folderId || !credentials || isProcessing}
+          isLoading={isProcessing}
           className="w-full flex items-center justify-center gap-2"
         >
           <Cloud size={18} />
