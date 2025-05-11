@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import type { Material } from '../types';
 
 interface DriveFile {
   id: string;

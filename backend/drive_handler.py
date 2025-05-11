@@ -46,15 +46,7 @@ class DriveHandler:
         logger.info("Successfully authenticated with Google Drive")
     
     def download_file(self, file_id: str) -> Optional[dict]:
-        """
-        Download a single file from Google Drive
-        
-        Args:
-            file_id: Google Drive file ID
-            
-        Returns:
-            Dictionary with file info or None if failed
-        """
+        """Download a single file from Google Drive"""
         try:
             if not self.service:
                 raise ValueError("Not authenticated. Call authenticate() first")
@@ -93,15 +85,7 @@ class DriveHandler:
             return None
     
     def process_folder(self, folder_id: str) -> List[dict]:
-        """
-        Process all files in a Google Drive folder
-        
-        Args:
-            folder_id: Google Drive folder ID
-            
-        Returns:
-            List of dictionaries with file information
-        """
+        """Process all files in a Google Drive folder"""
         try:
             if not self.service:
                 raise ValueError("Not authenticated. Call authenticate() first")
