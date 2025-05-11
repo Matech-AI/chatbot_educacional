@@ -8,6 +8,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   clearError: () => void;
+  checkAuth: () => void;
 }
 
 // Mock user data
@@ -39,6 +40,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   user: null,
   error: null,
+  
+  checkAuth: () => {
+    // Since we're using mock data, we'll just ensure the user starts as logged out
+    set({ 
+      isAuthenticated: false,
+      user: null,
+      error: null
+    });
+  },
   
   login: async (username: string, password: string) => {
     try {
