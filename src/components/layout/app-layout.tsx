@@ -15,10 +15,6 @@ export const AppLayout: React.FC = () => {
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 1024);
-      // Auto-close sidebar on mobile
-      if (window.innerWidth < 1024) {
-        setSidebarOpen(false);
-      }
     };
 
     // Initial check
@@ -31,7 +27,7 @@ export const AppLayout: React.FC = () => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Load sidebar state from localStorage
+  // Load sidebar state from localStorage on mount
   useEffect(() => {
     const savedState = localStorage.getItem('sidebarOpen');
     if (savedState !== null && !isMobile) {
@@ -50,7 +46,7 @@ export const AppLayout: React.FC = () => {
 
   return (
     <div className="h-screen w-full bg-gray-50 text-gray-900 overflow-hidden flex">
-      {/* Mobile sidebar toggle */}
+      {/* Mobile toggle button */}
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <Button 
           variant="ghost" 
@@ -62,33 +58,24 @@ export const AppLayout: React.FC = () => {
         </Button>
       </div>
 
-      {/* Sidebar with animation */}
-      <AnimatePresence initial={false}>
-        {sidebarOpen && (
-          <motion.div
-            initial={{ x: -320 }}
-            animate={{ x: 0 }}
-            exit={{ x: -320 }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className={`fixed lg:relative z-40 h-full ${isMobile ? 'w-[280px]' : 'w-80'}`}
-          >
-            <Sidebar onClose={() => setSidebarOpen(false)} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Sidebar - Always rendered but transforms based on state */}
+      <div 
+        className={`fixed lg:relative z-40 h-full transition-transform duration-300 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        }`}
+        style={{ width: isMobile ? '280px' : '320px' }}
+      >
+        <Sidebar onClose={() => isMobile && setSidebarOpen(false)} />
+      </div>
 
       {/* Main content */}
-      <div 
-        className={`flex-1 h-full overflow-auto transition-all duration-300 ${
-          sidebarOpen && !isMobile ? 'lg:ml-0' : ''
-        }`}
-      >
+      <div className="flex-1 h-full overflow-auto transition-all duration-300">
         <main className="h-full">
           <Outlet />
         </main>
       </div>
 
-      {/* Overlay for mobile */}
+      {/* Mobile overlay */}
       <AnimatePresence>
         {sidebarOpen && isMobile && (
           <motion.div
