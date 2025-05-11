@@ -17,11 +17,8 @@ export async function fetchMaterials() {
 
 export async function uploadMaterial(
   file: File,
-  metadata: {
-    title: string;
-    description?: string;
-    tags?: string[];
-  }
+  description?: string,
+  tags?: string[]
 ) {
   try {
     // Get current user
@@ -29,23 +26,11 @@ export async function uploadMaterial(
     if (userError) throw userError;
     if (!user) throw new Error('User not authenticated');
 
-    // Create bucket if it doesn't exist
-    const { data: buckets } = await supabase.storage.listBuckets();
-    const materialsBucket = buckets?.find(b => b.name === 'materials');
-    
-    if (!materialsBucket) {
-      const { data: newBucket, error: bucketError } = await supabase.storage.createBucket('materials', {
-        public: false,
-        allowedMimeTypes: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']
-      });
-      
-      if (bucketError) throw bucketError;
-    }
-
-    // Upload file to Supabase Storage in user's folder
+    // Upload file to storage
     const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-    const { data: uploadData, error: uploadError } = await supabase.storage
+    const fileName = `${Date.now()}.${fileExt}`;
+    
+    const { error: uploadError, data: uploadData } = await supabase.storage
       .from('materials')
       .upload(fileName, file, {
         cacheControl: '3600',
@@ -54,29 +39,29 @@ export async function uploadMaterial(
 
     if (uploadError) throw uploadError;
 
-    // Get the public URL for the uploaded file
+    // Get the public URL
     const { data: { publicUrl } } = supabase.storage
       .from('materials')
       .getPublicUrl(fileName);
 
-    // Create material record in database
-    const { data, error } = await supabase
+    // Create material record
+    const { data, error: insertError } = await supabase
       .from('materials')
       .insert({
-        title: metadata.title,
-        description: metadata.description,
+        title: file.name,
+        description,
         type: fileExt,
         path: publicUrl,
         size: file.size,
-        tags: metadata.tags,
+        tags,
         uploaded_by: user.id
       })
       .select()
       .single();
 
-    if (error) throw error;
+    if (insertError) throw insertError;
 
-    return data as Material;
+    return true;
   } catch (error) {
     console.error('Error uploading material:', error);
     throw error;
@@ -97,16 +82,11 @@ export async function deleteMaterial(id: string) {
     // Extract filename from path
     const fileName = material.path.split('/').pop();
 
-    // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError) throw userError;
-    if (!user) throw new Error('User not authenticated');
-
     // Delete file from storage
     if (fileName) {
       const { error: storageError } = await supabase.storage
         .from('materials')
-        .remove([`${user.id}/${fileName}`]);
+        .remove([fileName]);
 
       if (storageError) throw storageError;
     }
@@ -118,8 +98,10 @@ export async function deleteMaterial(id: string) {
       .eq('id', id);
 
     if (deleteError) throw deleteError;
+
+    return true;
   } catch (error) {
     console.error('Error deleting material:', error);
-    throw error;
+    return false;
   }
 }
