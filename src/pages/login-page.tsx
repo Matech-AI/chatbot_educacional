@@ -102,25 +102,11 @@ export const LoginPage: React.FC = () => {
             </div>
           </form>
           
-          {/* Demo credentials */}
+          {/* Access Info */}
           <div className="p-4 bg-gray-50 border-t border-gray-200">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Credenciais de Acesso</h3>
-            <div className="grid grid-cols-3 gap-2 text-xs">
-              <div className="bg-white p-2 rounded border border-gray-200">
-                <p className="font-semibold">Admin</p>
-                <p className="text-gray-500">admin@dnadaforca.com</p>
-                <p className="text-gray-500">Senha: admin123</p>
-              </div>
-              <div className="bg-white p-2 rounded border border-gray-200">
-                <p className="font-semibold">Instrutor</p>
-                <p className="text-gray-500">instrutor@dnadaforca.com</p>
-                <p className="text-gray-500">Senha: instrutor123</p>
-              </div>
-              <div className="bg-white p-2 rounded border border-gray-200">
-                <p className="font-semibold">Aluno</p>
-                <p className="text-gray-500">aluno@dnadaforca.com</p>
-                <p className="text-gray-500">Senha: aluno123</p>
-              </div>
+            <div className="text-center text-sm text-gray-600">
+              <p>Precisa de acesso?</p>
+              <p className="mt-1">Entre em contato com o administrador do sistema.</p>
             </div>
           </div>
           
