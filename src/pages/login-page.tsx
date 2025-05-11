@@ -3,13 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth-store';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { User, Lock, KeyRound, Dumbbell } from 'lucide-react';
+import { User, Lock, Dumbbell } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [apiKey, setApiKey] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
@@ -22,12 +21,12 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     
     try {
-      const success = await login(email, password, apiKey);
+      const success = await login(email, password);
       
       if (success) {
         navigate('/');
       } else {
-        setError('Credenciais inválidas ou chave API incorreta.');
+        setError('Email ou senha inválidos.');
       }
     } catch (err) {
       setError('Erro ao fazer login. Tente novamente.');
@@ -87,23 +86,6 @@ export const LoginPage: React.FC = () => {
                 />
               </div>
               
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  OpenAI API Key
-                </label>
-                <Input
-                  type="password"
-                  icon={<KeyRound size={18} />}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
-                  required
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Necessário para utilizar os recursos de IA
-                </p>
-              </div>
-              
               {error && (
                 <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
                   {error}
@@ -119,6 +101,25 @@ export const LoginPage: React.FC = () => {
               </Button>
             </div>
           </form>
+          
+          {/* Demo credentials */}
+          <div className="p-4 bg-gray-50 border-t border-gray-200">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">Credenciais de Acesso</h3>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="bg-white p-2 rounded border border-gray-200">
+                <p className="font-semibold">Admin</p>
+                <p className="text-gray-500">admin@dnadaforca.com</p>
+              </div>
+              <div className="bg-white p-2 rounded border border-gray-200">
+                <p className="font-semibold">Instrutor</p>
+                <p className="text-gray-500">instrutor@dnadaforca.com</p>
+              </div>
+              <div className="bg-white p-2 rounded border border-gray-200">
+                <p className="font-semibold">Aluno</p>
+                <p className="text-gray-500">aluno@dnadaforca.com</p>
+              </div>
+            </div>
+          </div>
           
           {/* Footer */}
           <div className="px-6 py-4 text-center text-xs text-gray-500 border-t border-gray-200">

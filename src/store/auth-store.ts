@@ -5,17 +5,15 @@ import { supabase } from '../lib/supabase';
 interface AuthState {
   isAuthenticated: boolean;
   user: User | null;
-  apiKey: string | null;
-  login: (email: string, password: string, apiKey: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   user: null,
-  apiKey: null,
   
-  login: async (email: string, password: string, apiKey: string) => {
+  login: async (email: string, password: string) => {
     try {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
@@ -43,8 +41,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       set({ 
         isAuthenticated: true, 
-        user,
-        apiKey 
+        user
       });
 
       return true;
@@ -59,8 +56,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       await supabase.auth.signOut();
       set({ 
         isAuthenticated: false, 
-        user: null, 
-        apiKey: null 
+        user: null
       });
     } catch (error) {
       console.error('Logout error:', error);
