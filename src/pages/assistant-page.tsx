@@ -2,6 +2,7 @@ import React from 'react';
 import { useAssistantStore } from '../store/assistant-store';
 import { ConfigForm } from '../components/assistant/config-form';
 import { TemplateSelector } from '../components/assistant/template-selector';
+import { BackButton } from '../components/ui/back-button';
 import { motion } from 'framer-motion';
 
 export const AssistantPage: React.FC = () => {
@@ -21,11 +22,12 @@ export const AssistantPage: React.FC = () => {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <h1 className="text-2xl font-bold text-gray-900">
+          <BackButton />
+          <h1 className="text-2xl font-bold text-gray-900 mt-2">
             Configuração do Assistente
           </h1>
           <p className="text-gray-600 mt-1">
-            Personalize o comportamento do assistente educacional
+            Personalize o comportamento do assistente de treino
           </p>
         </motion.div>
       </header>

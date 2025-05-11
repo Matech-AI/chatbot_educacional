@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/auth-store';
 import { MaterialCard } from '../components/materials/material-card';
 import { UploadForm } from '../components/materials/upload-form';
 import { Input } from '../components/ui/input';
+import { BackButton } from '../components/ui/back-button';
 import { Search, Upload, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Material } from '../types';
@@ -50,11 +51,12 @@ export const MaterialsPage: React.FC = () => {
     <div className="p-6 max-w-7xl mx-auto">
       <header className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Gerenciamento de Materiais
+          <BackButton />
+          <h1 className="text-2xl font-bold text-gray-900 mt-2">
+            Materiais de Treino
           </h1>
           <p className="text-gray-600 mt-1">
-            Gerencie os materiais do curso para o assistente educacional
+            Gerencie os materiais do curso para o assistente de treino
           </p>
         </div>
         
