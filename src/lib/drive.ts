@@ -9,8 +9,15 @@ interface DriveFile {
 
 export async function syncDriveMaterials(folderId: string, credentials: string) {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    // Check authentication
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
+    if (authError) throw new Error('Authentication error');
     if (!session) throw new Error('Not authenticated');
+
+    // Validate credentials format
+    if (!validateDriveCredentials(credentials)) {
+      throw new Error('Invalid credentials format');
+    }
 
     // Send credentials and folder ID to backend
     const formData = new FormData();
@@ -42,14 +49,13 @@ export async function syncDriveMaterials(folderId: string, credentials: string) 
   }
 }
 
-export async function validateDriveCredentials(credentials: string): Promise<boolean> {
+export function validateDriveCredentials(credentials: string): boolean {
   try {
     const credentialsObj = JSON.parse(credentials);
     return !!(
-      credentialsObj.web?.client_id &&
-      credentialsObj.web?.client_secret &&
-      credentialsObj.web?.auth_uri &&
-      credentialsObj.web?.token_uri
+      credentialsObj.installed?.client_id &&
+      credentialsObj.installed?.client_secret &&
+      credentialsObj.installed?.redirect_uris
     );
   } catch {
     return false;
