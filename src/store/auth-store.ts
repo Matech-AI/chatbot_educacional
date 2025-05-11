@@ -1,92 +1,77 @@
 import { create } from 'zustand';
 import { User, UserRole } from '../types';
-import { supabase, getCurrentProfile } from '../lib/supabase';
 
 interface AuthState {
   isAuthenticated: boolean;
   user: User | null;
   error: string | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  logout: () => Promise<void>;
-  checkAuth: () => Promise<void>;
+  login: (username: string, password: string) => Promise<boolean>;
+  logout: () => void;
   clearError: () => void;
+  checkAuth: () => void;
 }
+
+// Mock user data
+const USERS = {
+  admin: {
+    id: 'admin-1',
+    name: 'Administrador',
+    role: 'admin' as UserRole,
+    password: 'admin123',
+    avatarUrl: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg'
+  },
+  instrutor: {
+    id: 'inst-1',
+    name: 'Instrutor',
+    role: 'instructor' as UserRole,
+    password: 'instrutor123',
+    avatarUrl: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg'
+  },
+  aluno: {
+    id: 'stud-1',
+    name: 'Aluno',
+    role: 'student' as UserRole,
+    password: 'aluno123',
+    avatarUrl: 'https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg'
+  }
+};
 
 export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   user: null,
   error: null,
   
-  login: async (email: string, password: string) => {
+  checkAuth: () => {
+    // Since we're using mock data, we'll just ensure the user starts as logged out
+    set({ 
+      isAuthenticated: false,
+      user: null,
+      error: null
+    });
+  },
+  
+  login: async (username: string, password: string) => {
     try {
       set({ error: null });
-
-      // Sign in with email and password
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (authError) {
-        let errorMessage = 'Erro ao fazer login';
-        
-        // Map Supabase error messages to user-friendly messages
-        switch (authError.message) {
-          case 'Invalid login credentials':
-            errorMessage = 'Email ou senha incorretos';
-            break;
-          case 'Email not confirmed':
-            errorMessage = 'Email não confirmado';
-            break;
-          case 'User not found':
-            errorMessage = 'Usuário não encontrado';
-            break;
-          default:
-            errorMessage = `Erro: ${authError.message}`;
-        }
-        
-        console.error('Authentication error:', {
-          code: authError.status,
-          message: authError.message,
-          details: authError
-        });
-        
-        set({ error: errorMessage });
+      
+      // Get user from mock data
+      const user = USERS[username as keyof typeof USERS];
+      
+      // Validate credentials
+      if (!user || user.password !== password) {
+        set({ error: 'Usuário ou senha incorretos' });
         return false;
       }
-
-      if (!authData.user) {
-        console.error('No user data returned from authentication');
-        set({ error: 'Dados do usuário não encontrados' });
-        return false;
-      }
-
-      // Fetch user profile
-      const profile = await getCurrentProfile();
-      if (!profile) {
-        console.error('No profile found for user:', authData.user.id);
-        set({ error: 'Perfil do usuário não encontrado' });
-        
-        // Sign out since we couldn't get the profile
-        await supabase.auth.signOut();
-        return false;
-      }
-
-      // Create user object
-      const user: User = {
-        id: authData.user.id,
-        name: profile.full_name,
-        email: authData.user.email!,
-        role: profile.role as UserRole,
-        avatarUrl: profile.avatar_url || undefined
-      };
-
+      
+      // Create user object without password
+      const { password: _, ...userWithoutPassword } = user;
+      
       set({ 
         isAuthenticated: true, 
-        user,
+        user: userWithoutPassword,
         error: null
       });
-
+      
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
@@ -100,74 +85,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
   
-  logout: async () => {
-    try {
-      await supabase.auth.signOut();
-      set({ 
-        isAuthenticated: false, 
-        user: null,
-        error: null
-      });
-    } catch (error) {
-      console.error('Logout error:', error);
-      set({ error: 'Erro ao fazer logout' });
-    }
+  logout: () => {
+    set({ 
+      isAuthenticated: false, 
+      user: null,
+      error: null
+    });
   },
-
-  checkAuth: async () => {
-    try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.error('Session check error:', sessionError);
-        set({ 
-          isAuthenticated: false, 
-          user: null,
-          error: 'Erro ao verificar sessão'
-        });
-        return;
-      }
-
-      if (!session) {
-        set({ 
-          isAuthenticated: false, 
-          user: null,
-          error: null
-        });
-        return;
-      }
-
-      const profile = await getCurrentProfile();
-      if (!profile) {
-        console.error('No profile found for session user:', session.user.id);
-        set({ 
-          isAuthenticated: false, 
-          user: null,
-          error: 'Perfil não encontrado'
-        });
-        return;
-      }
-
-      set({
-        isAuthenticated: true,
-        user: {
-          id: session.user.id,
-          name: profile.full_name,
-          email: session.user.email!,
-          role: profile.role as UserRole,
-          avatarUrl: profile.avatar_url || undefined
-        },
-        error: null
-      });
-    } catch (error) {
-      console.error('Error checking auth:', error);
-      set({ 
-        isAuthenticated: false, 
-        user: null,
-        error: 'Erro ao verificar autenticação'
-      });
-    }
-  },
-
+  
   clearError: () => set({ error: null })
 }));
