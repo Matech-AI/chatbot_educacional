@@ -69,28 +69,47 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @app.post("/initialize")
 async def initialize_system(
     api_key: str = Form(...),
-    drive_url: Optional[str] = Form(None),
+    drive_folder_id: Optional[str] = Form(None),
+    credentials_json: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_user)
 ):
-    """Initialize the RAG system with OpenAI API key and optional Drive materials"""
-    global rag_handler
+    """Initialize the system with OpenAI API key and optional Drive materials"""
+    global rag_handler, drive_handler
     
     try:
+        messages = []
+        
         # Initialize RAG handler
         rag_handler = RAGHandler(api_key)
+        messages.append("✓ Initialized RAG handler")
         
-        # Process local materials first
-        success, messages = rag_handler.process_and_initialize("data/materials")
-        
-        # If Drive URL provided, download and process those materials too
-        if drive_url:
-            messages.append("Processing Google Drive materials...")
-            downloaded_files = drive_handler.process_folder(drive_url)
-            messages.append(f"Downloaded {len(downloaded_files)} files from Drive")
+        # Process Drive materials if provided
+        if drive_folder_id and credentials_json:
+            # Save credentials temporarily
+            creds_path = Path("credentials.json")
+            content = await credentials_json.read()
+            creds_path.write_bytes(content)
             
-            # Process the new materials
-            success, drive_messages = rag_handler.process_and_initialize("data/materials")
-            messages.extend(drive_messages)
+            try:
+                # Authenticate and process folder
+                drive_handler.authenticate(str(creds_path))
+                messages.append("✓ Authenticated with Google Drive")
+                
+                downloaded_files = drive_handler.process_folder(drive_folder_id)
+                messages.append(f"✓ Downloaded {len(downloaded_files)} files from Drive")
+                
+                # Process downloaded materials
+                success, rag_messages = rag_handler.process_and_initialize("data/materials")
+                messages.extend(rag_messages)
+                
+            finally:
+                # Cleanup credentials
+                creds_path.unlink(missing_ok=True)
+                Path("token.json").unlink(missing_ok=True)
+        else:
+            # Just process local materials
+            success, rag_messages = rag_handler.process_and_initialize("data/materials")
+            messages.extend(rag_messages)
         
         if success:
             return {"status": "success", "messages": messages}
