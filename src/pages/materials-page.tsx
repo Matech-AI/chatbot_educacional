@@ -6,7 +6,7 @@ import { UploadForm } from '../components/materials/upload-form';
 import { DriveSync } from '../components/materials/drive-sync';
 import { Input } from '../components/ui/input';
 import { BackButton } from '../components/ui/back-button';
-import { Search, Upload, X } from 'lucide-react';
+import { Search, Upload, X, Cloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Material } from '../types';
 
