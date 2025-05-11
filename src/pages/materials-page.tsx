@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMaterialsStore } from '../store/materials-store';
 import { useAuthStore } from '../store/auth-store';
 import { MaterialCard } from '../components/materials/material-card';
 import { UploadForm } from '../components/materials/upload-form';
+import { DriveSync } from '../components/materials/drive-sync';
 import { Input } from '../components/ui/input';
 import { BackButton } from '../components/ui/back-button';
 import { Search, Upload, X } from 'lucide-react';
@@ -10,15 +11,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Material } from '../types';
 
 export const MaterialsPage: React.FC = () => {
-  const { materials, isProcessing, uploadMaterial, deleteMaterial } = useMaterialsStore();
+  const { materials, isLoading, isProcessing, fetchMaterials, uploadMaterial, deleteMaterial } = useMaterialsStore();
   const { user } = useAuthStore();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [showUpload, setShowUpload] = useState(false);
-  const [materialToEdit, setMaterialToEdit] = useState<Material | null>(null);
+  const [showDriveSync, setShowDriveSync] = useState(false);
   
   // Can manage materials if admin or instructor
   const canManage = user?.role === 'admin' || user?.role === 'instructor';
+  
+  // Fetch materials on mount
+  useEffect(() => {
+    fetchMaterials();
+  }, [fetchMaterials]);
   
   // Filter materials based on search term
   const filteredMaterials = materials.filter(material =>
@@ -36,48 +42,74 @@ export const MaterialsPage: React.FC = () => {
   };
   
   const handleDelete = async (id: string) => {
-    // Show confirmation dialog
     if (window.confirm('Tem certeza que deseja excluir este material?')) {
       await deleteMaterial(id);
     }
   };
   
-  const handleEdit = (material: Material) => {
-    setMaterialToEdit(material);
-    setShowUpload(true);
+  const handleDriveSync = () => {
+    fetchMaterials();
+    setShowDriveSync(false);
   };
-  
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <header className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <BackButton />
-          <h1 className="text-2xl font-bold text-gray-900 mt-2">
-            Materiais de Treino
-          </h1>
-          <p className="text-gray-600 mt-1">
-            Gerencie os materiais do curso para o assistente de treino
-          </p>
+      <header className="mb-6">
+        <BackButton />
+        <div className="mt-2 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Materiais de Treino
+            </h1>
+            <p className="text-gray-600 mt-1">
+              Gerencie os materiais do DNA da Força
+            </p>
+          </div>
+          
+          {canManage && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setShowUpload(!showUpload);
+                  setShowDriveSync(false);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                {showUpload ? (
+                  <>
+                    <X size={20} />
+                    <span>Cancelar</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload size={20} />
+                    <span>Upload Manual</span>
+                  </>
+                )}
+              </button>
+              
+              <button
+                onClick={() => {
+                  setShowDriveSync(!showDriveSync);
+                  setShowUpload(false);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                {showDriveSync ? (
+                  <>
+                    <X size={20} />
+                    <span>Cancelar</span>
+                  </>
+                ) : (
+                  <>
+                    <Cloud size={20} />
+                    <span>Sincronizar Drive</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
-        
-        {canManage && (
-          <button
-            onClick={() => setShowUpload(!showUpload)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            {showUpload ? (
-              <>
-                <X size={20} />
-                <span>Cancelar</span>
-              </>
-            ) : (
-              <>
-                <Upload size={20} />
-                <span>Upload de Material</span>
-              </>
-            )}
-          </button>
-        )}
       </header>
       
       {/* Search and filter */}
@@ -92,32 +124,47 @@ export const MaterialsPage: React.FC = () => {
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Upload form */}
+        {/* Upload/Sync forms */}
         <AnimatePresence>
-          {showUpload && (
+          {(showUpload || showDriveSync) && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               className="lg:col-span-1 overflow-hidden"
             >
-              <UploadForm 
-                onUpload={handleUpload} 
-                isLoading={isProcessing} 
-              />
+              {showUpload ? (
+                <UploadForm 
+                  onUpload={handleUpload} 
+                  isLoading={isProcessing} 
+                />
+              ) : (
+                <DriveSync 
+                  onSync={handleDriveSync}
+                  isLoading={isProcessing}
+                />
+              )}
             </motion.div>
           )}
         </AnimatePresence>
         
         {/* Materials grid */}
-        <div className={`grid gap-4 ${showUpload ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
+        <div className={`grid gap-4 ${(showUpload || showDriveSync) ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
           <AnimatePresence>
-            {filteredMaterials.length > 0 ? (
+            {isLoading ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="col-span-full flex justify-center py-12"
+              >
+                <div className="loading-spinner" />
+              </motion.div>
+            ) : filteredMaterials.length > 0 ? (
               filteredMaterials.map(material => (
                 <MaterialCard
                   key={material.id}
                   material={material}
-                  onEdit={handleEdit}
                   onDelete={handleDelete}
                   canManage={canManage}
                 />
