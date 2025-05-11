@@ -15,63 +15,56 @@ export const useAuthStore = create<AuthState>((set) => ({
   
   login: async (email: string, password: string) => {
     try {
-      // First attempt to sign in
+      // Sign in with email and password
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
       if (authError) {
-        console.error('Authentication error:', authError);
+        console.error('Authentication error:', authError.message);
         return false;
       }
 
       if (!authData.user) {
-        console.error('No user data returned from authentication');
+        console.error('No user data returned');
         return false;
       }
 
-      try {
-        // Get user profile data with error handling
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('full_name, role, avatar_url')
-          .eq('id', authData.user.id)
-          .single();
+      // Fetch user profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('full_name, role, avatar_url')
+        .eq('id', authData.user.id)
+        .single();
 
-        if (profileError) {
-          console.error('Profile fetch error:', profileError);
-          // Sign out the user if we can't get their profile
-          await supabase.auth.signOut();
-          return false;
-        }
-
-        if (!profile) {
-          console.error('No profile found for user');
-          await supabase.auth.signOut();
-          return false;
-        }
-
-        const user: User = {
-          id: authData.user.id,
-          name: profile.full_name,
-          email: authData.user.email!,
-          role: profile.role as UserRole,
-          avatarUrl: profile.avatar_url
-        };
-
-        set({ 
-          isAuthenticated: true, 
-          user
-        });
-
-        return true;
-      } catch (profileError) {
-        console.error('Profile error:', profileError);
-        // Sign out the user if we can't get their profile
+      if (profileError) {
+        console.error('Profile fetch error:', profileError.message);
         await supabase.auth.signOut();
         return false;
       }
+
+      if (!profile) {
+        console.error('No profile found');
+        await supabase.auth.signOut();
+        return false;
+      }
+
+      // Create user object
+      const user: User = {
+        id: authData.user.id,
+        name: profile.full_name,
+        email: authData.user.email!,
+        role: profile.role as UserRole,
+        avatarUrl: profile.avatar_url || undefined
+      };
+
+      set({ 
+        isAuthenticated: true, 
+        user
+      });
+
+      return true;
     } catch (error) {
       console.error('Login error:', error);
       return false;
