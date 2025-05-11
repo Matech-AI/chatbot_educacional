@@ -7,25 +7,26 @@ interface DriveFile {
   size: number;
 }
 
-export async function syncDriveMaterials(folderId: string, credentials: string) {
+export async function syncDriveMaterials(folderId: string) {
   try {
     // Check authentication
     const { data: { session }, error: authError } = await supabase.auth.getSession();
     if (authError) throw new Error('Authentication error');
     if (!session) throw new Error('Not authenticated');
 
-    // Validate credentials format
-    if (!validateDriveCredentials(credentials)) {
-      throw new Error('Invalid credentials format');
-    }
+    // Get active credentials from database
+    const { data: credentialsData, error: credentialsError } = await supabase
+      .from('drive_credentials')
+      .select('credentials')
+      .eq('is_active', true)
+      .single();
 
-    // Send credentials and folder ID to backend
+    if (credentialsError) throw new Error('Failed to get Drive credentials');
+    if (!credentialsData) throw new Error('No active Drive credentials found');
+
+    // Send folder ID to backend
     const formData = new FormData();
     formData.append('drive_folder_id', folderId);
-    
-    // Create a Blob from the credentials string and append it
-    const credentialsBlob = new Blob([credentials], { type: 'application/json' });
-    formData.append('credentials_json', credentialsBlob, 'credentials.json');
 
     // Initialize system with Drive materials
     const response = await fetch('/api/initialize', {
@@ -53,9 +54,10 @@ export function validateDriveCredentials(credentials: string): boolean {
   try {
     const credentialsObj = JSON.parse(credentials);
     return !!(
-      credentialsObj.installed?.client_id &&
-      credentialsObj.installed?.client_secret &&
-      credentialsObj.installed?.redirect_uris
+      credentialsObj.web?.client_id &&
+      credentialsObj.web?.client_secret &&
+      credentialsObj.web?.auth_uri &&
+      credentialsObj.web?.token_uri
     );
   } catch {
     return false;
