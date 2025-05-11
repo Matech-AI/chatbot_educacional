@@ -7,7 +7,7 @@ import { User, Lock, Dumbbell } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
@@ -20,17 +20,17 @@ export const LoginPage: React.FC = () => {
   }, [clearError]);
 
   useEffect(() => {
-    if (email || password) {
+    if (username || password) {
       clearError();
     }
-  }, [email, password, clearError]);
+  }, [username, password, clearError]);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
     try {
-      const success = await login(email, password);
+      const success = await login(username, password);
       if (success) {
         navigate('/');
       }
@@ -64,14 +64,13 @@ export const LoginPage: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email
+                  Usuário
                 </label>
                 <Input
                   icon={<User size={18} />}
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Seu email"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Seu usuário"
                   required
                 />
               </div>
@@ -117,17 +116,17 @@ export const LoginPage: React.FC = () => {
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div className="bg-white p-2 rounded border border-gray-200">
                   <p className="font-semibold">Admin</p>
-                  <p className="text-gray-500 break-all">admin@dnadaforca.com</p>
+                  <p className="text-gray-500">Usuário: admin</p>
                   <p className="text-gray-500">Senha: admin123</p>
                 </div>
                 <div className="bg-white p-2 rounded border border-gray-200">
                   <p className="font-semibold">Instrutor</p>
-                  <p className="text-gray-500 break-all">instrutor@dnadaforca.com</p>
+                  <p className="text-gray-500">Usuário: instrutor</p>
                   <p className="text-gray-500">Senha: instrutor123</p>
                 </div>
                 <div className="bg-white p-2 rounded border border-gray-200">
                   <p className="font-semibold">Aluno</p>
-                  <p className="text-gray-500 break-all">aluno@dnadaforca.com</p>
+                  <p className="text-gray-500">Usuário: aluno</p>
                   <p className="text-gray-500">Senha: aluno123</p>
                 </div>
               </div>
