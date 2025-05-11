@@ -109,14 +109,17 @@ export const LoginPage: React.FC = () => {
               <div className="bg-white p-2 rounded border border-gray-200">
                 <p className="font-semibold">Admin</p>
                 <p className="text-gray-500">admin@dnadaforca.com</p>
+                <p className="text-gray-500">Senha: admin123</p>
               </div>
               <div className="bg-white p-2 rounded border border-gray-200">
                 <p className="font-semibold">Instrutor</p>
                 <p className="text-gray-500">instrutor@dnadaforca.com</p>
+                <p className="text-gray-500">Senha: instrutor123</p>
               </div>
               <div className="bg-white p-2 rounded border border-gray-200">
                 <p className="font-semibold">Aluno</p>
                 <p className="text-gray-500">aluno@dnadaforca.com</p>
+                <p className="text-gray-500">Senha: aluno123</p>
               </div>
             </div>
           </div>
