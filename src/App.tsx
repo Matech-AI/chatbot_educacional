@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/auth-store';
 import { AppLayout } from './components/layout/app-layout';
@@ -29,6 +29,13 @@ const ProtectedRoute: React.FC<{
 };
 
 function App() {
+  const { checkAuth } = useAuthStore();
+
+  // Check authentication status on mount
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
   return (
     <BrowserRouter>
       <Routes>

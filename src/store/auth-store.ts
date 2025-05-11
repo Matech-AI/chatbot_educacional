@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 import { User, UserRole } from '../types';
-import { supabase } from '../lib/supabase';
+import { supabase, getCurrentProfile } from '../lib/supabase';
 
 interface AuthState {
   isAuthenticated: boolean;
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
+  checkAuth: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -32,18 +33,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       // Fetch user profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('full_name, role, avatar_url')
-        .eq('id', authData.user.id)
-        .single();
-
-      if (profileError) {
-        console.error('Profile fetch error:', profileError.message);
-        await supabase.auth.signOut();
-        return false;
-      }
-
+      const profile = await getCurrentProfile();
       if (!profile) {
         console.error('No profile found');
         await supabase.auth.signOut();
@@ -80,6 +70,36 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
     } catch (error) {
       console.error('Logout error:', error);
+    }
+  },
+
+  checkAuth: async () => {
+    try {
+      const profile = await getCurrentProfile();
+      if (!profile) {
+        set({ isAuthenticated: false, user: null });
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        set({ isAuthenticated: false, user: null });
+        return;
+      }
+
+      set({
+        isAuthenticated: true,
+        user: {
+          id: user.id,
+          name: profile.full_name,
+          email: user.email!,
+          role: profile.role as UserRole,
+          avatarUrl: profile.avatar_url || undefined
+        }
+      });
+    } catch (error) {
+      console.error('Error checking auth:', error);
+      set({ isAuthenticated: false, user: null });
     }
   }
 }));
