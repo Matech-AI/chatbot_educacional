@@ -1,7 +1,11 @@
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
-import * as fs from 'fs';
-import * as path from 'path';
+
+const CREDENTIALS = {
+  client_id: "405717380359-hevec8ueh9gbithso2aeavmfop4g17q3.apps.googleusercontent.com",
+  client_secret: "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",
+  redirect_uri: "http://localhost:5173"
+};
 
 export class DriveClient {
   private oauth2Client: OAuth2Client;
@@ -9,12 +13,16 @@ export class DriveClient {
 
   constructor() {
     this.oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI
+      CREDENTIALS.client_id,
+      CREDENTIALS.client_secret,
+      CREDENTIALS.redirect_uri
     );
 
-    this.drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+    // For demo purposes, we'll use API key authentication
+    this.drive = google.drive({ 
+      version: 'v3', 
+      auth: this.oauth2Client
+    });
   }
 
   async listFiles(folderId: string) {
@@ -32,20 +40,14 @@ export class DriveClient {
     }
   }
 
-  async downloadFile(fileId: string, destinationPath: string): Promise<void> {
+  async downloadFile(fileId: string): Promise<ArrayBuffer> {
     try {
-      const dest = fs.createWriteStream(destinationPath);
       const response = await this.drive.files.get(
         { fileId, alt: 'media' },
-        { responseType: 'stream' }
+        { responseType: 'arraybuffer' }
       );
 
-      return new Promise((resolve, reject) => {
-        response.data
-          .on('end', () => resolve())
-          .on('error', (err: Error) => reject(err))
-          .pipe(dest);
-      });
+      return response.data;
     } catch (error) {
       console.error('Error downloading file:', error);
       throw error;
