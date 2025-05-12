@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
-import { Credentials, OAuth2Client } from 'google-auth-library';
-import { supabase } from './supabase';
+import { OAuth2Client } from 'google-auth-library';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export class DriveClient {
   private oauth2Client: OAuth2Client;
@@ -8,27 +9,12 @@ export class DriveClient {
 
   constructor() {
     this.oauth2Client = new google.auth.OAuth2(
-      import.meta.env.VITE_GOOGLE_CLIENT_ID,
-      import.meta.env.VITE_GOOGLE_CLIENT_SECRET,
-      import.meta.env.VITE_GOOGLE_REDIRECT_URI
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
     );
 
     this.drive = google.drive({ version: 'v3', auth: this.oauth2Client });
-  }
-
-  async initialize() {
-    // Get active credentials from Supabase
-    const { data: credentials, error } = await supabase
-      .from('drive_credentials')
-      .select('credentials')
-      .eq('is_active', true)
-      .single();
-
-    if (error || !credentials) {
-      throw new Error('No active Google Drive credentials found');
-    }
-
-    this.oauth2Client.setCredentials(credentials.credentials as Credentials);
   }
 
   async listFiles(folderId: string) {
@@ -46,17 +32,20 @@ export class DriveClient {
     }
   }
 
-  async downloadFile(fileId: string): Promise<{ buffer: Buffer; mimeType: string }> {
+  async downloadFile(fileId: string, destinationPath: string): Promise<void> {
     try {
+      const dest = fs.createWriteStream(destinationPath);
       const response = await this.drive.files.get(
         { fileId, alt: 'media' },
-        { responseType: 'arraybuffer' }
+        { responseType: 'stream' }
       );
 
-      const buffer = Buffer.from(response.data);
-      const mimeType = response.headers['content-type'] || '';
-
-      return { buffer, mimeType };
+      return new Promise((resolve, reject) => {
+        response.data
+          .on('end', () => resolve())
+          .on('error', (err: Error) => reject(err))
+          .pipe(dest);
+      });
     } catch (error) {
       console.error('Error downloading file:', error);
       throw error;
