@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Cloud, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { syncDriveMaterials } from '../../lib/drive';
+import { processDriveMaterials } from '../../lib/materials-processor';
 
 interface DriveSyncProps {
   onSync: () => void;
@@ -11,7 +11,7 @@ interface DriveSyncProps {
 }
 
 export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
-  const [folderId, setFolderId] = useState('');
+  const [folderId, setFolderId] = useState('1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ');
   const [error, setError] = useState<string | null>(null);
 
   const handleSync = async () => {
@@ -24,7 +24,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
         return;
       }
 
-      await syncDriveMaterials(folderId);
+      await processDriveMaterials(folderId);
       onSync();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao sincronizar');
