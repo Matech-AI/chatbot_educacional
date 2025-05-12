@@ -1,9 +1,16 @@
-// Ensure process.stdout exists for googleapis
+// Polyfill process and stdout for googleapis
 window.process = window.process || {};
 window.process.stdout = window.process.stdout || {};
+window.process.stderr = window.process.stderr || {};
+window.process.stdin = window.process.stdin || {};
 
-if (window.process && window.process.stdout) {
+if (window.process) {
   window.process.stdout.isTTY = false;
+  window.process.stderr.isTTY = false;
+  window.process.stdin.isTTY = false;
+  window.process.env = window.process.env || {};
+  window.process.version = 'v16.0.0';
+  window.process.platform = 'browser';
 }
 
 import React from 'react';

@@ -7,11 +7,19 @@ export default defineConfig({
     react(),
     nodePolyfills({
       globals: {
-        process: true
-      }
+        process: true,
+        Buffer: true
+      },
+      protocolImports: true
     })
   ],
   optimizeDeps: {
     exclude: ['lucide-react']
+  },
+  define: {
+    'process.env.NODE_DEBUG': 'false',
+    'process.platform': JSON.stringify('browser'),
+    'process.version': JSON.stringify('v16.0.0'),
+    'process.env.READABLE_STREAM': 'false'
   }
 });
