@@ -13,10 +13,12 @@ interface DriveSyncProps {
 export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
   const [folderId, setFolderId] = useState('1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ');
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string>('');
 
   const handleSync = async () => {
     try {
       setError(null);
+      setProgress('Conectando ao Google Drive...');
 
       // Validate folder ID
       if (!folderId.trim()) {
@@ -24,11 +26,16 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
         return;
       }
 
+      setProgress('Processando arquivos...');
       const files = await processDriveMaterials(folderId);
+      
+      setProgress(`Processados ${files.length} arquivos com sucesso!`);
       console.log(`Successfully processed ${files.length} files`);
+      
       onSync();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao sincronizar');
+      setProgress('');
     }
   };
 
@@ -65,6 +72,12 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
           </motion.div>
         )}
 
+        {progress && (
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+            <p className="text-sm text-blue-600">{progress}</p>
+          </div>
+        )}
+
         <Button
           onClick={handleSync}
           disabled={!folderId || isLoading}
@@ -77,4 +90,4 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
       </div>
     </div>
   );
-}
+};
