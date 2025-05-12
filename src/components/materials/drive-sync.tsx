@@ -24,7 +24,8 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
         return;
       }
 
-      await processDriveMaterials(folderId);
+      const files = await processDriveMaterials(folderId);
+      console.log(`Successfully processed ${files.length} files`);
       onSync();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao sincronizar');
