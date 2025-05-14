@@ -1,4 +1,4 @@
-// Temporary mock authentication functions
+// Mock authentication functions
 export const isAuthenticated = async () => {
   return true;
 };
