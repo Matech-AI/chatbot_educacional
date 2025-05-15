@@ -10,7 +10,8 @@ export default defineConfig({
         process: true,
         Buffer: true
       },
-      protocolImports: true
+      protocolImports: true,
+      console: true
     })
   ],
   optimizeDeps: {
