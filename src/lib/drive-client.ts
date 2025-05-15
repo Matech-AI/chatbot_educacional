@@ -18,7 +18,6 @@ export class DriveClient {
       CREDENTIALS.redirect_uri
     );
 
-    // For demo purposes, we'll use API key authentication
     this.drive = google.drive({ 
       version: 'v3', 
       auth: this.oauth2Client

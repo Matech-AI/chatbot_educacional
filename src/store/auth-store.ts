@@ -17,21 +17,21 @@ const USERS = {
     id: 'admin-1',
     name: 'Administrador',
     role: 'admin' as UserRole,
-    password: 'admin123',
+    password: 'adminpass',
     avatarUrl: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg'
   },
   instrutor: {
     id: 'inst-1',
     name: 'Instrutor',
     role: 'instructor' as UserRole,
-    password: 'instrutor123',
+    password: 'instrutorpass',
     avatarUrl: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg'
   },
   aluno: {
     id: 'stud-1',
     name: 'Aluno',
     role: 'student' as UserRole,
-    password: 'aluno123',
+    password: 'alunopass',
     avatarUrl: 'https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg'
   }
 };
@@ -42,7 +42,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   error: null,
   
   checkAuth: () => {
-    // Since we're using mock data, we'll just ensure the user starts as logged out
+    // For demo purposes, start as logged out
     set({ 
       isAuthenticated: false,
       user: null,
