@@ -8,19 +8,38 @@ window.process = {
   stdout: {
     isTTY: false,
     write: () => {},
-    end: () => {}
+    end: () => {},
+    on: () => {},
+    once: () => {},
+    off: () => {},
+    removeListener: () => {},
+    pipe: () => {},
+    unpipe: () => {}
   },
   stderr: {
     isTTY: false,
     write: () => {},
-    end: () => {}
+    end: () => {},
+    on: () => {},
+    once: () => {},
+    off: () => {},
+    removeListener: () => {},
+    pipe: () => {},
+    unpipe: () => {}
   },
   stdin: {
-    isTTY: false
+    isTTY: false,
+    on: () => {},
+    once: () => {},
+    off: () => {},
+    removeListener: () => {},
+    pipe: () => {},
+    unpipe: () => {}
   },
   env: {},
   version: 'v16.0.0',
-  platform: 'browser'
+  platform: 'browser',
+  nextTick: (callback: Function) => setTimeout(callback, 0)
 };
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
