@@ -89,15 +89,51 @@ if (!window.process) {
   window.process.stdout = window.process.stdout || {
     isTTY: false,
     write: () => {},
-    end: () => {}
+    end: () => {},
+    on: () => {},
+    once: () => {},
+    off: () => {},
+    removeListener: () => {},
+    pipe: () => {},
+    unpipe: () => {},
+    listeners: () => [],
+    addListener: () => {},
+    prependListener: () => {},
+    eventNames: () => [],
+    listenerCount: () => 0,
+    emit: () => false
   };
   window.process.stderr = window.process.stderr || {
     isTTY: false,
     write: () => {},
-    end: () => {}
+    end: () => {},
+    on: () => {},
+    once: () => {},
+    off: () => {},
+    removeListener: () => {},
+    pipe: () => {},
+    unpipe: () => {},
+    listeners: () => [],
+    addListener: () => {},
+    prependListener: () => {},
+    eventNames: () => [],
+    listenerCount: () => 0,
+    emit: () => false
   };
   window.process.stdin = window.process.stdin || {
-    isTTY: false
+    isTTY: false,
+    on: () => {},
+    once: () => {},
+    off: () => {},
+    removeListener: () => {},
+    pipe: () => {},
+    unpipe: () => {},
+    listeners: () => [],
+    addListener: () => {},
+    prependListener: () => {},
+    eventNames: () => [],
+    listenerCount: () => 0,
+    emit: () => false
   };
   window.process.env = window.process.env || {};
   window.process.version = window.process.version || 'v16.0.0';
