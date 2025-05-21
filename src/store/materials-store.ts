@@ -1,6 +1,31 @@
 import { create } from 'zustand';
 import { Material } from '../types';
-import { supabase } from '../lib/supabase';
+
+// Mock materials data - copied from the mock DB to be self-contained
+const mockMaterials = [
+  {
+    id: '1',
+    title: 'Fundamentos do Treinamento de Força',
+    description: 'Guia completo sobre os princípios básicos do treinamento de força',
+    type: 'pdf',
+    path: 'https://example.com/materials/strength-training.pdf',
+    size: 2500000,
+    uploadedAt: new Date(),
+    uploadedBy: 'mock-user',
+    tags: ['força', 'fundamentos', 'treino']
+  },
+  {
+    id: '2',
+    title: 'Anatomia Muscular',
+    description: 'Estudo detalhado dos principais grupos musculares',
+    type: 'pdf',
+    path: 'https://example.com/materials/muscle-anatomy.pdf',
+    size: 1800000,
+    uploadedAt: new Date(),
+    uploadedBy: 'mock-user',
+    tags: ['anatomia', 'músculos']
+  }
+];
 
 interface MaterialsState {
   materials: Material[];
@@ -21,14 +46,10 @@ export const useMaterialsStore = create<MaterialsState>((set) => ({
   fetchMaterials: async () => {
     set({ isLoading: true, error: null });
     try {
-      const { data, error } = await supabase
-        .from('materials')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      set({ materials: data as Material[], isLoading: false });
+      // Use mock data directly
+      setTimeout(() => {
+        set({ materials: mockMaterials as Material[], isLoading: false });
+      }, 500); // Simulate network delay
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao carregar materiais';
       set({ error: message, isLoading: false });

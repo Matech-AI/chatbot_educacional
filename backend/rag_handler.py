@@ -10,9 +10,9 @@ from chromadb.config import Settings
 from chromadb.utils import embedding_functions
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.document_loaders.pdf import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader
 from langchain.document_loaders.text import TextLoader
-from langchain.document_loaders.docx import Docx2txtLoader
+# from langchain.document_loaders.docx import Docx2txtLoader
 from langchain.document_loaders.directory import DirectoryLoader
 
 from langchain.embeddings import OpenAIEmbeddings

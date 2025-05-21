@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../store/auth-store';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { User, Lock, Dumbbell } from 'lucide-react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuthStore } from "../store/auth-store";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { User, Lock, Dumbbell } from "lucide-react";
+import { motion } from "framer-motion";
 
 export const LoginPage: React.FC = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const navigate = useNavigate();
   const { login, error, clearError } = useAuthStore();
 
@@ -24,21 +24,21 @@ export const LoginPage: React.FC = () => {
       clearError();
     }
   }, [username, password, clearError]);
-  
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
+
     try {
       const success = await login(username, password);
       if (success) {
-        navigate('/');
+        navigate("/");
       }
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <motion.div
@@ -56,9 +56,11 @@ export const LoginPage: React.FC = () => {
               </div>
             </div>
             <h1 className="text-2xl font-bold text-center">DNA da Força</h1>
-            <p className="text-center text-red-200 mt-1">Assistente de Treinamento</p>
+            <p className="text-center text-red-200 mt-1">
+              Assistente de Treinamento
+            </p>
           </div>
-          
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-6">
             <div className="space-y-4">
@@ -74,7 +76,7 @@ export const LoginPage: React.FC = () => {
                   required
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Senha
@@ -88,7 +90,7 @@ export const LoginPage: React.FC = () => {
                   required
                 />
               </div>
-              
+
               {error && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
@@ -98,9 +100,9 @@ export const LoginPage: React.FC = () => {
                   {error}
                 </motion.div>
               )}
-              
-              <Button 
-                type="submit" 
+
+              <Button
+                type="submit"
                 className="w-full bg-red-600 hover:bg-red-700"
                 isLoading={isLoading}
               >
@@ -108,11 +110,13 @@ export const LoginPage: React.FC = () => {
               </Button>
             </div>
           </form>
-          
+
           {/* Demo Access Info */}
           <div className="p-4 bg-gray-50 border-t border-gray-200">
             <div className="text-sm">
-              <h3 className="font-medium text-gray-900 mb-2">Acessos para demonstração:</h3>
+              <h3 className="font-medium text-gray-900 mb-2">
+                Acessos para demonstração:
+              </h3>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div className="bg-white p-2 rounded border border-gray-200">
                   <p className="font-semibold">Admin</p>
@@ -132,7 +136,7 @@ export const LoginPage: React.FC = () => {
               </div>
             </div>
           </div>
-          
+
           {/* Footer */}
           <div className="px-6 py-4 text-center text-xs text-gray-500 border-t border-gray-200">
             <p>DNA da Força - Assistente de Treinamento</p>
