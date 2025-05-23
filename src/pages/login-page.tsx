@@ -3,16 +3,228 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/auth-store";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { User, Lock, Dumbbell } from "lucide-react";
+import { User, Lock, Dumbbell, Eye, EyeOff } from "lucide-react";
 import { motion } from "framer-motion";
+
+interface ChangePasswordModalProps {
+  onClose: () => void;
+}
+
+const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
+  onClose,
+}) => {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setError("Preencha todos os campos.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("A nova senha e a confirmação não coincidem.");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch("/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.detail || "Erro ao alterar senha.");
+      } else {
+        setSuccess(true);
+        setTimeout(() => onClose(), 1500);
+      }
+    } catch (err) {
+      setError("Erro de conexão com o servidor.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm relative">
+        <button
+          className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+          onClick={onClose}
+        >
+          ×
+        </button>
+        <h2 className="text-lg font-bold mb-4">Alterar senha</h2>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <Input
+            type="password"
+            placeholder="Senha atual"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            required
+          />
+          <Input
+            type="password"
+            placeholder="Nova senha"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+          />
+          <Input
+            type="password"
+            placeholder="Confirmar nova senha"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+          />
+          {error && <div className="text-red-600 text-sm">{error}</div>}
+          {success && (
+            <div className="text-green-600 text-sm">
+              Senha alterada com sucesso!
+            </div>
+          )}
+          <div className="flex gap-2 mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isLoading}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" isLoading={isLoading}>
+              Alterar senha
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [username, setUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!username || !newPassword || !confirmPassword) {
+      setError("Preencha todos os campos.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("A nova senha e a confirmação não coincidem.");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch("/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, new_password: newPassword }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.detail || "Erro ao redefinir senha.");
+      } else {
+        setSuccess(true);
+        setTimeout(() => onClose(), 1500);
+      }
+    } catch (err) {
+      setError("Erro de conexão com o servidor.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm relative">
+        <button
+          className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+          onClick={onClose}
+        >
+          ×
+        </button>
+        <h2 className="text-lg font-bold mb-4">Redefinir senha</h2>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <Input
+            placeholder="Usuário"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+          <Input
+            type="password"
+            placeholder="Nova senha"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+          />
+          <Input
+            type="password"
+            placeholder="Confirmar nova senha"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+          />
+          {error && <div className="text-red-600 text-sm">{error}</div>}
+          {success && (
+            <div className="text-green-600 text-sm">
+              Senha redefinida com sucesso!
+            </div>
+          )}
+          <div className="flex gap-2 mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isLoading}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" isLoading={isLoading}>
+              Redefinir senha
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 export const LoginPage: React.FC = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
 
   const navigate = useNavigate();
-  const { login, error, clearError } = useAuthStore();
+  const { login, error, clearError, isAuthenticated } = useAuthStore();
+
+  // Redireciona automaticamente se já estiver autenticado
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/", { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   // Clear error when component unmounts or when inputs change
   useEffect(() => {
@@ -82,12 +294,22 @@ export const LoginPage: React.FC = () => {
                   Senha
                 </label>
                 <Input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   icon={<Lock size={18} />}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Sua senha"
                   required
+                  rightIcon={
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      tabIndex={-1}
+                      className="focus:outline-none"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  }
                 />
               </div>
 
@@ -101,6 +323,23 @@ export const LoginPage: React.FC = () => {
                 </motion.div>
               )}
 
+              <div className="flex justify-between mt-2">
+                <button
+                  type="button"
+                  className="text-xs text-blue-600 hover:underline"
+                  onClick={() => setShowChangePassword(true)}
+                >
+                  Alterar senha
+                </button>
+                <button
+                  type="button"
+                  className="text-xs text-blue-600 hover:underline"
+                  onClick={() => setShowResetPassword(true)}
+                >
+                  Esqueci minha senha?
+                </button>
+              </div>
+
               <Button
                 type="submit"
                 className="w-full bg-red-600 hover:bg-red-700"
@@ -111,31 +350,12 @@ export const LoginPage: React.FC = () => {
             </div>
           </form>
 
-          {/* Demo Access Info */}
-          <div className="p-4 bg-gray-50 border-t border-gray-200">
-            <div className="text-sm">
-              <h3 className="font-medium text-gray-900 mb-2">
-                Acessos para demonstração:
-              </h3>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div className="bg-white p-2 rounded border border-gray-200">
-                  <p className="font-semibold">Admin</p>
-                  <p className="text-gray-500">Usuário: admin</p>
-                  <p className="text-gray-500">Senha: admin123</p>
-                </div>
-                <div className="bg-white p-2 rounded border border-gray-200">
-                  <p className="font-semibold">Instrutor</p>
-                  <p className="text-gray-500">Usuário: instrutor</p>
-                  <p className="text-gray-500">Senha: instrutor123</p>
-                </div>
-                <div className="bg-white p-2 rounded border border-gray-200">
-                  <p className="font-semibold">Aluno</p>
-                  <p className="text-gray-500">Usuário: aluno</p>
-                  <p className="text-gray-500">Senha: aluno123</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          {showChangePassword && (
+            <ChangePasswordModal onClose={() => setShowChangePassword(false)} />
+          )}
+          {showResetPassword && (
+            <ResetPasswordModal onClose={() => setShowResetPassword(false)} />
+          )}
 
           {/* Footer */}
           <div className="px-6 py-4 text-center text-xs text-gray-500 border-t border-gray-200">

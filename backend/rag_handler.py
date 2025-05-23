@@ -12,7 +12,7 @@ from chromadb.utils import embedding_functions
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.document_loaders.text import TextLoader
-# from langchain.document_loaders.docx import Docx2txtLoader
+# from langchain.document_loaders.docx import Docx2txtLoader  # Só descomente se tiver certeza que funciona no Windows
 from langchain.document_loaders.directory import DirectoryLoader
 
 from langchain.embeddings import OpenAIEmbeddings
@@ -166,8 +166,14 @@ class RAGHandler:
         loaders = {
             "**/*.pdf": PyPDFLoader,
             "**/*.txt": TextLoader,
-            "**/*.docx": Docx2txtLoader
         }
+        # Tentar adicionar suporte a DOCX se o loader estiver disponível
+        try:
+            from langchain.document_loaders.docx import Docx2txtLoader
+            loaders["**/*.docx"] = Docx2txtLoader
+        except ImportError:
+            logger.warning(
+                "Docx2txtLoader não disponível. Arquivos .docx serão ignorados.")
 
         for glob_pattern, loader_class in loaders.items():
             loader = DirectoryLoader(

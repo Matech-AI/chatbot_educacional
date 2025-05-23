@@ -9,6 +9,6 @@ export async function syncDriveMaterials(folderId: string) {
   }
 }
 
-export function validateDriveCredentials(credentials: string): boolean {
+export function validateDriveCredentials(): boolean {
   return true; // Always return true for mock implementation
 }

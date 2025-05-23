@@ -2,13 +2,13 @@ import os
 import logging
 from pathlib import Path
 from typing import List, Optional
-import requests
-# from google.oauth2.credentials import Credentials
-# from google_auth_oauthlib.flow import InstalledAppFlow
-# from google.auth.transport.requests import Request
-# from googleapiclient.discovery import build
-# from googleapiclient.http import MediaIoBaseDownload
 import io
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+from langchain.schema import Document
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +41,6 @@ class DriveHandler:
                 flow = InstalledAppFlow.from_client_secrets_file(
                     credentials_path, self.SCOPES)
                 creds = flow.run_local_server(port=0)
-
             with open(token_path, 'w') as token:
                 token.write(creds.to_json())
 
@@ -97,7 +96,7 @@ class DriveHandler:
 
             # List files in folder
             results = self.service.files().list(
-                q=f"'{folder_id}' in parents",
+                q=f"'{folder_id}' in parents and trashed = false",
                 pageSize=100,
                 fields="nextPageToken, files(id, name, mimeType)"
             ).execute()
@@ -106,17 +105,19 @@ class DriveHandler:
             downloaded_files = []
 
             for file in files:
-                # Only download PDFs and documents
-                if file['mimeType'] in [
-                    'application/pdf',
-                    'application/vnd.google-apps.document'
-                ]:
-                    file_info = self.download_file(file['id'])
-                    if file_info:
-                        downloaded_files.append(file_info)
+                # Download all files (or filter by mimeType if quiser)
+                file_info = self.download_file(file['id'])
+                if file_info:
+                    downloaded_files.append(file_info)
 
             return downloaded_files
 
         except Exception as e:
             logger.error(f"Error processing folder: {str(e)}")
             return []
+
+
+def load_pdf_as_documents(pdf_path):
+    text = extract_text_from_pdf(pdf_path)
+    # Aqui você pode dividir em chunks se quiser
+    return [Document(page_content=text, metadata={"source": pdf_path})]
