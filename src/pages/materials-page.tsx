@@ -65,6 +65,11 @@ export const MaterialsPage: React.FC = () => {
     }
   };
 
+  const handleEdit = (material: Material) => {
+    // TODO: Implement edit functionality
+    console.log("Edit material:", material);
+  };
+
   const handleDriveSync = () => {
     fetchMaterials();
     setShowDriveSync(false);
@@ -174,13 +179,17 @@ export const MaterialsPage: React.FC = () => {
                 exit={{ opacity: 0 }}
                 className="col-span-full flex justify-center py-12"
               >
-                <div className="loading-spinner" />
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span>Carregando materiais...</span>
+                </div>
               </motion.div>
             ) : filteredMaterials.length > 0 ? (
               filteredMaterials.map((material) => (
                 <MaterialCard
                   key={material.id}
                   material={material}
+                  onEdit={handleEdit}
                   onDelete={handleDelete}
                   canManage={canManage}
                 />
@@ -211,27 +220,3 @@ export const MaterialsPage: React.FC = () => {
     </div>
   );
 };
-
-export async function fetchMaterials() {
-  const res = await fetch("/api/materials");
-  return await res.json();
-}
-
-export async function uploadMaterial(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch("/api/materials/upload", {
-    method: "POST",
-    body: formData,
-  });
-  return await res.json();
-}
-
-export async function syncDriveMaterials(folderId: string) {
-  const res = await fetch("/api/sync-drive", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ folder_id: folderId }),
-  });
-  return await res.json();
-}

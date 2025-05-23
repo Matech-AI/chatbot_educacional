@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ChatSession, Message, Source } from '../types';
 import { generateUniqueId } from '../lib/utils';
+import { api } from '../lib/api';
 
 interface ChatState {
   sessions: ChatSession[];
@@ -15,55 +16,29 @@ interface ChatState {
   clearMessages: (sessionId: string) => void;
 }
 
-// Mock function to simulate sending a message to the AI
-const mockSendToAI = async (message: string): Promise<{ content: string, sources: Source[] }> => {
-  // Simulate response time
-  await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-  
-  const mockResponses = [
-    {
-      content: "Os exercícios de força são fundamentais para o desenvolvimento muscular. De acordo com os estudos mais recentes, treinos de alta intensidade promovem maior hipertrofia quando comparados a treinos de baixa intensidade com alto volume.",
-      sources: [
-        {
-          title: "Princípios do Treinamento de Força.pdf",
-          source: "/data/materiais/princ-treinamento.pdf",
-          page: 24,
-          chunk: "Os estudos demonstram que o treinamento de alta intensidade (>80% 1RM) é mais eficaz para..."
-        }
-      ]
-    },
-    {
-      content: "Para maximizar os resultados no treinamento, é essencial entender os princípios da periodização. Este conceito permite variar sistematicamente o volume e a intensidade ao longo do tempo, evitando platôs e reduzindo o risco de lesões.",
-      sources: [
-        {
-          title: "Periodização do Treinamento.pdf",
-          source: "/data/materiais/periodizacao.pdf",
-          page: 12,
-          chunk: "A periodização é definida como a variação planejada das variáveis de treinamento..."
-        },
-        {
-          title: "Prevenção de Lesões.docx",
-          source: "/data/materiais/prevencao.docx",
-          page: null,
-          chunk: "Estudos indicam que a periodização adequada reduz em até 40% o risco de lesões por uso excessivo..."
-        }
-      ]
-    },
-    {
-      content: "A nutrição adequada é um componente crucial no processo de ganho muscular. A ingestão de proteínas no período pós-treino (dentro da janela anabólica de aproximadamente 2 horas) maximiza a síntese proteica muscular e acelera a recuperação.",
-      sources: [
-        {
-          title: "Nutrição Esportiva.pdf",
-          source: "/data/materiais/nutricao.pdf",
-          page: 56,
-          chunk: "A janela anabólica representa um período de aproximadamente 2 horas após o exercício..."
-        }
-      ]
-    }
-  ];
-  
-  // Return a random mock response
-  return mockResponses[Math.floor(Math.random() * mockResponses.length)];
+// Function to send message to AI backend
+const sendToAI = async (message: string): Promise<{ content: string, sources: Source[] }> => {
+  try {
+    const response = await api.chat(message);
+    
+    return {
+      content: response.answer || "Desculpe, não consegui processar sua mensagem.",
+      sources: response.sources ? response.sources.map((source: any) => ({
+        title: source.title || 'Documento',
+        source: source.source || '',
+        page: source.page,
+        chunk: source.chunk || ''
+      })) : []
+    };
+  } catch (error) {
+    console.error('Error sending message to AI:', error);
+    
+    // Return error message
+    return {
+      content: "Ocorreu um erro ao processar sua mensagem. Verifique se o sistema está inicializado e tente novamente.",
+      sources: []
+    };
+  }
 };
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -181,7 +156,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     
     try {
       // Get AI response
-      const response = await mockSendToAI(content);
+      const response = await sendToAI(content);
       
       // Replace the temporary message with the actual response
       set(state => ({
@@ -205,7 +180,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ),
         isProcessing: false
       }));
+      
+      // Auto-rename session based on first message
+      const session = get().sessions.find(s => s.id === sessionId);
+      if (session && session.messages.length === 2) { // User + AI response
+        const title = content.length > 30 ? content.substring(0, 30) + '...' : content;
+        get().renameSession(sessionId, title);
+      }
+      
     } catch (error) {
+      console.error('Error in sendMessage:', error);
+      
       // Update with error message
       set(state => ({
         sessions: state.sessions.map(session => 
@@ -216,7 +201,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                   msg.id === tempId 
                     ? {
                         ...msg,
-                        content: "Ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.",
+                        content: "Ocorreu um erro ao processar sua mensagem. Por favor, verifique se o sistema está inicializado e tente novamente.",
                         isLoading: false
                       } 
                     : msg
