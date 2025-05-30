@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
-import { Sidebar } from './sidebar';
-import { useAuthStore } from '../../store/auth-store';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Menu } from 'lucide-react';
-import { Button } from '../ui/button';
+import React, { useState, useEffect } from "react";
+import { Outlet } from "react-router-dom";
+import { Sidebar } from "./sidebar";
+import { useAuthStore } from "../../store/auth-store";
+import { motion, AnimatePresence } from "framer-motion";
+import { Menu } from "lucide-react";
+import { Button } from "../ui/button";
 
-export const AppLayout: React.FC = () => {
+const AppLayout: React.FC = () => {
   const { user } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
@@ -21,17 +21,17 @@ export const AppLayout: React.FC = () => {
     checkMobile();
 
     // Add resize listener
-    window.addEventListener('resize', checkMobile);
+    window.addEventListener("resize", checkMobile);
 
     // Cleanup
-    return () => window.removeEventListener('resize', checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
   // Load sidebar state from localStorage on mount
   useEffect(() => {
-    const savedState = localStorage.getItem('sidebarOpen');
+    const savedState = localStorage.getItem("sidebarOpen");
     if (savedState !== null && !isMobile) {
-      setSidebarOpen(savedState === 'true');
+      setSidebarOpen(savedState === "true");
     }
   }, [isMobile]);
 
@@ -40,7 +40,7 @@ export const AppLayout: React.FC = () => {
     setSidebarOpen(newState);
     // Only save state if not mobile
     if (!isMobile) {
-      localStorage.setItem('sidebarOpen', String(newState));
+      localStorage.setItem("sidebarOpen", String(newState));
     }
   };
 
@@ -48,9 +48,9 @@ export const AppLayout: React.FC = () => {
     <div className="h-screen w-full bg-gray-50 text-gray-900 overflow-hidden flex">
       {/* Mobile toggle button */}
       <div className="lg:hidden fixed top-4 left-4 z-50">
-        <Button 
-          variant="ghost" 
-          size="icon" 
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={toggleSidebar}
           className="bg-white/80 backdrop-blur-sm shadow-md rounded-full"
         >
@@ -59,11 +59,11 @@ export const AppLayout: React.FC = () => {
       </div>
 
       {/* Sidebar - Always rendered but transforms based on state */}
-      <div 
+      <div
         className={`fixed lg:relative z-40 h-full transition-transform duration-300 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
-        style={{ width: isMobile ? '280px' : '320px' }}
+        style={{ width: isMobile ? "280px" : "320px" }}
       >
         <Sidebar onClose={() => isMobile && setSidebarOpen(false)} />
       </div>
@@ -90,3 +90,6 @@ export const AppLayout: React.FC = () => {
     </div>
   );
 };
+
+// Export default para funcionar com lazy loading
+export default AppLayout;

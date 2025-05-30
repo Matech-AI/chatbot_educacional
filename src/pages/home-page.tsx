@@ -1,253 +1,294 @@
-// 3. Cimport React, { useEffect, useCallback, useMemo } from 'react';
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import {
-  useChatSessions,
-  useChatActions,
-  useSessionMessages,
-} from "../store/chat-store";
-import { ChatInput } from "../components/chat/chat-input";
-import { ChatHistory } from "../components/chat/chat-history";
-import { Button } from "../components/ui/button";
-import { BackButton } from "../components/ui/back-button";
-import { PlusCircle, Trash2 } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { useAuthStore } from "../store/auth-store";
+import { useMaterialsStore } from "../store/materials-store";
 import { motion } from "framer-motion";
+import {
+  MessageSquare,
+  Book,
+  User,
+  Settings,
+  TrendingUp,
+  Clock,
+  BookOpen,
+  Dumbbell,
+} from "lucide-react";
 
-export const ChatPage: React.FC = () => {
-  // Usar hooks especializados para evitar re-renders desnecessários
-  const { sessions, activeSessionId, isProcessing } = useChatSessions();
-  const { createSession, setActiveSession, deleteSession, sendMessage } =
-    useChatActions();
+const HomePage: React.FC = () => {
+  const { user } = useAuthStore();
+  const { materials, fetchMaterials } = useMaterialsStore();
+  const [backendStatus, setBackendStatus] = useState<string>("Verificando...");
+  const [isOnline, setIsOnline] = useState(false);
 
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  // Pegar o sessionId da URL de forma controlada
-  const urlSessionId = searchParams.get("session");
-
-  // Pegar mensagens da sessão ativa
-  const messages = useSessionMessages(activeSessionId);
-
-  // ========================================
-  // EFEITOS CONTROLADOS
-  // ========================================
-
-  // 1. Sincronizar URL com sessão ativa (apenas quando necessário)
   useEffect(() => {
-    if (urlSessionId && urlSessionId !== activeSessionId) {
-      const sessionExists = sessions.some(
-        (session) => session.id === urlSessionId
-      );
+    fetchMaterials();
+    checkBackendHealth();
+  }, [fetchMaterials]);
 
-      if (sessionExists) {
-        console.log("🎯 Setting active session from URL:", urlSessionId);
-        setActiveSession(urlSessionId);
+  const checkBackendHealth = async () => {
+    try {
+      const response = await fetch("/api/health");
+      if (response.ok) {
+        const data = await response.json();
+        setBackendStatus(`✅ ${data.message || "Backend online"}`);
+        setIsOnline(true);
       } else {
-        console.log("⚠️ Session from URL does not exist, removing from URL");
-        setSearchParams({}, { replace: true });
+        setBackendStatus("❌ Backend com problemas");
+        setIsOnline(false);
       }
+    } catch (error) {
+      setBackendStatus("❌ Backend offline");
+      setIsOnline(false);
     }
-  }, [
-    urlSessionId,
-    activeSessionId,
-    sessions,
-    setActiveSession,
-    setSearchParams,
-  ]);
+  };
 
-  // 2. Atualizar URL quando sessão ativa muda (apenas quando necessário)
-  useEffect(() => {
-    if (activeSessionId && activeSessionId !== urlSessionId) {
-      console.log("🔗 Updating URL with active session:", activeSessionId);
-      setSearchParams({ session: activeSessionId }, { replace: true });
-    }
-  }, [activeSessionId, urlSessionId, setSearchParams]);
+  const canManage = user?.role === "admin" || user?.role === "instructor";
 
-  // 3. Criar primeira sessão apenas se necessário
-  useEffect(() => {
-    if (sessions.length === 0 && !activeSessionId) {
-      console.log("📝 No sessions exist, creating first session");
-      const newSessionId = createSession();
-      // A URL será atualizada pelo useEffect acima
-    }
-  }, [sessions.length, activeSessionId, createSession]);
-
-  // ========================================
-  // CALLBACKS MEMOIZADOS
-  // ========================================
-
-  const handleSendMessage = useCallback(
-    (message: string) => {
-      console.log("📤 Sending message from ChatPage");
-      sendMessage(message);
+  const quickActions = [
+    {
+      title: "Assistente de Treino",
+      description: "Converse com o assistente especializado",
+      icon: <MessageSquare size={24} />,
+      href: "/chat",
+      color: "bg-blue-500",
+      available: true,
     },
-    [sendMessage]
-  );
-
-  const handleNewSession = useCallback(() => {
-    console.log("➕ Creating new session from button");
-    const newSessionId = createSession();
-    // A navegação será feita pelos useEffects
-  }, [createSession]);
-
-  const handleDeleteSession = useCallback(
-    (sessionId: string) => {
-      if (sessions.length <= 1) {
-        console.log("⚠️ Cannot delete last session");
-        return;
-      }
-
-      console.log("🗑️ Deleting session:", sessionId);
-      deleteSession(sessionId);
-
-      // Se deletou a sessão ativa e não há mais na URL, limpar URL
-      if (sessionId === activeSessionId && sessionId === urlSessionId) {
-        setSearchParams({}, { replace: true });
-      }
+    {
+      title: "Materiais de Treino",
+      description: "Gerencie documentos e recursos",
+      icon: <Book size={24} />,
+      href: "/materials",
+      color: "bg-green-500",
+      available: canManage,
     },
-    [
-      sessions.length,
-      deleteSession,
-      activeSessionId,
-      urlSessionId,
-      setSearchParams,
-    ]
-  );
-
-  const handleSelectSession = useCallback(
-    (sessionId: string) => {
-      console.log("👆 Selecting session:", sessionId);
-      setSearchParams({ session: sessionId }, { replace: true });
+    {
+      title: "Configurar Assistente",
+      description: "Personalize o comportamento do AI",
+      icon: <User size={24} />,
+      href: "/assistant",
+      color: "bg-purple-500",
+      available: canManage,
     },
-    [setSearchParams]
-  );
+    {
+      title: "Configurações",
+      description: "Configurações do sistema",
+      icon: <Settings size={24} />,
+      href: "/settings",
+      color: "bg-gray-500",
+      available: user?.role === "admin",
+    },
+  ];
 
-  // ========================================
-  // VALORES MEMOIZADOS
-  // ========================================
-
-  const canDelete = useMemo(() => sessions.length > 1, [sessions.length]);
-
-  // ========================================
-  // RENDER
-  // ========================================
+  const stats = [
+    {
+      label: "Materiais Disponíveis",
+      value: materials.length,
+      icon: <BookOpen size={20} />,
+      color: "text-blue-600",
+    },
+    {
+      label: "Status do Sistema",
+      value: isOnline ? "Online" : "Offline",
+      icon: <TrendingUp size={20} />,
+      color: isOnline ? "text-green-600" : "text-red-600",
+    },
+    {
+      label: "Último Login",
+      value: "Agora",
+      icon: <Clock size={20} />,
+      color: "text-purple-600",
+    },
+  ];
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header com sessões */}
-      <header className="bg-white border-b border-gray-200 p-4 flex-shrink-0">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <BackButton />
-            <h1 className="text-xl font-semibold text-gray-900 mt-2">
-              💬 Assistente de Treino
-            </h1>
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-8"
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-12 h-12 bg-red-600 rounded-lg flex items-center justify-center">
+            <Dumbbell size={24} className="text-white" />
           </div>
-
-          <Button
-            onClick={handleNewSession}
-            variant="outline"
-            className="flex items-center gap-1"
-            disabled={isProcessing}
-          >
-            <PlusCircle size={16} />
-            <span>Nova conversa</span>
-          </Button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">
+              Bem-vindo, {user?.name}!
+            </h1>
+            <p className="text-gray-600">
+              Sistema DNA da Força -{" "}
+              {user?.role === "admin"
+                ? "Administrador"
+                : user?.role === "instructor"
+                ? "Instrutor"
+                : "Aluno"}
+            </p>
+          </div>
         </div>
+      </motion.div>
 
-        {/* Abas de sessões */}
-        {sessions.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto pb-2">
-            {sessions.map((session) => (
-              <SessionTab
-                key={session.id}
-                session={session}
-                isActive={session.id === activeSessionId}
-                canDelete={canDelete}
-                onSelect={handleSelectSession}
-                onDelete={handleDeleteSession}
-              />
+      {/* Status Cards */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8"
+      >
+        {stats.map((stat, index) => (
+          <div
+            key={index}
+            className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  {stat.label}
+                </p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {stat.value}
+                </p>
+              </div>
+              <div className={`${stat.color}`}>{stat.icon}</div>
+            </div>
+          </div>
+        ))}
+      </motion.div>
+
+      {/* Backend Status */}
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: 0.2 }}
+        className="bg-white rounded-lg border border-gray-200 p-4 mb-8 shadow-sm"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-medium text-gray-900">Status do Backend</h3>
+            <p className="text-sm text-gray-600">{backendStatus}</p>
+          </div>
+          <button
+            onClick={checkBackendHealth}
+            className="text-blue-600 text-sm hover:text-blue-800 font-medium"
+          >
+            Verificar novamente
+          </button>
+        </div>
+      </motion.div>
+
+      {/* Quick Actions */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+      >
+        <h2 className="text-xl font-semibold text-gray-900 mb-6">
+          Ações Rápidas
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {quickActions
+            .filter((action) => action.available)
+            .map((action, index) => (
+              <Link key={index} to={action.href} className="group block">
+                <motion.div
+                  whileHover={{ y: -5, scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm hover:shadow-md transition-all duration-200"
+                >
+                  <div
+                    className={`w-12 h-12 ${action.color} rounded-lg flex items-center justify-center mb-4 text-white group-hover:scale-110 transition-transform duration-200`}
+                  >
+                    {action.icon}
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors">
+                    {action.title}
+                  </h3>
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    {action.description}
+                  </p>
+                  <div className="mt-4 text-blue-600 text-sm font-medium group-hover:translate-x-1 transition-transform duration-200 inline-block">
+                    Acessar →
+                  </div>
+                </motion.div>
+              </Link>
+            ))}
+        </div>
+      </motion.div>
+
+      {/* Recent Materials Preview */}
+      {materials.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="mt-8"
+        >
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Materiais Recentes
+            </h2>
+            {canManage && (
+              <Link
+                to="/materials"
+                className="text-blue-600 text-sm font-medium hover:text-blue-800"
+              >
+                Ver todos →
+              </Link>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {materials.slice(0, 3).map((material) => (
+              <div
+                key={material.id}
+                className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow duration-200"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium text-gray-900 truncate">
+                      {material.title}
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {material.type.toUpperCase()}
+                    </p>
+                  </div>
+                </div>
+                {material.description && (
+                  <p className="text-sm text-gray-600 line-clamp-2 mb-3">
+                    {material.description}
+                  </p>
+                )}
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span>
+                    {new Date(material.uploadedAt).toLocaleDateString("pt-BR")}
+                  </span>
+                  {canManage && (
+                    <Link
+                      to="/materials"
+                      className="text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      Gerenciar
+                    </Link>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
-        )}
-      </header>
-
-      {/* Área do chat */}
-      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
-          className="flex-1 overflow-hidden"
-        >
-          <ChatHistory messages={messages} isProcessing={isProcessing} />
         </motion.div>
-
-        {/* Área de input */}
-        <div className="p-4 bg-gray-50 border-t border-gray-200 flex-shrink-0">
-          <ChatInput
-            onSendMessage={handleSendMessage}
-            isDisabled={isProcessing || !activeSessionId}
-            placeholder="Digite sua pergunta sobre o material do curso..."
-          />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ========================================
-// COMPONENTE DA ABA DE SESSÃO
-// ========================================
-
-interface SessionTabProps {
-  session: { id: string; title: string };
-  isActive: boolean;
-  canDelete: boolean;
-  onSelect: (sessionId: string) => void;
-  onDelete: (sessionId: string) => void;
-}
-
-const SessionTab: React.FC<SessionTabProps> = ({
-  session,
-  isActive,
-  canDelete,
-  onSelect,
-  onDelete,
-}) => {
-  const handleClick = useCallback(() => {
-    onSelect(session.id);
-  }, [onSelect, session.id]);
-
-  const handleDelete = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (window.confirm(`Deseja excluir a conversa "${session.title}"?`)) {
-        onDelete(session.id);
-      }
-    },
-    [onDelete, session.id, session.title]
-  );
-
-  return (
-    <div
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
-        isActive
-          ? "bg-blue-100 text-blue-700 font-medium"
-          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-      }`}
-      onClick={handleClick}
-    >
-      <span className="truncate max-w-[150px]">{session.title}</span>
-
-      {canDelete && (
-        <button
-          onClick={handleDelete}
-          className="opacity-60 hover:opacity-100 transition-opacity"
-          title="Excluir conversa"
-        >
-          <Trash2 size={14} />
-        </button>
       )}
+
+      {/* Footer Info */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.5 }}
+        className="mt-12 text-center text-sm text-gray-500"
+      >
+        <p>DNA da Força v1.0 - Sistema de Assistente Educacional</p>
+        <p className="mt-1">Desenvolvido por Matheus Bernardes</p>
+      </motion.div>
     </div>
   );
 };
+
+// Export default para funcionar com lazy loading
+export default HomePage;

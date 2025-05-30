@@ -7,31 +7,54 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "./store/auth-store";
 
 // ========================================
-// IMPORTS LAZY (carregados sob demanda)
+// IMPORTS LAZY (carregados sob demanda) - CORRIGIDOS COM FALLBACKS
 // ========================================
 const AppLayout = lazy(() =>
-  import("./components/layout/app-layout").then((module) => ({
-    default: module.AppLayout,
-  }))
+  import("./components/layout/app-layout").catch(() =>
+    import("./components/layout/app-layout").then((m) => ({
+      default: m.AppLayout || m.default,
+    }))
+  )
 );
+
 const LoginPage = lazy(() =>
-  import("./pages/login-page").then((module) => ({ default: module.LoginPage }))
+  import("./pages/login-page").catch(() =>
+    import("./pages/login-page").then((m) => ({
+      default: m.LoginPage || m.default,
+    }))
+  )
 );
+
 const HomePage = lazy(() =>
-  import("./pages/home-page").then((module) => ({ default: module.HomePage }))
+  import("./pages/home-page").catch(() =>
+    import("./pages/home-page").then((m) => ({
+      default: m.HomePage || m.default,
+    }))
+  )
 );
+
 const ChatPage = lazy(() =>
-  import("./pages/chat-page").then((module) => ({ default: module.ChatPage }))
+  import("./pages/chat-page").catch(() =>
+    import("./pages/chat-page").then((m) => ({
+      default: m.ChatPage || m.default,
+    }))
+  )
 );
+
 const MaterialsPage = lazy(() =>
-  import("./pages/materials-page").then((module) => ({
-    default: module.MaterialsPage,
-  }))
+  import("./pages/materials-page").catch(() =>
+    import("./pages/materials-page").then((m) => ({
+      default: m.MaterialsPage || m.default,
+    }))
+  )
 );
+
 const AssistantPage = lazy(() =>
-  import("./pages/assistant-page").then((module) => ({
-    default: module.AssistantPage,
-  }))
+  import("./pages/assistant-page").catch(() =>
+    import("./pages/assistant-page").then((m) => ({
+      default: m.AssistantPage || m.default,
+    }))
+  )
 );
 
 // ========================================
@@ -89,18 +112,6 @@ const ErrorFallback: React.FC<{ error?: string; onRetry?: () => void }> = ({
 );
 
 // ========================================
-// WRAPPER PARA LAZY COMPONENTS
-// ========================================
-const LazyWrapper: React.FC<{
-  children: React.ReactNode;
-  fallback?: React.ReactNode;
-}> = ({ children, fallback }) => (
-  <Suspense fallback={fallback || <LoadingSpinner />}>
-    <ErrorBoundary>{children}</ErrorBoundary>
-  </Suspense>
-);
-
-// ========================================
 // ERROR BOUNDARY CLASS
 // ========================================
 class ErrorBoundary extends React.Component<
@@ -135,7 +146,7 @@ class ErrorBoundary extends React.Component<
 }
 
 // ========================================
-// PROTECTED ROUTE COM VERIFICAÇÕES
+// PROTECTED ROUTE
 // ========================================
 const ProtectedRoute: React.FC<{
   children: React.ReactNode;
@@ -143,31 +154,23 @@ const ProtectedRoute: React.FC<{
 }> = ({ children, allowedRoles }) => {
   const { isAuthenticated, user } = useAuthStore();
 
-  console.log("🔐 ProtectedRoute check:", {
-    isAuthenticated,
-    userRole: user?.role,
-    allowedRoles,
-    hasUser: !!user,
-  });
-
-  // Check if user is authenticated
   if (!isAuthenticated) {
-    console.log("❌ User not authenticated, redirecting to login");
     return <Navigate to="/login" replace />;
   }
 
-  // Check if user has required role
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    console.log("❌ User role not allowed, redirecting to home");
     return <Navigate to="/" replace />;
   }
 
-  console.log("✅ Access granted");
-  return <LazyWrapper>{children}</LazyWrapper>;
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <ErrorBoundary>{children}</ErrorBoundary>
+    </Suspense>
+  );
 };
 
 // ========================================
-// PÁGINAS SIMPLES INLINE (fallback)
+// PÁGINAS SIMPLES INLINE
 // ========================================
 const SimpleSettingsPage: React.FC = () => (
   <div className="p-6 max-w-4xl mx-auto">
@@ -228,66 +231,26 @@ const SimpleDebugPage: React.FC = () => {
 function App() {
   const { checkAuth, isAuthenticated } = useAuthStore();
   const [isInitialized, setIsInitialized] = useState(false);
-  const [initError, setInitError] = useState<string | null>(null);
 
-  // Verificação de autenticação controlada
   useEffect(() => {
-    let mounted = true;
-
-    const initializeAuth = async () => {
+    const initializeAuth = () => {
       try {
         console.log("🚀 DNA da Força - Iniciando verificação de autenticação");
-
-        // Prevenir múltiplas inicializações
-        if (isInitialized) {
-          return;
-        }
-
         checkAuth();
-
-        if (mounted) {
-          setIsInitialized(true);
-          console.log("✅ Autenticação verificada");
-        }
+        setIsInitialized(true);
+        console.log("✅ Autenticação verificada");
       } catch (error) {
         console.error("❌ Erro na inicialização:", error);
-        if (mounted) {
-          setInitError(
-            error instanceof Error ? error.message : "Erro desconhecido"
-          );
-          setIsInitialized(true);
-        }
+        setIsInitialized(true);
       }
     };
 
-    // ✅ Usar setTimeout para evitar chamadas síncronas que podem causar loops
-    const timeoutId = setTimeout(initializeAuth, 0);
+    initializeAuth();
+  }, [checkAuth]);
 
-    return () => {
-      mounted = false;
-      clearTimeout(timeoutId);
-    };
-  }, []); // ✅ Sem dependências - executar apenas uma vez
-
-  // Mostrar loading enquanto inicializa
   if (!isInitialized) {
     return <LoadingSpinner message="Verificando autenticação..." />;
   }
-
-  // Mostrar erro se houve problema na inicialização
-  if (initError) {
-    return (
-      <ErrorFallback
-        error={`Erro na inicialização: ${initError}`}
-        onRetry={() => {
-          setInitError(null);
-          setIsInitialized(false);
-        }}
-      />
-    );
-  }
-
-  console.log("🎯 Renderizando App - Autenticado:", isAuthenticated);
 
   return (
     <BrowserRouter>
@@ -296,11 +259,11 @@ function App() {
           <Route
             path="/login"
             element={
-              <LazyWrapper
+              <Suspense
                 fallback={<LoadingSpinner message="Carregando login..." />}
               >
                 <LoginPage />
-              </LazyWrapper>
+              </Suspense>
             }
           />
 
@@ -315,24 +278,24 @@ function App() {
             <Route
               index
               element={
-                <LazyWrapper
+                <Suspense
                   fallback={
                     <LoadingSpinner message="Carregando dashboard..." />
                   }
                 >
                   <HomePage />
-                </LazyWrapper>
+                </Suspense>
               }
             />
 
             <Route
               path="chat"
               element={
-                <LazyWrapper
+                <Suspense
                   fallback={<LoadingSpinner message="Carregando chat..." />}
                 >
                   <ChatPage />
-                </LazyWrapper>
+                </Suspense>
               }
             />
 
@@ -340,13 +303,13 @@ function App() {
               path="materials"
               element={
                 <ProtectedRoute allowedRoles={["admin", "instructor"]}>
-                  <LazyWrapper
+                  <Suspense
                     fallback={
                       <LoadingSpinner message="Carregando materiais..." />
                     }
                   >
                     <MaterialsPage />
-                  </LazyWrapper>
+                  </Suspense>
                 </ProtectedRoute>
               }
             />
@@ -355,13 +318,13 @@ function App() {
               path="assistant"
               element={
                 <ProtectedRoute allowedRoles={["admin", "instructor"]}>
-                  <LazyWrapper
+                  <Suspense
                     fallback={
                       <LoadingSpinner message="Carregando assistente..." />
                     }
                   >
                     <AssistantPage />
-                  </LazyWrapper>
+                  </Suspense>
                 </ProtectedRoute>
               }
             />
@@ -385,7 +348,6 @@ function App() {
             />
           </Route>
 
-          {/* Redirect unknown routes */}
           <Route
             path="*"
             element={

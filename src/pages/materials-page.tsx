@@ -10,7 +10,7 @@ import { Search, Upload, X, Cloud } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Material } from "../types";
 
-export const MaterialsPage: React.FC = () => {
+const MaterialsPage: React.FC = () => {
   const {
     materials,
     isLoading,
@@ -220,3 +220,6 @@ export const MaterialsPage: React.FC = () => {
     </div>
   );
 };
+
+// Export default para funcionar com lazy loading
+export default MaterialsPage;

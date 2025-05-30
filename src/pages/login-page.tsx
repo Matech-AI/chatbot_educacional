@@ -33,9 +33,12 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     }
     setIsLoading(true);
     try {
-      const res = await fetch("/change-password", {
+      const res = await fetch("/api/change-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
         body: JSON.stringify({
           current_password: currentPassword,
           new_password: newPassword,
@@ -133,7 +136,7 @@ const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     }
     setIsLoading(true);
     try {
-      const res = await fetch("/reset-password", {
+      const res = await fetch("/api/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, new_password: newPassword }),
@@ -208,7 +211,7 @@ const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   );
 };
 
-export const LoginPage: React.FC = () => {
+const LoginPage: React.FC = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -367,3 +370,6 @@ export const LoginPage: React.FC = () => {
     </div>
   );
 };
+
+// Export default para funcionar com lazy loading
+export default LoginPage;

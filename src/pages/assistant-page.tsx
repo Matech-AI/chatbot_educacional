@@ -1,20 +1,20 @@
-import React from 'react';
-import { useAssistantStore } from '../store/assistant-store';
-import { ConfigForm } from '../components/assistant/config-form';
-import { TemplateSelector } from '../components/assistant/template-selector';
-import { BackButton } from '../components/ui/back-button';
-import { motion } from 'framer-motion';
+import React from "react";
+import { useAssistantStore } from "../store/assistant-store";
+import { ConfigForm } from "../components/assistant/config-form";
+import { TemplateSelector } from "../components/assistant/template-selector";
+import { BackButton } from "../components/ui/back-button";
+import { motion } from "framer-motion";
 
-export const AssistantPage: React.FC = () => {
-  const { 
-    config, 
-    templates, 
+const AssistantPage: React.FC = () => {
+  const {
+    config,
+    templates,
     isLoading,
     updateConfig,
     saveAsTemplate,
-    loadTemplate
+    loadTemplate,
   } = useAssistantStore();
-  
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <header className="mb-6">
@@ -31,7 +31,7 @@ export const AssistantPage: React.FC = () => {
           </p>
         </motion.div>
       </header>
-      
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Template selector */}
         <motion.div
@@ -39,13 +39,13 @@ export const AssistantPage: React.FC = () => {
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.1 }}
         >
-          <TemplateSelector 
-            templates={templates} 
+          <TemplateSelector
+            templates={templates}
             onSelectTemplate={loadTemplate}
             isLoading={isLoading}
           />
         </motion.div>
-        
+
         {/* Config form */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -53,7 +53,7 @@ export const AssistantPage: React.FC = () => {
           transition={{ delay: 0.2 }}
           className="lg:col-span-2"
         >
-          <ConfigForm 
+          <ConfigForm
             config={config}
             onSave={updateConfig}
             onSaveAsTemplate={saveAsTemplate}
@@ -64,3 +64,6 @@ export const AssistantPage: React.FC = () => {
     </div>
   );
 };
+
+// Export default para funcionar com lazy loading
+export default AssistantPage;

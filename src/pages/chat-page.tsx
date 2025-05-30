@@ -12,7 +12,7 @@ import { BackButton } from "../components/ui/back-button";
 import { PlusCircle, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 
-export const ChatPage: React.FC = () => {
+const ChatPage: React.FC = () => {
   // Usar hooks especializados para evitar re-renders desnecessários
   const { sessions, activeSessionId, isProcessing } = useChatSessions();
   const { createSession, setActiveSession, deleteSession, sendMessage } =
@@ -251,3 +251,6 @@ const SessionTab: React.FC<SessionTabProps> = ({
     </div>
   );
 };
+
+// Export default para funcionar com lazy loading
+export default ChatPage;
