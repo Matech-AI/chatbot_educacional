@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useCallback } from 'react';
 import type { Material } from '../types';
 
 interface MaterialsState {
@@ -20,7 +21,8 @@ async function fetchMaterialsAPI(): Promise<Material[]> {
     });
     
     if (!response.ok) {
-      throw new Error('Failed to fetch materials');
+      console.error('Failed to fetch materials:', response.status);
+      return [];
     }
     
     const data = await response.json();
@@ -65,7 +67,8 @@ async function uploadMaterialAPI(file: File, description?: string, tags?: string
     });
     
     if (!response.ok) {
-      throw new Error('Failed to upload material');
+      console.error('Failed to upload material:', response.status);
+      return false;
     }
     
     return true;
@@ -85,7 +88,8 @@ async function deleteMaterialAPI(id: string): Promise<boolean> {
     });
     
     if (!response.ok) {
-      throw new Error('Failed to delete material');
+      console.error('Failed to delete material:', response.status);
+      return false;
     }
     
     return true;
@@ -101,12 +105,19 @@ export const useMaterialsStore = create<MaterialsState>((set, get) => ({
   isProcessing: false,
 
   fetchMaterials: async () => {
+    // Prevent multiple simultaneous fetches
+    if (get().isLoading) {
+      return;
+    }
+
     set({ isLoading: true });
     try {
+      console.log('📚 Fetching materials...');
       const materials = await fetchMaterialsAPI();
+      console.log(`✅ Fetched ${materials.length} materials`);
       set({ materials, isLoading: false });
     } catch (error) {
-      console.error('Error in fetchMaterials:', error);
+      console.error('❌ Error in fetchMaterials:', error);
       set({ isLoading: false });
     }
   },
@@ -114,15 +125,17 @@ export const useMaterialsStore = create<MaterialsState>((set, get) => ({
   uploadMaterial: async (file, description, tags) => {
     set({ isProcessing: true });
     try {
+      console.log('📤 Uploading material:', file.name);
       const success = await uploadMaterialAPI(file, description, tags);
       if (success) {
+        console.log('✅ Upload successful, refreshing materials...');
         // Refresh materials list after successful upload
         await get().fetchMaterials();
       }
       set({ isProcessing: false });
       return success;
     } catch (error) {
-      console.error('Error in uploadMaterial:', error);
+      console.error('❌ Error in uploadMaterial:', error);
       set({ isProcessing: false });
       return false;
     }
@@ -131,8 +144,10 @@ export const useMaterialsStore = create<MaterialsState>((set, get) => ({
   deleteMaterial: async (id) => {
     set({ isProcessing: true });
     try {
+      console.log('🗑️ Deleting material:', id);
       const success = await deleteMaterialAPI(id);
       if (success) {
+        console.log('✅ Delete successful, updating local state...');
         // Remove material from local state
         set(state => ({
           materials: state.materials.filter(material => material.id !== id),
@@ -143,9 +158,20 @@ export const useMaterialsStore = create<MaterialsState>((set, get) => ({
       }
       return success;
     } catch (error) {
-      console.error('Error in deleteMaterial:', error);
+      console.error('❌ Error in deleteMaterial:', error);
       set({ isProcessing: false });
       return false;
     }
   },
 }));
+
+// Hook personalizado para evitar re-renders desnecessários
+export const useMaterialsActions = () => {
+  const store = useMaterialsStore();
+  
+  return {
+    fetchMaterials: useCallback(store.fetchMaterials, []),
+    uploadMaterial: useCallback(store.uploadMaterial, []),
+    deleteMaterial: useCallback(store.deleteMaterial, []),
+  };
+};

@@ -1,5 +1,5 @@
 // API utility functions
-const API_BASE = '/api';
+const API_BASE = 'http://localhost:8000';
 
 // Get auth token from localStorage
 function getAuthToken(): string | null {

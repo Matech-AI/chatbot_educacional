@@ -12,10 +12,16 @@ interface AuthState {
   checkAuth: () => void;
 }
 
-// Helper function to decode JWT payload
+// Helper function to decode JWT payload (para JWT real)
 function decodeJWTPayload(token: string): any {
   try {
-    const base64Url = token.split('.')[1];
+    // Verificar se é um JWT real (tem 3 partes separadas por ponto)
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return null; // Não é um JWT real
+    }
+    
+    const base64Url = parts[1];
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
     const jsonPayload = decodeURIComponent(
       atob(base64)
@@ -30,7 +36,58 @@ function decodeJWTPayload(token: string): any {
   }
 }
 
-// Helper function to create user from JWT payload
+// Helper function para decodificar token simplificado (formato: username-role-timestamp)
+function decodeSimpleToken(token: string): any {
+  try {
+    const parts = token.split('-');
+    if (parts.length >= 3) {
+      const username = parts[0];
+      const role = parts[1];
+      const timestamp = parseFloat(parts[2]);
+      
+      // Verificar se o token não expirou (24 horas)
+      const now = Date.now() / 1000;
+      const tokenTime = timestamp / 1000;
+      
+      if (now - tokenTime > 24 * 60 * 60) { // 24 horas em segundos
+        console.log('Simple token expired');
+        return null;
+      }
+      
+      return {
+        sub: username,
+        role: role,
+        exp: timestamp + (24 * 60 * 60 * 1000) // Expira em 24 horas
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error decoding simple token:', error);
+    return null;
+  }
+}
+
+// Helper function para decodificar qualquer tipo de token
+function decodeToken(token: string): any {
+  // Primeiro tenta JWT real
+  const jwtPayload = decodeJWTPayload(token);
+  if (jwtPayload) {
+    console.log('✅ Decoded as JWT token');
+    return jwtPayload;
+  }
+  
+  // Se não funcionar, tenta token simplificado
+  const simplePayload = decodeSimpleToken(token);
+  if (simplePayload) {
+    console.log('✅ Decoded as simple token');
+    return simplePayload;
+  }
+  
+  console.error('❌ Could not decode token in any format');
+  return null;
+}
+
+// Helper function to create user from token payload
 function createUserFromToken(payload: any): User {
   // Map backend roles to frontend roles
   const roleMap: Record<string, UserRole> = {
@@ -39,15 +96,26 @@ function createUserFromToken(payload: any): User {
     'student': 'student'
   };
 
+  const username = payload.sub || 'unknown';
+  const role = payload.role || 'student';
+
   return {
-    id: payload.sub || 'unknown',
-    name: payload.sub === 'admin' ? 'Administrador' : 
-          payload.sub === 'instrutor' ? 'Instrutor' : 
-          payload.sub === 'aluno' ? 'Aluno' : payload.sub,
-    role: roleMap[payload.role] || 'student',
+    id: username,
+    name: getUserDisplayName(username),
+    role: roleMap[role] || 'student',
     email: payload.email,
-    avatarUrl: getDefaultAvatar(payload.role)
+    avatarUrl: getDefaultAvatar(role)
   };
+}
+
+function getUserDisplayName(username: string): string {
+  const nameMap: Record<string, string> = {
+    'admin': 'Administrador',
+    'instrutor': 'Instrutor',
+    'aluno': 'Aluno'
+  };
+  
+  return nameMap[username] || username;
 }
 
 function getDefaultAvatar(role: string): string {
@@ -68,6 +136,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const token = localStorage.getItem('token');
     
     if (!token) {
+      console.log('🔐 No token found');
       set({ 
         isAuthenticated: false,
         user: null,
@@ -77,13 +146,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     try {
-      const payload = decodeJWTPayload(token);
+      const payload = decodeToken(token);
       
       if (!payload) {
-        throw new Error('Invalid token');
+        throw new Error('Invalid token format');
       }
 
-      // Check if token is expired
+      // Check if token is expired (para JWT real)
       const currentTime = Date.now() / 1000;
       if (payload.exp && payload.exp < currentTime) {
         throw new Error('Token expired');
@@ -91,13 +160,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       const user = createUserFromToken(payload);
       
+      console.log('✅ Token validated successfully for user:', user.name);
       set({ 
         isAuthenticated: true,
         user,
         error: null
       });
     } catch (error) {
-      console.error('Token validation failed:', error);
+      console.error('❌ Token validation failed:', error);
       localStorage.removeItem('token');
       set({ 
         isAuthenticated: false,
@@ -109,13 +179,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   
   login: async (username: string, password: string) => {
     try {
+      console.log('🔐 Attempting login for:', username);
       set({ error: null });
       
       const response = await api.login(username, password);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        set({ error: errorData.detail || 'Credenciais inválidas' });
+        const errorMessage = errorData.detail || 'Credenciais inválidas';
+        console.error('❌ Login failed:', errorMessage);
+        set({ error: errorMessage });
         return false;
       }
       
@@ -123,22 +196,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const token = data.access_token;
       
       if (!token) {
+        console.error('❌ No token received from server');
         set({ error: 'Token não recebido do servidor' });
         return false;
       }
 
+      console.log('📥 Token received:', token.substring(0, 20) + '...');
+      
       // Save token to localStorage
       localStorage.setItem('token', token);
       
       // Decode token and create user
-      const payload = decodeJWTPayload(token);
+      const payload = decodeToken(token);
       if (!payload) {
+        console.error('❌ Could not decode received token');
         set({ error: 'Token inválido recebido' });
         return false;
       }
 
       const user = createUserFromToken(payload);
       
+      console.log('✅ Login successful for:', user.name, '(Role:', user.role + ')');
       set({ 
         isAuthenticated: true, 
         user,
@@ -148,7 +226,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro de conexão';
-      console.error('Login error:', error);
+      console.error('❌ Login error:', error);
       set({ 
         error: errorMessage,
         isAuthenticated: false,
@@ -159,6 +237,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   
   logout: () => {
+    console.log('🚪 Logging out...');
     localStorage.removeItem('token');
     set({ 
       isAuthenticated: false, 

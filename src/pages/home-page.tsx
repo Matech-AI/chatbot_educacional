@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "../store/auth-store";
 import { useMaterialsStore } from "../store/materials-store";
@@ -9,8 +9,13 @@ import { motion } from "framer-motion";
 
 export const HomePage: React.FC = () => {
   const { user } = useAuthStore();
-  // const { materials } = useMaterialsStore();
+  const { materials, fetchMaterials } = useMaterialsStore();
   const { sessions, createSession } = useChatStore();
+
+  // Fetch materials on component mount
+  useEffect(() => {
+    fetchMaterials();
+  }, [fetchMaterials]);
 
   const startNewChat = () => {
     const sessionId = createSession();
@@ -58,7 +63,7 @@ export const HomePage: React.FC = () => {
     (stat) => user && stat.roles.includes(user.role)
   );
 
-  // Featured content
+  // Featured content - get first 3 materials safely
   const featuredMaterials = materials.slice(0, 3);
 
   return (
@@ -70,7 +75,7 @@ export const HomePage: React.FC = () => {
           animate={{ opacity: 1, y: 0 }}
         >
           <h1 className="text-3xl font-bold text-gray-900">
-            Olá, {user?.name}!
+            Olá, {user?.name || "Usuário"}!
           </h1>
           <p className="text-gray-600 mt-1">
             Bem-vindo ao seu Assistente Educacional de Educação Física
@@ -131,7 +136,7 @@ export const HomePage: React.FC = () => {
             <motion.div
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.98 }}
-              className="bg-blue-600 text-white p-4 rounded-lg flex items-center justify-center gap-3"
+              className="bg-blue-600 text-white p-4 rounded-lg flex items-center justify-center gap-3 cursor-pointer"
             >
               <MessageSquare size={20} />
               <span className="font-medium">Nova Conversa</span>
@@ -143,7 +148,7 @@ export const HomePage: React.FC = () => {
               <motion.div
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.98 }}
-                className="bg-green-600 text-white p-4 rounded-lg flex items-center justify-center gap-3"
+                className="bg-green-600 text-white p-4 rounded-lg flex items-center justify-center gap-3 cursor-pointer"
               >
                 <Book size={20} />
                 <span className="font-medium">Gerenciar Materiais</span>
@@ -156,7 +161,7 @@ export const HomePage: React.FC = () => {
               <motion.div
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.98 }}
-                className="bg-purple-600 text-white p-4 rounded-lg flex items-center justify-center gap-3"
+                className="bg-purple-600 text-white p-4 rounded-lg flex items-center justify-center gap-3 cursor-pointer"
               >
                 <User size={20} />
                 <span className="font-medium">Configurar Assistente</span>
@@ -176,37 +181,60 @@ export const HomePage: React.FC = () => {
           Materiais em Destaque
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {featuredMaterials.map((material, i) => (
-            <motion.div
-              key={material.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                transition: { delay: 0.1 * i + 0.3 },
-              }}
-              className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-all duration-200"
-            >
-              <h3 className="font-medium text-gray-900 mb-1">
-                {material.title}
-              </h3>
-              {material.description && (
-                <p className="text-sm text-gray-500 mb-3 line-clamp-2">
-                  {material.description}
-                </p>
-              )}
+        {featuredMaterials.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {featuredMaterials.map((material, i) => (
+              <motion.div
+                key={material.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                  transition: { delay: 0.1 * i + 0.3 },
+                }}
+                className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-all duration-200"
+              >
+                <h3 className="font-medium text-gray-900 mb-1">
+                  {material.title}
+                </h3>
+                {material.description && (
+                  <p className="text-sm text-gray-500 mb-3 line-clamp-2">
+                    {material.description}
+                  </p>
+                )}
 
-              <div className="flex justify-end">
-                <Link to={`/materials?id=${material.id}`}>
-                  <Button variant="link" size="sm">
-                    Ver material
-                  </Button>
-                </Link>
-              </div>
-            </motion.div>
-          ))}
-        </div>
+                <div className="flex justify-end">
+                  <Link to={`/materials?id=${material.id}`}>
+                    <Button variant="link" size="sm">
+                      Ver material
+                    </Button>
+                  </Link>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="bg-gray-50 rounded-lg p-8 text-center"
+          >
+            <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Book size={24} className="text-gray-400" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              Nenhum material encontrado
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Faça upload de materiais para começar a usar o assistente.
+            </p>
+            {user?.role !== "student" && (
+              <Link to="/materials">
+                <Button>Gerenciar Materiais</Button>
+              </Link>
+            )}
+          </motion.div>
+        )}
       </motion.div>
     </div>
   );

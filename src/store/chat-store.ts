@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useCallback } from 'react';
 import { ChatSession, Message, Source } from '../types';
 import { generateUniqueId } from '../lib/utils';
 import { api } from '../lib/api';
@@ -19,8 +20,10 @@ interface ChatState {
 // Function to send message to AI backend
 const sendToAI = async (message: string): Promise<{ content: string, sources: Source[] }> => {
   try {
+    console.log('🤖 Sending message to AI:', message.substring(0, 50) + '...');
     const response = await api.chat(message);
     
+    console.log('✅ AI response received');
     return {
       content: response.answer || "Desculpe, não consegui processar sua mensagem.",
       sources: response.sources ? response.sources.map((source: any) => ({
@@ -31,7 +34,7 @@ const sendToAI = async (message: string): Promise<{ content: string, sources: So
       })) : []
     };
   } catch (error) {
-    console.error('Error sending message to AI:', error);
+    console.error('❌ Error sending message to AI:', error);
     
     // Return error message
     return {
@@ -48,13 +51,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   
   createSession: () => {
     const id = generateUniqueId();
+    const currentSessions = get().sessions;
     const newSession: ChatSession = {
       id,
-      title: `Nova conversa ${get().sessions.length + 1}`,
+      title: `Nova conversa ${currentSessions.length + 1}`,
       messages: [],
       createdAt: new Date(),
       updatedAt: new Date()
     };
+    
+    console.log('💬 Creating new chat session:', id);
     
     set(state => ({
       sessions: [...state.sessions, newSession],
@@ -65,6 +71,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   
   renameSession: (sessionId, title) => {
+    console.log('✏️ Renaming session:', sessionId, 'to:', title);
+    
     set(state => ({
       sessions: state.sessions.map(session => 
         session.id === sessionId 
@@ -75,6 +83,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   
   deleteSession: (sessionId) => {
+    console.log('🗑️ Deleting session:', sessionId);
+    
     set(state => {
       const filteredSessions = state.sessions.filter(session => session.id !== sessionId);
       let newActiveId = state.activeSessionId;
@@ -92,6 +102,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   
   setActiveSession: (sessionId) => {
+    console.log('🎯 Setting active session:', sessionId);
     set({ activeSessionId: sessionId });
   },
   
@@ -118,16 +129,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   
   sendMessage: async (content) => {
-    const { activeSessionId, addMessage } = get();
+    const state = get();
+    let sessionId = state.activeSessionId;
     
     // Create a session if none exists
-    let sessionId = activeSessionId;
     if (!sessionId) {
+      console.log('📝 No active session, creating new one...');
       sessionId = get().createSession();
     }
     
+    console.log('📤 Sending message in session:', sessionId);
+    
     // Add user message
-    addMessage(sessionId, content, 'user');
+    get().addMessage(sessionId, content, 'user');
     
     // Set loading state
     set({ isProcessing: true });
@@ -182,14 +196,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
       
       // Auto-rename session based on first message
-      const session = get().sessions.find(s => s.id === sessionId);
+      const updatedState = get();
+      const session = updatedState.sessions.find(s => s.id === sessionId);
       if (session && session.messages.length === 2) { // User + AI response
         const title = content.length > 30 ? content.substring(0, 30) + '...' : content;
         get().renameSession(sessionId, title);
       }
       
     } catch (error) {
-      console.error('Error in sendMessage:', error);
+      console.error('❌ Error in sendMessage:', error);
       
       // Update with error message
       set(state => ({
@@ -216,6 +231,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   
   clearMessages: (sessionId) => {
+    console.log('🧹 Clearing messages for session:', sessionId);
+    
     set(state => ({
       sessions: state.sessions.map(session => 
         session.id === sessionId 
@@ -229,3 +246,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
   }
 }));
+
+// Hook personalizado para evitar re-renders desnecessários
+export const useChatActions = () => {
+  const store = useChatStore();
+  
+  return {
+    createSession: useCallback(store.createSession, []),
+    renameSession: useCallback(store.renameSession, []),
+    deleteSession: useCallback(store.deleteSession, []),
+    setActiveSession: useCallback(store.setActiveSession, []),
+    addMessage: useCallback(store.addMessage, []),
+    sendMessage: useCallback(store.sendMessage, []),
+    clearMessages: useCallback(store.clearMessages, []),
+  };
+};
