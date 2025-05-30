@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { useCallback } from 'react';
 import { ChatSession, Message, Source } from '../types';
 import { generateUniqueId } from '../lib/utils';
 import { api } from '../lib/api';
@@ -50,11 +49,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isProcessing: false,
   
   createSession: () => {
-    const id = generateUniqueId();
-    const currentSessions = get().sessions;
+    const state = get();
+    
+    // ✅ Gerar ID único com timestamp para garantir unicidade
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2);
+    const id = `${timestamp}_${random}`;
+    
     const newSession: ChatSession = {
       id,
-      title: `Nova conversa ${currentSessions.length + 1}`,
+      title: `Nova conversa ${state.sessions.length + 1}`,
       messages: [],
       createdAt: new Date(),
       updatedAt: new Date()
@@ -102,6 +106,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   
   setActiveSession: (sessionId) => {
+    const state = get();
+    
+    // Verificar se a sessão existe antes de defini-la como ativa
+    const sessionExists = state.sessions.some(session => session.id === sessionId);
+    
+    if (!sessionExists) {
+      console.warn('⚠️ Trying to set active session that does not exist:', sessionId);
+      return;
+    }
+    
     console.log('🎯 Setting active session:', sessionId);
     set({ activeSessionId: sessionId });
   },
@@ -132,10 +146,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const state = get();
     let sessionId = state.activeSessionId;
     
-    // Create a session if none exists
+    // ✅ NÃO criar sessão automaticamente - exigir que exista
     if (!sessionId) {
-      console.log('📝 No active session, creating new one...');
-      sessionId = get().createSession();
+      console.error('❌ No active session for sending message. Create a session first.');
+      return;
+    }
+    
+    // ✅ Verificar se a sessão ativa realmente existe
+    const sessionExists = state.sessions.some(session => session.id === sessionId);
+    if (!sessionExists) {
+      console.error('❌ Active session does not exist:', sessionId);
+      set({ activeSessionId: null });
+      return;
     }
     
     console.log('📤 Sending message in session:', sessionId);
@@ -247,17 +269,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
   }
 }));
 
-// Hook personalizado para evitar re-renders desnecessários
+// ========================================
+// HOOKS ESPECIALIZADOS PARA EVITAR RE-RENDERS
+// ========================================
+
+// Hook para pegar apenas os dados necessários
+export const useChatSessions = () => {
+  const sessions = useChatStore(state => state.sessions);
+  const activeSessionId = useChatStore(state => state.activeSessionId);
+  const isProcessing = useChatStore(state => state.isProcessing);
+  
+  return { sessions, activeSessionId, isProcessing };
+};
+
+// Hook para pegar apenas as ações
 export const useChatActions = () => {
-  const store = useChatStore();
+  const createSession = useChatStore(state => state.createSession);
+  const renameSession = useChatStore(state => state.renameSession);
+  const deleteSession = useChatStore(state => state.deleteSession);
+  const setActiveSession = useChatStore(state => state.setActiveSession);
+  const sendMessage = useChatStore(state => state.sendMessage);
+  const clearMessages = useChatStore(state => state.clearMessages);
   
   return {
-    createSession: useCallback(store.createSession, []),
-    renameSession: useCallback(store.renameSession, []),
-    deleteSession: useCallback(store.deleteSession, []),
-    setActiveSession: useCallback(store.setActiveSession, []),
-    addMessage: useCallback(store.addMessage, []),
-    sendMessage: useCallback(store.sendMessage, []),
-    clearMessages: useCallback(store.clearMessages, []),
+    createSession,
+    renameSession,
+    deleteSession,
+    setActiveSession,
+    sendMessage,
+    clearMessages
   };
+};
+
+// Hook para pegar mensagens de uma sessão específica
+export const useSessionMessages = (sessionId: string | null) => {
+  const session = useChatStore(state => 
+    sessionId ? state.sessions.find(s => s.id === sessionId) : null
+  );
+  
+  return session?.messages || [];
 };

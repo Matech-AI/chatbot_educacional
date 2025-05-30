@@ -1,241 +1,253 @@
-import React, { useEffect } from "react";
-import { Link } from "react-router-dom";
-import { useAuthStore } from "../store/auth-store";
-import { useMaterialsStore } from "../store/materials-store";
-import { useChatStore } from "../store/chat-store";
+// 3. Cimport React, { useEffect, useCallback, useMemo } from 'react';
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  useChatSessions,
+  useChatActions,
+  useSessionMessages,
+} from "../store/chat-store";
+import { ChatInput } from "../components/chat/chat-input";
+import { ChatHistory } from "../components/chat/chat-history";
 import { Button } from "../components/ui/button";
-import { MessageSquare, Book, User, BarChart } from "lucide-react";
+import { BackButton } from "../components/ui/back-button";
+import { PlusCircle, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 
-export const HomePage: React.FC = () => {
-  const { user } = useAuthStore();
-  const { materials, fetchMaterials } = useMaterialsStore();
-  const { sessions, createSession } = useChatStore();
+export const ChatPage: React.FC = () => {
+  // Usar hooks especializados para evitar re-renders desnecessários
+  const { sessions, activeSessionId, isProcessing } = useChatSessions();
+  const { createSession, setActiveSession, deleteSession, sendMessage } =
+    useChatActions();
 
-  // Fetch materials on component mount
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Pegar o sessionId da URL de forma controlada
+  const urlSessionId = searchParams.get("session");
+
+  // Pegar mensagens da sessão ativa
+  const messages = useSessionMessages(activeSessionId);
+
+  // ========================================
+  // EFEITOS CONTROLADOS
+  // ========================================
+
+  // 1. Sincronizar URL com sessão ativa (apenas quando necessário)
   useEffect(() => {
-    fetchMaterials();
-  }, [fetchMaterials]);
+    if (urlSessionId && urlSessionId !== activeSessionId) {
+      const sessionExists = sessions.some(
+        (session) => session.id === urlSessionId
+      );
 
-  const startNewChat = () => {
-    const sessionId = createSession();
-    return `/chat?session=${sessionId}`;
-  };
+      if (sessionExists) {
+        console.log("🎯 Setting active session from URL:", urlSessionId);
+        setActiveSession(urlSessionId);
+      } else {
+        console.log("⚠️ Session from URL does not exist, removing from URL");
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [
+    urlSessionId,
+    activeSessionId,
+    sessions,
+    setActiveSession,
+    setSearchParams,
+  ]);
 
-  // Stats for dashboard
-  const stats = [
-    {
-      label: "Materiais Disponíveis",
-      value: materials.length,
-      icon: <Book size={20} />,
-      color: "bg-blue-100 text-blue-600",
-      link: "/materials",
-      roles: ["admin", "instructor", "student"],
-    },
-    {
-      label: "Conversas",
-      value: sessions.length,
-      icon: <MessageSquare size={20} />,
-      color: "bg-green-100 text-green-600",
-      link: "/chat",
-      roles: ["admin", "instructor", "student"],
-    },
-    {
-      label: "Templates de Assistente",
-      value: 3, // Mock value
-      icon: <User size={20} />,
-      color: "bg-purple-100 text-purple-600",
-      link: "/assistant",
-      roles: ["admin", "instructor"],
-    },
-    {
-      label: "Estatísticas",
-      value: "24h",
-      icon: <BarChart size={20} />,
-      color: "bg-orange-100 text-orange-600",
-      link: "/debug",
-      roles: ["admin"],
-    },
-  ];
+  // 2. Atualizar URL quando sessão ativa muda (apenas quando necessário)
+  useEffect(() => {
+    if (activeSessionId && activeSessionId !== urlSessionId) {
+      console.log("🔗 Updating URL with active session:", activeSessionId);
+      setSearchParams({ session: activeSessionId }, { replace: true });
+    }
+  }, [activeSessionId, urlSessionId, setSearchParams]);
 
-  // Filter stats based on user role
-  const filteredStats = stats.filter(
-    (stat) => user && stat.roles.includes(user.role)
+  // 3. Criar primeira sessão apenas se necessário
+  useEffect(() => {
+    if (sessions.length === 0 && !activeSessionId) {
+      console.log("📝 No sessions exist, creating first session");
+      const newSessionId = createSession();
+      // A URL será atualizada pelo useEffect acima
+    }
+  }, [sessions.length, activeSessionId, createSession]);
+
+  // ========================================
+  // CALLBACKS MEMOIZADOS
+  // ========================================
+
+  const handleSendMessage = useCallback(
+    (message: string) => {
+      console.log("📤 Sending message from ChatPage");
+      sendMessage(message);
+    },
+    [sendMessage]
   );
 
-  // Featured content - get first 3 materials safely
-  const featuredMaterials = materials.slice(0, 3);
+  const handleNewSession = useCallback(() => {
+    console.log("➕ Creating new session from button");
+    const newSessionId = createSession();
+    // A navegação será feita pelos useEffects
+  }, [createSession]);
+
+  const handleDeleteSession = useCallback(
+    (sessionId: string) => {
+      if (sessions.length <= 1) {
+        console.log("⚠️ Cannot delete last session");
+        return;
+      }
+
+      console.log("🗑️ Deleting session:", sessionId);
+      deleteSession(sessionId);
+
+      // Se deletou a sessão ativa e não há mais na URL, limpar URL
+      if (sessionId === activeSessionId && sessionId === urlSessionId) {
+        setSearchParams({}, { replace: true });
+      }
+    },
+    [
+      sessions.length,
+      deleteSession,
+      activeSessionId,
+      urlSessionId,
+      setSearchParams,
+    ]
+  );
+
+  const handleSelectSession = useCallback(
+    (sessionId: string) => {
+      console.log("👆 Selecting session:", sessionId);
+      setSearchParams({ session: sessionId }, { replace: true });
+    },
+    [setSearchParams]
+  );
+
+  // ========================================
+  // VALORES MEMOIZADOS
+  // ========================================
+
+  const canDelete = useMemo(() => sessions.length > 1, [sessions.length]);
+
+  // ========================================
+  // RENDER
+  // ========================================
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Welcome header */}
-      <header className="mb-8">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <h1 className="text-3xl font-bold text-gray-900">
-            Olá, {user?.name || "Usuário"}!
-          </h1>
-          <p className="text-gray-600 mt-1">
-            Bem-vindo ao seu Assistente Educacional de Educação Física
-          </p>
-        </motion.div>
-      </header>
+    <div className="h-full flex flex-col">
+      {/* Header com sessões */}
+      <header className="bg-white border-b border-gray-200 p-4 flex-shrink-0">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <BackButton />
+            <h1 className="text-xl font-semibold text-gray-900 mt-2">
+              💬 Assistente de Treino
+            </h1>
+          </div>
 
-      {/* Stats */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.1 }}
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
-      >
-        {filteredStats.map((stat, i) => (
-          <Link to={stat.link} key={i}>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                transition: { delay: 0.1 * i },
-              }}
-              whileHover={{ y: -5, transition: { duration: 0.2 } }}
-              className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm hover:shadow-md transition-all duration-200"
-            >
-              <div className="flex items-center">
-                <div
-                  className={`w-10 h-10 rounded-full ${stat.color} flex items-center justify-center mr-4`}
-                >
-                  {stat.icon}
-                </div>
-                <div>
-                  <p className="text-gray-500 text-sm">{stat.label}</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {stat.value}
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          </Link>
-        ))}
-      </motion.div>
-
-      {/* Quick actions */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.2 }}
-        className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm mb-8"
-      >
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">
-          Ações Rápidas
-        </h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Link to={startNewChat()}>
-            <motion.div
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.98 }}
-              className="bg-blue-600 text-white p-4 rounded-lg flex items-center justify-center gap-3 cursor-pointer"
-            >
-              <MessageSquare size={20} />
-              <span className="font-medium">Nova Conversa</span>
-            </motion.div>
-          </Link>
-
-          {user?.role !== "student" && (
-            <Link to="/materials">
-              <motion.div
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.98 }}
-                className="bg-green-600 text-white p-4 rounded-lg flex items-center justify-center gap-3 cursor-pointer"
-              >
-                <Book size={20} />
-                <span className="font-medium">Gerenciar Materiais</span>
-              </motion.div>
-            </Link>
-          )}
-
-          {user?.role !== "student" && (
-            <Link to="/assistant">
-              <motion.div
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.98 }}
-                className="bg-purple-600 text-white p-4 rounded-lg flex items-center justify-center gap-3 cursor-pointer"
-              >
-                <User size={20} />
-                <span className="font-medium">Configurar Assistente</span>
-              </motion.div>
-            </Link>
-          )}
+          <Button
+            onClick={handleNewSession}
+            variant="outline"
+            className="flex items-center gap-1"
+            disabled={isProcessing}
+          >
+            <PlusCircle size={16} />
+            <span>Nova conversa</span>
+          </Button>
         </div>
-      </motion.div>
 
-      {/* Featured content */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3 }}
-      >
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">
-          Materiais em Destaque
-        </h2>
-
-        {featuredMaterials.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {featuredMaterials.map((material, i) => (
-              <motion.div
-                key={material.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                  transition: { delay: 0.1 * i + 0.3 },
-                }}
-                className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-all duration-200"
-              >
-                <h3 className="font-medium text-gray-900 mb-1">
-                  {material.title}
-                </h3>
-                {material.description && (
-                  <p className="text-sm text-gray-500 mb-3 line-clamp-2">
-                    {material.description}
-                  </p>
-                )}
-
-                <div className="flex justify-end">
-                  <Link to={`/materials?id=${material.id}`}>
-                    <Button variant="link" size="sm">
-                      Ver material
-                    </Button>
-                  </Link>
-                </div>
-              </motion.div>
+        {/* Abas de sessões */}
+        {sessions.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto pb-2">
+            {sessions.map((session) => (
+              <SessionTab
+                key={session.id}
+                session={session}
+                isActive={session.id === activeSessionId}
+                canDelete={canDelete}
+                onSelect={handleSelectSession}
+                onDelete={handleDeleteSession}
+              />
             ))}
           </div>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="bg-gray-50 rounded-lg p-8 text-center"
-          >
-            <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Book size={24} className="text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Nenhum material encontrado
-            </h3>
-            <p className="text-gray-600 mb-4">
-              Faça upload de materiais para começar a usar o assistente.
-            </p>
-            {user?.role !== "student" && (
-              <Link to="/materials">
-                <Button>Gerenciar Materiais</Button>
-              </Link>
-            )}
-          </motion.div>
         )}
-      </motion.div>
+      </header>
+
+      {/* Área do chat */}
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
+          className="flex-1 overflow-hidden"
+        >
+          <ChatHistory messages={messages} isProcessing={isProcessing} />
+        </motion.div>
+
+        {/* Área de input */}
+        <div className="p-4 bg-gray-50 border-t border-gray-200 flex-shrink-0">
+          <ChatInput
+            onSendMessage={handleSendMessage}
+            isDisabled={isProcessing || !activeSessionId}
+            placeholder="Digite sua pergunta sobre o material do curso..."
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ========================================
+// COMPONENTE DA ABA DE SESSÃO
+// ========================================
+
+interface SessionTabProps {
+  session: { id: string; title: string };
+  isActive: boolean;
+  canDelete: boolean;
+  onSelect: (sessionId: string) => void;
+  onDelete: (sessionId: string) => void;
+}
+
+const SessionTab: React.FC<SessionTabProps> = ({
+  session,
+  isActive,
+  canDelete,
+  onSelect,
+  onDelete,
+}) => {
+  const handleClick = useCallback(() => {
+    onSelect(session.id);
+  }, [onSelect, session.id]);
+
+  const handleDelete = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (window.confirm(`Deseja excluir a conversa "${session.title}"?`)) {
+        onDelete(session.id);
+      }
+    },
+    [onDelete, session.id, session.title]
+  );
+
+  return (
+    <div
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
+        isActive
+          ? "bg-blue-100 text-blue-700 font-medium"
+          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+      }`}
+      onClick={handleClick}
+    >
+      <span className="truncate max-w-[150px]">{session.title}</span>
+
+      {canDelete && (
+        <button
+          onClick={handleDelete}
+          className="opacity-60 hover:opacity-100 transition-opacity"
+          title="Excluir conversa"
+        >
+          <Trash2 size={14} />
+        </button>
+      )}
     </div>
   );
 };

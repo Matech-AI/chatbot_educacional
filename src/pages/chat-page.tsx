@@ -1,156 +1,253 @@
-import React, { useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { useChatStore } from '../store/chat-store';
-import { ChatInput } from '../components/chat/chat-input';
-import { ChatHistory } from '../components/chat/chat-history';
-import { Button } from '../components/ui/button';
-import { BackButton } from '../components/ui/back-button';
-import { PlusCircle, Trash2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import React, { useEffect, useCallback, useMemo } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  useChatSessions,
+  useChatActions,
+  useSessionMessages,
+} from "../store/chat-store";
+import { ChatInput } from "../components/chat/chat-input";
+import { ChatHistory } from "../components/chat/chat-history";
+import { Button } from "../components/ui/button";
+import { BackButton } from "../components/ui/back-button";
+import { PlusCircle, Trash2 } from "lucide-react";
+import { motion } from "framer-motion";
 
 export const ChatPage: React.FC = () => {
-  const { 
-    sessions,
-    activeSessionId,
-    isProcessing,
-    createSession,
-    setActiveSession,
-    deleteSession,
-    sendMessage
-  } = useChatStore();
-  
-  const location = useLocation();
+  // Usar hooks especializados para evitar re-renders desnecessários
+  const { sessions, activeSessionId, isProcessing } = useChatSessions();
+  const { createSession, setActiveSession, deleteSession, sendMessage } =
+    useChatActions();
+
   const navigate = useNavigate();
-  
-  // Get session ID from URL query parameter
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Pegar o sessionId da URL de forma controlada
+  const urlSessionId = searchParams.get("session");
+
+  // Pegar mensagens da sessão ativa
+  const messages = useSessionMessages(activeSessionId);
+
+  // ========================================
+  // EFEITOS CONTROLADOS
+  // ========================================
+
+  // 1. Sincronizar URL com sessão ativa (apenas quando necessário)
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const sessionId = params.get('session');
-    
-    if (sessionId) {
-      // Check if the session exists
-      const sessionExists = sessions.some(session => session.id === sessionId);
-      
+    if (urlSessionId && urlSessionId !== activeSessionId) {
+      const sessionExists = sessions.some(
+        (session) => session.id === urlSessionId
+      );
+
       if (sessionExists) {
-        setActiveSession(sessionId);
+        console.log("🎯 Setting active session from URL:", urlSessionId);
+        setActiveSession(urlSessionId);
       } else {
-        // Remove invalid session from URL
-        navigate('/chat', { replace: true });
+        console.log("⚠️ Session from URL does not exist, removing from URL");
+        setSearchParams({}, { replace: true });
       }
-    } else if (sessions.length > 0 && !activeSessionId) {
-      // Set the first session as active if none is selected
-      setActiveSession(sessions[0].id);
     }
-  }, [location.search, sessions, activeSessionId, setActiveSession, navigate]);
-  
-  // Create a new session if none exists
+  }, [
+    urlSessionId,
+    activeSessionId,
+    sessions,
+    setActiveSession,
+    setSearchParams,
+  ]);
+
+  // 2. Atualizar URL quando sessão ativa muda (apenas quando necessário)
   useEffect(() => {
-    if (sessions.length === 0) {
+    if (activeSessionId && activeSessionId !== urlSessionId) {
+      console.log("🔗 Updating URL with active session:", activeSessionId);
+      setSearchParams({ session: activeSessionId }, { replace: true });
+    }
+  }, [activeSessionId, urlSessionId, setSearchParams]);
+
+  // 3. Criar primeira sessão apenas se necessário E se está na página de chat
+  useEffect(() => {
+    // ✅ Só criar se está na página, não tem sessões E não tem sessão ativa
+    if (sessions.length === 0 && !activeSessionId) {
+      console.log("📝 ChatPage: No sessions exist, creating first session");
       const newSessionId = createSession();
-      navigate(`/chat?session=${newSessionId}`, { replace: true });
     }
-  }, [sessions, createSession, navigate]);
-  
-  const handleSendMessage = (message: string) => {
-    if (activeSessionId) {
+  }, []); // ✅ Array vazio - executar apenas uma vez quando montar o componente
+
+  // ========================================
+  // CALLBACKS MEMOIZADOS
+  // ========================================
+
+  const handleSendMessage = useCallback(
+    (message: string) => {
+      console.log("📤 Sending message from ChatPage");
       sendMessage(message);
-    }
-  };
-  
-  const handleNewSession = () => {
+    },
+    [sendMessage]
+  );
+
+  const handleNewSession = useCallback(() => {
+    console.log("➕ Creating new session from button");
     const newSessionId = createSession();
-    navigate(`/chat?session=${newSessionId}`);
-  };
-  
-  const handleDeleteSession = (sessionId: string) => {
-    deleteSession(sessionId);
-  };
-  
-  const handleSelectSession = (sessionId: string) => {
-    navigate(`/chat?session=${sessionId}`);
-  };
-  
-  // Get the active session messages
-  const activeSession = sessions.find(session => session.id === activeSessionId);
-  const messages = activeSession?.messages || [];
-  
+    // A navegação será feita pelos useEffects
+  }, [createSession]);
+
+  const handleDeleteSession = useCallback(
+    (sessionId: string) => {
+      if (sessions.length <= 1) {
+        console.log("⚠️ Cannot delete last session");
+        return;
+      }
+
+      console.log("🗑️ Deleting session:", sessionId);
+      deleteSession(sessionId);
+
+      // Se deletou a sessão ativa e não há mais na URL, limpar URL
+      if (sessionId === activeSessionId && sessionId === urlSessionId) {
+        setSearchParams({}, { replace: true });
+      }
+    },
+    [
+      sessions.length,
+      deleteSession,
+      activeSessionId,
+      urlSessionId,
+      setSearchParams,
+    ]
+  );
+
+  const handleSelectSession = useCallback(
+    (sessionId: string) => {
+      console.log("👆 Selecting session:", sessionId);
+      setSearchParams({ session: sessionId }, { replace: true });
+    },
+    [setSearchParams]
+  );
+
+  // ========================================
+  // VALORES MEMOIZADOS
+  // ========================================
+
+  const canDelete = useMemo(() => sessions.length > 1, [sessions.length]);
+
+  // ========================================
+  // RENDER
+  // ========================================
+
   return (
     <div className="h-full flex flex-col">
-      {/* Header with sessions */}
-      <header className="bg-white border-b border-gray-200 p-4">
+      {/* Header com sessões */}
+      <header className="bg-white border-b border-gray-200 p-4 flex-shrink-0">
         <div className="flex items-center justify-between mb-4">
           <div>
             <BackButton />
-            <h1 className="text-xl font-semibold text-gray-900 mt-2">Assistente de Treino</h1>
+            <h1 className="text-xl font-semibold text-gray-900 mt-2">
+              💬 Assistente de Treino
+            </h1>
           </div>
-          
+
           <Button
             onClick={handleNewSession}
             variant="outline"
             className="flex items-center gap-1"
+            disabled={isProcessing}
           >
             <PlusCircle size={16} />
             <span>Nova conversa</span>
           </Button>
         </div>
-        
-        {/* Session tabs */}
+
+        {/* Abas de sessões */}
         {sessions.length > 0 && (
-          <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-2">
-            {sessions.map(session => (
-              <div
+          <div className="flex items-center gap-2 overflow-x-auto pb-2">
+            {sessions.map((session) => (
+              <SessionTab
                 key={session.id}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
-                  session.id === activeSessionId
-                    ? 'bg-blue-100 text-blue-700 font-medium'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                onClick={() => handleSelectSession(session.id)}
-              >
-                <span className="truncate max-w-[150px]">{session.title}</span>
-                
-                {sessions.length > 1 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteSession(session.id);
-                    }}
-                    className="opacity-60 hover:opacity-100"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
+                session={session}
+                isActive={session.id === activeSessionId}
+                canDelete={canDelete}
+                onSelect={handleSelectSession}
+                onDelete={handleDeleteSession}
+              />
             ))}
           </div>
         )}
       </header>
-      
-      {/* Chat area */}
-      <div className="flex-1 overflow-hidden flex flex-col">
-        <motion.div 
+
+      {/* Área do chat */}
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.3 }}
           className="flex-1 overflow-hidden"
         >
-          {activeSession && (
-            <ChatHistory 
-              messages={messages} 
-              isProcessing={isProcessing}
-            />
-          )}
+          <ChatHistory messages={messages} isProcessing={isProcessing} />
         </motion.div>
-        
-        {/* Input area */}
-        <div className="p-4 bg-gray-50 border-t border-gray-200">
-          <ChatInput 
+
+        {/* Área de input */}
+        <div className="p-4 bg-gray-50 border-t border-gray-200 flex-shrink-0">
+          <ChatInput
             onSendMessage={handleSendMessage}
             isDisabled={isProcessing || !activeSessionId}
             placeholder="Digite sua pergunta sobre o material do curso..."
           />
         </div>
       </div>
+    </div>
+  );
+};
+
+// ========================================
+// COMPONENTE DA ABA DE SESSÃO
+// ========================================
+
+interface SessionTabProps {
+  session: { id: string; title: string };
+  isActive: boolean;
+  canDelete: boolean;
+  onSelect: (sessionId: string) => void;
+  onDelete: (sessionId: string) => void;
+}
+
+const SessionTab: React.FC<SessionTabProps> = ({
+  session,
+  isActive,
+  canDelete,
+  onSelect,
+  onDelete,
+}) => {
+  const handleClick = useCallback(() => {
+    onSelect(session.id);
+  }, [onSelect, session.id]);
+
+  const handleDelete = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (window.confirm(`Deseja excluir a conversa "${session.title}"?`)) {
+        onDelete(session.id);
+      }
+    },
+    [onDelete, session.id, session.title]
+  );
+
+  return (
+    <div
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
+        isActive
+          ? "bg-blue-100 text-blue-700 font-medium"
+          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+      }`}
+      onClick={handleClick}
+    >
+      <span className="truncate max-w-[150px]">{session.title}</span>
+
+      {canDelete && (
+        <button
+          onClick={handleDelete}
+          className="opacity-60 hover:opacity-100 transition-opacity"
+          title="Excluir conversa"
+        >
+          <Trash2 size={14} />
+        </button>
+      )}
     </div>
   );
 };
