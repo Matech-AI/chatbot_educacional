@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { ChatSession, Message, Source } from '../types';
 import { generateUniqueId } from '../lib/utils';
 import { api } from '../lib/api';
@@ -43,29 +44,80 @@ const sendToAI = async (message: string): Promise<{ content: string, sources: So
   }
 };
 
-export const useChatStore = create<ChatState>((set, get) => ({
-  sessions: [],
-  activeSessionId: null,
-  isProcessing: false,
+// Initialize with first session if none exists
+const initializeStore = () => {
+  const savedState = JSON.parse(localStorage.getItem('chat-storage') || '{}');
+  const sessions = savedState?.state?.sessions || [];
+  
+  // If no sessions exist, create a default one
+  if (sessions.length === 0) {
+    const firstSession = {
+      id: `${Date.now()}_${Math.random().toString(36).substring(2)}`,
+      title: 'Nova conversa 1',
+      messages: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    
+    return {
+      sessions: [firstSession],
+      activeSessionId: firstSession.id,
+      isProcessing: false
+    };
+  }
+  
+  return {
+    sessions,
+    activeSessionId: savedState?.state?.activeSessionId || (sessions.length > 0 ? sessions[0].id : null),
+    isProcessing: false
+  };
+};
+
+export const useChatStore = create<ChatState>()(persist((set, get) => ({
+  ...initializeStore(),
   
   createSession: () => {
     const state = get();
+    
+    // ✅ Verificar se já há uma sessão sendo criada recentemente (últimos 100ms)
+    const now = Date.now();
+    const recentSession = state.sessions.find(session => 
+      now - new Date(session.createdAt).getTime() < 100
+    );
+    
+    if (recentSession) {
+      console.log('⚠️ Session recently created, returning existing:', recentSession.id);
+      return recentSession.id;
+    }
     
     // ✅ Gerar ID único com timestamp para garantir unicidade
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2);
     const id = `${timestamp}_${random}`;
     
+    // ✅ Calcular próximo número baseado no maior número existente
+    const existingNumbers = state.sessions
+      .map(session => {
+        const match = session.title.match(/Nova conversa (\d+)/);
+        return match ? parseInt(match[1], 10) : 0;
+      })
+      .filter(num => num > 0);
+    
+    const conversationNumber = existingNumbers.length > 0 
+      ? Math.max(...existingNumbers) + 1 
+      : 1;
+    
     const newSession: ChatSession = {
       id,
-      title: `Nova conversa ${state.sessions.length + 1}`,
+      title: `Nova conversa ${conversationNumber}`,
       messages: [],
       createdAt: new Date(),
       updatedAt: new Date()
     };
     
-    console.log('💬 Creating new chat session:', id);
+    console.log('💬 Creating new chat session:', id, 'with number:', conversationNumber);
     
+    // ✅ ADICIONAR nova sessão (não substituir)
     set(state => ({
       sessions: [...state.sessions, newSession],
       activeSessionId: id
@@ -96,6 +148,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // If we deleted the active session, select another one if available
       if (state.activeSessionId === sessionId) {
         newActiveId = filteredSessions.length > 0 ? filteredSessions[0].id : null;
+        console.log('💡 Active session deleted, new active:', newActiveId);
       }
       
       return {
@@ -113,6 +166,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     
     if (!sessionExists) {
       console.warn('⚠️ Trying to set active session that does not exist:', sessionId);
+      return;
+    }
+    
+    // Evitar mudanças desnecessárias
+    if (state.activeSessionId === sessionId) {
+      console.log('📌 Session already active, skipping:', sessionId);
       return;
     }
     
@@ -267,8 +326,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       )
     }));
   }
+}), {
+  name: 'chat-storage',
+  version: 1,
+  // Don't persist isProcessing state
+  partialize: (state) => ({
+    sessions: state.sessions,
+    activeSessionId: state.activeSessionId
+  })
 }));
-
 // ========================================
 // HOOKS ESPECIALIZADOS PARA EVITAR RE-RENDERS
 // ========================================

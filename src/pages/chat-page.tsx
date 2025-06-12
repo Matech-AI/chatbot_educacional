@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useMemo } from "react";
+import React, { useEffect, useCallback, useMemo, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   useChatSessions,
@@ -23,53 +23,56 @@ const ChatPage: React.FC = () => {
 
   // Pegar o sessionId da URL de forma controlada
   const urlSessionId = searchParams.get("session");
+  
+  // Flag para prevenir loops infinitos
+  const isUpdatingRef = useRef(false);
 
   // Pegar mensagens da sessão ativa
   const messages = useSessionMessages(activeSessionId);
 
   // ========================================
-  // EFEITOS CONTROLADOS
+  // EFEITOS CONTROLADOS - CORRIGIDO PARA EVITAR LOOPS
   // ========================================
 
-  // 1. Sincronizar URL com sessão ativa (apenas quando necessário)
+  // 1. Sincronizar URL com sessão ativa - COM PROTEÇÃO CONTRA LOOPS
   useEffect(() => {
+    // Se há uma sessão na URL diferente da ativa, ativá-la
     if (urlSessionId && urlSessionId !== activeSessionId) {
-      const sessionExists = sessions.some(
-        (session) => session.id === urlSessionId
-      );
-
+      const sessionExists = sessions.some(s => s.id === urlSessionId);
       if (sessionExists) {
-        console.log("🎯 Setting active session from URL:", urlSessionId);
+        console.log("🎯 Activating session from URL:", urlSessionId);
         setActiveSession(urlSessionId);
       } else {
-        console.log("⚠️ Session from URL does not exist, removing from URL");
+        console.log("⚠️ Session from URL doesn't exist, clearing URL:", urlSessionId);
         setSearchParams({}, { replace: true });
       }
     }
-  }, [
-    urlSessionId,
-    activeSessionId,
-    sessions,
-    setActiveSession,
-    setSearchParams,
-  ]);
+  }, [urlSessionId, activeSessionId, sessions, setActiveSession, setSearchParams]);
 
-  // 2. Atualizar URL quando sessão ativa muda (apenas quando necessário)
-  useEffect(() => {
-    if (activeSessionId && activeSessionId !== urlSessionId) {
-      console.log("🔗 Updating URL with active session:", activeSessionId);
-      setSearchParams({ session: activeSessionId }, { replace: true });
-    }
-  }, [activeSessionId, urlSessionId, setSearchParams]);
+  // 2. NÃO atualizar URL automaticamente quando sessão ativa muda
+  // A URL só deve ser atualizada por ações explícitas do usuário
 
-  // 3. Criar primeira sessão apenas se necessário E se está na página de chat
+  // 3. Log para debug (sem limpeza automática para evitar confusão)
   useEffect(() => {
-    // ✅ Só criar se está na página, não tem sessões E não tem sessão ativa
-    if (sessions.length === 0 && !activeSessionId) {
-      console.log("📝 ChatPage: No sessions exist, creating first session");
+    console.log('📊 Current state - Sessions:', sessions.length, 'Active:', activeSessionId, 'URL:', urlSessionId);
+  }, [sessions.length, activeSessionId, urlSessionId]);
+  
+  // 4. Criar primeira sessão automaticamente quando acessar a página de chat
+  useEffect(() => {
+    // ✅ Sempre criar uma sessão se não houver nenhuma
+    if (sessions.length === 0) {
+      console.log("📝 ChatPage: No sessions exist, creating first session automatically");
       const newSessionId = createSession();
+      // Navegar imediatamente para a nova sessão
+      setSearchParams({ session: newSessionId }, { replace: true });
     }
-  }, []); // ✅ Array vazio - executar apenas uma vez quando montar o componente
+    // Se há sessões mas nenhuma ativa e nenhuma na URL, ativar a primeira
+    else if (!activeSessionId && !urlSessionId && sessions.length > 0) {
+      console.log("📝 ChatPage: Sessions exist but none active, activating first one");
+      const firstSession = sessions[0];
+      setSearchParams({ session: firstSession.id }, { replace: true });
+    }
+  }, [sessions.length, activeSessionId, urlSessionId, createSession, setSearchParams]); // ✅ Incluir dependências para evitar criações desnecessárias
 
   // ========================================
   // CALLBACKS MEMOIZADOS
@@ -84,10 +87,19 @@ const ChatPage: React.FC = () => {
   );
 
   const handleNewSession = useCallback(() => {
-    console.log("➕ Creating new session from button");
+    console.log("➕ Creating SINGLE new session from button");
     const newSessionId = createSession();
-    // A navegação será feita pelos useEffects
-  }, [createSession]);
+    // Forçar navegação imediata para a nova sessão
+    setSearchParams({ session: newSessionId }, { replace: true });
+  }, [createSession, setSearchParams]);
+  
+  // Função temporária para resetar todas as sessões
+  const handleResetSessions = useCallback(() => {
+    if (window.confirm('Deseja limpar todas as conversas e resetar o sistema?')) {
+      localStorage.removeItem('chat-storage');
+      window.location.reload();
+    }
+  }, []);
 
   const handleDeleteSession = useCallback(
     (sessionId: string) => {
@@ -97,15 +109,33 @@ const ChatPage: React.FC = () => {
       }
 
       console.log("🗑️ Deleting session:", sessionId);
+      
+      // Get remaining sessions after deletion
+      const remainingSessions = sessions.filter(s => s.id !== sessionId);
+      
+      // Delete the session
       deleteSession(sessionId);
 
-      // Se deletou a sessão ativa e não há mais na URL, limpar URL
-      if (sessionId === activeSessionId && sessionId === urlSessionId) {
+      // Handle URL and active session update
+      if (sessionId === activeSessionId) {
+        if (remainingSessions.length > 0) {
+          // Navigate to the first remaining session
+          const firstRemaining = remainingSessions[0];
+          console.log("🎯 Navigating to first remaining session:", firstRemaining.id);
+          setSearchParams({ session: firstRemaining.id }, { replace: true });
+        } else {
+          // No sessions left, clear URL
+          console.log("🧹 No sessions left, clearing URL");
+          setSearchParams({}, { replace: true });
+        }
+      } else if (sessionId === urlSessionId) {
+        // If we deleted the session from URL but it wasn't active, clear URL
+        console.log("🧹 Deleted session was in URL, clearing URL");
         setSearchParams({}, { replace: true });
       }
     },
     [
-      sessions.length,
+      sessions,
       deleteSession,
       activeSessionId,
       urlSessionId,
@@ -116,9 +146,13 @@ const ChatPage: React.FC = () => {
   const handleSelectSession = useCallback(
     (sessionId: string) => {
       console.log("👆 Selecting session:", sessionId);
-      setSearchParams({ session: sessionId }, { replace: true });
+      // Só atualizar se for diferente da sessão atual
+      if (sessionId !== activeSessionId) {
+        setActiveSession(sessionId);
+        setSearchParams({ session: sessionId }, { replace: true });
+      }
     },
-    [setSearchParams]
+    [setSearchParams, setActiveSession, activeSessionId]
   );
 
   // ========================================
@@ -143,15 +177,26 @@ const ChatPage: React.FC = () => {
             </h1>
           </div>
 
-          <Button
-            onClick={handleNewSession}
-            variant="outline"
-            className="flex items-center gap-1"
-            disabled={isProcessing}
-          >
-            <PlusCircle size={16} />
-            <span>Nova conversa</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleResetSessions}
+              variant="ghost"
+              size="sm"
+              className="text-xs text-red-500 hover:text-red-700"
+              title="Resetar todas as conversas"
+            >
+              Reset
+            </Button>
+            <Button
+              onClick={handleNewSession}
+              variant="outline"
+              className="flex items-center gap-1"
+              disabled={isProcessing}
+            >
+              <PlusCircle size={16} />
+              <span>Nova conversa</span>
+            </Button>
+          </div>
         </div>
 
         {/* Abas de sessões */}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
@@ -20,6 +20,11 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   const [formState, setFormState] = useState<AssistantConfig>(config);
   const [templateName, setTemplateName] = useState('');
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  
+  // Update form when config prop changes (when template is loaded)
+  useEffect(() => {
+    setFormState(config);
+  }, [config]);
   
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
