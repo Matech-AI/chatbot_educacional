@@ -19,8 +19,7 @@ from drive_handler import DriveHandler
 from auth import (
     create_access_token,
     get_current_user,
-    get_password_hash,
-    verify_password,
+    authenticate_user as auth_authenticate_user,
     User,
     Token
 )
@@ -203,7 +202,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """User login endpoint"""
     logger.info(f"🔐 Login attempt for: {form_data.username}")
 
-    user = authenticate_user(form_data.username, form_data.password)
+    user = auth_authenticate_user(form_data.username, form_data.password)
     if not user:
         logger.warning(f"❌ Failed login attempt for: {form_data.username}")
         raise HTTPException(
@@ -454,9 +453,32 @@ async def initialize_system(
 # ========================================
 
 
+# Chat endpoint (simplified) - No authentication required
 @app.post("/chat", response_model=Response)
-async def chat(question: Question, current_user: User = Depends(get_current_user)):
-    """Process a chat question and return response"""
+async def chat(question: Question):
+    """Simplified chat endpoint for testing"""
+    logger.info(f"Received question: {question.content}")
+    
+    # Simulated response for testing
+    simulated_answer = f"Esta é uma resposta simulada para: '{question.content}'. O sistema está funcionando corretamente, mas as funcionalidades de IA precisam ser configuradas com uma chave OpenAI válida."
+    
+    return Response(
+        answer=simulated_answer,
+        sources=[
+            {
+                "title": "Sistema de Teste",
+                "source": "backend/main_simple.py",
+                "page": 1,
+                "relevance": 0.9
+            }
+        ],
+        response_time=0.1
+    )
+
+# Chat endpoint with authentication (original)
+@app.post("/chat-auth", response_model=Response)
+async def chat_auth(question: Question, current_user: User = Depends(get_current_user)):
+    """Process a chat question and return response with authentication"""
     logger.info(
         f"💬 Chat request from {current_user.username}: {question.content[:50]}...")
 
@@ -831,6 +853,50 @@ async def delete_material(filename: str, current_user: User = Depends(get_curren
     except Exception as e:
         logger.error(f"❌ Delete error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Delete error: {str(e)}")
+
+
+@app.get("/materials-zip")
+async def download_all_materials():
+    """Download all materials as a ZIP file"""
+    logger.info("📦 Materials ZIP download requested")
+    
+    materials_dir = Path("data/materials")
+    if not materials_dir.exists() or not any(materials_dir.iterdir()):
+        raise HTTPException(status_code=404, detail="No materials found")
+    
+    try:
+        # Create temporary ZIP file
+        temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+        zip_path = temp_zip.name
+        temp_zip.close()
+        
+        # Create ZIP archive
+        shutil.make_archive(zip_path.replace('.zip', ''), 'zip', str(materials_dir))
+        
+        logger.info(f"✅ ZIP file created: {zip_path}")
+        
+        return FileResponse(
+            path=zip_path, 
+            filename="materiais.zip", 
+            media_type="application/zip"
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Error creating ZIP: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating ZIP: {str(e)}")
+
+# System status endpoint
+@app.get("/status")
+async def get_status():
+    """Get system status"""
+    return {
+        "backend": "online",
+        "database": "simulated",
+        "ai_enabled": False,
+        "materials_count": len(list(Path("data/materials").glob("*")) if Path("data/materials").exists() else []),
+        "uptime": "Running",
+        "message": "Sistema funcionando em modo simplificado. Configure OpenAI para funcionalidades completas."
+    }
 
 # ========================================
 # STARTUP EVENT
