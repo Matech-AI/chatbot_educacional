@@ -172,18 +172,13 @@ const ProtectedRoute: React.FC<{
 // ========================================
 // PÁGINAS SIMPLES INLINE
 // ========================================
-const SimpleSettingsPage: React.FC = () => (
-  <div className="p-6 max-w-4xl mx-auto">
-    <h1 className="text-2xl font-bold text-gray-900 mb-4">⚙️ Configurações</h1>
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <p className="text-gray-600 mb-4">🚧 Página em construção</p>
-      <div className="space-y-2 text-sm text-gray-600">
-        <p>• Configurar parâmetros do sistema</p>
-        <p>• Gerenciar usuários</p>
-        <p>• Definir permissões</p>
-      </div>
-    </div>
-  </div>
+// Settings page now lazy loaded
+const SettingsPage = lazy(() =>
+  import("./pages/settings-page").catch(() =>
+    import("./pages/settings-page").then((m) => ({
+      default: m.SettingsPage || m.default,
+    }))
+  )
 );
 
 const SimpleDebugPage: React.FC = () => {
@@ -333,7 +328,13 @@ function App() {
               path="settings"
               element={
                 <ProtectedRoute allowedRoles={["admin"]}>
-                  <SimpleSettingsPage />
+                  <Suspense
+                    fallback={
+                      <LoadingSpinner message="Carregando configurações..." />
+                    }
+                  >
+                    <SettingsPage />
+                  </Suspense>
                 </ProtectedRoute>
               }
             />
