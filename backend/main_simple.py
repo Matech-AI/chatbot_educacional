@@ -133,17 +133,7 @@ def save_users(users):
     logger.info(f"💾 Saved {len(users)} users to file")
 
 
-def authenticate_user(username: str, password: str):
-    """Authenticate user credentials"""
-    logger.info(f"🔐 Authenticating user: {username}")
-    users = load_users()
-    for user in users:
-        if user["username"] == username and user["password"] == password:
-            logger.info(
-                f"✅ Authentication successful for: {username} (role: {user['role']})")
-            return user
-    logger.warning(f"❌ Authentication failed for: {username}")
-    return None
+# Removed local authenticate_user function - using auth module instead
 
 # ========================================
 # UTILITY FUNCTIONS
@@ -212,7 +202,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         )
 
     access_token = create_access_token(
-        data={"sub": user["username"], "role": user["role"]}
+        data={"sub": user.username, "role": user.role}
     )
 
     logger.info(f"✅ Login successful for: {form_data.username}")
