@@ -1,0 +1,546 @@
+import os
+import logging
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional, Any, Set
+import io
+import requests
+import json
+import time
+import hashlib
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.http import MediaIoBaseDownload
+
+# Configure enhanced logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+class RecursiveDriveHandler:
+    """Enhanced Drive Handler with recursive folder processing and duplicate detection"""
+
+    def __init__(self, materials_dir: str = "data/materials"):
+        self.materials_dir = Path(materials_dir)
+        self.materials_dir.mkdir(parents=True, exist_ok=True)
+        self.service = None
+        self.api_key = None
+        
+        # Track processed files to avoid duplicates
+        self.processed_files: Dict[str, str] = {}  # filename -> file_id
+        self.file_hashes: Dict[str, str] = {}      # hash -> filepath
+        self.download_stats = {
+            'total_folders': 0,
+            'total_files': 0,
+            'downloaded_files': 0,
+            'skipped_duplicates': 0,
+            'errors': 0
+        }
+
+        # Updated scopes for better access
+        self.scopes = [
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/drive.metadata.readonly'
+        ]
+
+        logger.info(f"🚀 Initialized RecursiveDriveHandler with materials directory: {self.materials_dir}")
+
+    def authenticate(self, credentials_path: str = 'credentials.json', api_key: str = None) -> bool:
+        """Main authentication method that tries multiple approaches in order"""
+        logger.info("🚀 Starting Google Drive authentication process...")
+
+        auth_methods = [
+            ("API Key", lambda: self.authenticate_with_api_key(api_key) if api_key else False),
+            ("Environment API Key", lambda: self.authenticate_with_api_key(os.getenv('GOOGLE_DRIVE_API_KEY')) if os.getenv('GOOGLE_DRIVE_API_KEY') else False),
+            ("OAuth2 Credentials", lambda: self.authenticate_with_credentials(credentials_path)),
+            ("Public Access", self.authenticate_public_access)
+        ]
+
+        for method_name, auth_func in auth_methods:
+            logger.info(f"🔄 Trying authentication method: {method_name}")
+            try:
+                if auth_func():
+                    logger.info(f"✅ Authentication successful with: {method_name}")
+                    return True
+                else:
+                    logger.info(f"❌ Authentication failed with: {method_name}")
+            except Exception as e:
+                logger.error(f"❌ Error with {method_name}: {e}")
+
+        logger.error("❌ All authentication methods failed")
+        return False
+
+    def authenticate_with_api_key(self, api_key: str) -> bool:
+        """Authenticate with Google Drive using API Key (for public files)"""
+        try:
+            logger.info("🔑 Attempting authentication with API Key...")
+            if not api_key or len(api_key) < 10:
+                logger.error("❌ Invalid API key provided")
+                return False
+
+            self.api_key = api_key
+            self.service = build('drive', 'v3', developerKey=api_key)
+            
+            # Test the API key
+            try:
+                test_result = self.service.files().list(pageSize=1, fields="files(id,name)").execute()
+                logger.info("✅ API Key test successful")
+            except HttpError as e:
+                if e.resp.status == 403:
+                    logger.warning("⚠️ API Key has limited permissions, but may work for public files")
+                else:
+                    logger.error(f"❌ API Key test failed: HTTP {e.resp.status}")
+                    return False
+
+            logger.info("✅ Successfully authenticated with Google Drive using API Key")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Error authenticating with API Key: {str(e)}")
+            return False
+
+    def authenticate_with_credentials(self, credentials_path: str = 'credentials.json') -> bool:
+        """Authenticate with Google Drive using OAuth2 credentials"""
+        try:
+            logger.info("🔐 Attempting OAuth2 authentication...")
+            
+            creds = None
+            token_path = 'token.json'
+
+            # Load existing token
+            if os.path.exists(token_path):
+                logger.info("📖 Loading existing token from file...")
+                try:
+                    creds = Credentials.from_authorized_user_file(token_path, self.scopes)
+                except Exception as e:
+                    logger.warning(f"⚠️ Error loading token: {e}")
+                    creds = None
+
+            # If there are no (valid) credentials available, let the user log in
+            if not creds or not creds.valid:
+                logger.info("🔄 Credentials invalid or missing, refreshing/creating new ones...")
+
+                if creds and creds.expired and creds.refresh_token:
+                    logger.info("🔄 Refreshing expired credentials...")
+                    try:
+                        creds.refresh(Request())
+                        logger.info("✅ Credentials refreshed successfully")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Token refresh failed: {e}")
+                        creds = None
+
+                if not creds:
+                    if not os.path.exists(credentials_path):
+                        logger.error(f"❌ Credentials file not found: {credentials_path}")
+                        raise FileNotFoundError(f"Credentials file not found: {credentials_path}")
+
+                    logger.info("🌐 Starting OAuth2 flow...")
+                    flow = InstalledAppFlow.from_client_secrets_file(credentials_path, self.scopes)
+                    
+                    try:
+                        creds = flow.run_local_server(port=8080, open_browser=False)
+                        logger.info("✅ OAuth2 flow completed successfully")
+                    except Exception as oauth_error:
+                        logger.error(f"❌ OAuth2 flow failed: {oauth_error}")
+                        return False
+
+                # Save the credentials for the next run
+                if creds:
+                    logger.info("💾 Saving credentials to token.json...")
+                    try:
+                        with open(token_path, 'w') as token:
+                            token.write(creds.to_json())
+                        logger.info("✅ Credentials saved successfully")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not save credentials: {e}")
+
+            if creds:
+                logger.info("🔨 Building Google Drive service...")
+                self.service = build('drive', 'v3', credentials=creds)
+                
+                try:
+                    about = self.service.about().get(fields="user").execute()
+                    user_email = about.get('user', {}).get('emailAddress', 'Unknown')
+                    logger.info(f"✅ Successfully authenticated as: {user_email}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not get user info, but service created: {e}")
+
+                logger.info("✅ Successfully authenticated with Google Drive using OAuth2")
+                return True
+            else:
+                logger.error("❌ No valid credentials obtained")
+                return False
+
+        except Exception as e:
+            logger.error(f"❌ Error authenticating with OAuth2: {str(e)}")
+            return False
+
+    def authenticate_public_access(self) -> bool:
+        """Try to authenticate for public file access without API key"""
+        try:
+            logger.info("🔓 Attempting public access without authentication...")
+            self.service = build('drive', 'v3')
+            logger.info("✅ Public service built successfully")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Public access failed: {str(e)}")
+            return False
+
+    def get_folder_structure(self, folder_id: str, current_path: str = "") -> Dict[str, Any]:
+        """Get complete folder structure recursively"""
+        logger.info(f"📁 Analyzing folder structure: {folder_id} at path: {current_path}")
+        
+        try:
+            # Get folder info
+            folder_info = self.service.files().get(fileId=folder_id, fields="id,name").execute()
+            folder_name = folder_info.get('name', 'Unknown')
+            
+            structure = {
+                'id': folder_id,
+                'name': folder_name,
+                'path': current_path,
+                'subfolders': {},
+                'files': []
+            }
+            
+            # List all items in folder
+            query = f"'{folder_id}' in parents and trashed = false"
+            results = self.service.files().list(
+                q=query,
+                pageSize=1000,
+                fields="files(id,name,mimeType,size,parents,createdTime,modifiedTime)"
+            ).execute()
+            
+            items = results.get('files', [])
+            logger.info(f"📊 Found {len(items)} items in folder: {folder_name}")
+            
+            for item in items:
+                if item['mimeType'] == 'application/vnd.google-apps.folder':
+                    # It's a subfolder - recurse
+                    subfolder_path = os.path.join(current_path, folder_name) if current_path else folder_name
+                    structure['subfolders'][item['id']] = self.get_folder_structure(
+                        item['id'], subfolder_path
+                    )
+                    self.download_stats['total_folders'] += 1
+                else:
+                    # It's a file
+                    structure['files'].append(item)
+                    self.download_stats['total_files'] += 1
+            
+            return structure
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting folder structure: {str(e)}")
+            return {'id': folder_id, 'name': 'Error', 'path': current_path, 'subfolders': {}, 'files': []}
+
+    def calculate_file_hash(self, file_content: bytes) -> str:
+        """Calculate SHA256 hash of file content"""
+        return hashlib.sha256(file_content).hexdigest()
+
+    def is_duplicate_file(self, filename: str, file_content: bytes) -> Tuple[bool, str]:
+        """Check if file is duplicate by name or content"""
+        file_hash = self.calculate_file_hash(file_content)
+        
+        # Check by hash first (exact content match)
+        if file_hash in self.file_hashes:
+            return True, f"Content duplicate of: {self.file_hashes[file_hash]}"
+        
+        # Check by filename
+        if filename in self.processed_files:
+            return True, f"Name duplicate: {filename}"
+        
+        return False, ""
+
+    def download_file_with_duplicate_check(self, file_id: str, filename: str, folder_path: str) -> Optional[Dict[str, Any]]:
+        """Download a single file with duplicate checking"""
+        try:
+            logger.info(f"📥 Downloading file: {filename} in folder: {folder_path}")
+            
+            # Get file metadata
+            file_metadata = self.get_file_metadata(file_id)
+            if not file_metadata:
+                logger.warning(f"⚠️ Could not get metadata for file: {filename}")
+                return None
+            
+            mime_type = file_metadata.get('mimeType', '')
+            file_size = int(file_metadata.get('size', 0)) if file_metadata.get('size') else 0
+            
+            # Skip Google Apps files
+            if mime_type.startswith('application/vnd.google-apps'):
+                logger.warning(f"⏭️ Skipping Google Apps file: {filename}")
+                return None
+            
+            # Download file content
+            file_content = None
+            download_method = None
+            
+            if self.service:
+                try:
+                    request = self.service.files().get_media(fileId=file_id)
+                    file = io.BytesIO()
+                    downloader = MediaIoBaseDownload(file, request)
+                    
+                    done = False
+                    while not done:
+                        status, done = downloader.next_chunk()
+                    
+                    file_content = file.getvalue()
+                    download_method = "api_download"
+                    logger.info(f"✅ Downloaded via API: {len(file_content)} bytes")
+                    
+                except HttpError as api_error:
+                    logger.warning(f"⚠️ API download failed: HTTP {api_error.resp.status}")
+                    # Try public access methods as fallback
+                    public_result = self.try_public_file_access(file_id)
+                    if public_result:
+                        file_content = public_result['content']
+                        download_method = public_result['method']
+            
+            if not file_content:
+                logger.error(f"❌ Could not download file: {filename}")
+                self.download_stats['errors'] += 1
+                return None
+            
+            # Check for duplicates
+            is_duplicate, duplicate_info = self.is_duplicate_file(filename, file_content)
+            if is_duplicate:
+                logger.info(f"⏭️ Skipping duplicate file: {filename} ({duplicate_info})")
+                self.download_stats['skipped_duplicates'] += 1
+                return None
+            
+            # Create directory structure
+            full_folder_path = self.materials_dir / folder_path
+            full_folder_path.mkdir(parents=True, exist_ok=True)
+            
+            # Save file
+            file_path = full_folder_path / filename
+            
+            # Handle filename conflicts in same directory
+            counter = 1
+            original_path = file_path
+            while file_path.exists():
+                stem = original_path.stem
+                suffix = original_path.suffix
+                file_path = full_folder_path / f"{stem}_{counter}{suffix}"
+                counter += 1
+            
+            with open(file_path, 'wb') as f:
+                f.write(file_content)
+            
+            # Track this file
+            file_hash = self.calculate_file_hash(file_content)
+            self.processed_files[filename] = file_id
+            self.file_hashes[file_hash] = str(file_path.relative_to(self.materials_dir))
+            
+            self.download_stats['downloaded_files'] += 1
+            logger.info(f"💾 Successfully saved: {file_path.relative_to(self.materials_dir)}")
+            
+            return {
+                'id': file_id,
+                'name': file_path.name,
+                'original_name': filename,
+                'path': str(file_path),
+                'relative_path': str(file_path.relative_to(self.materials_dir)),
+                'size': len(file_content),
+                'type': file_path.suffix[1:].lower() if file_path.suffix else 'unknown',
+                'mime_type': mime_type,
+                'download_method': download_method,
+                'folder_path': folder_path,
+                'created_time': file_metadata.get('createdTime'),
+                'modified_time': file_metadata.get('modifiedTime')
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error downloading file {filename}: {str(e)}")
+            self.download_stats['errors'] += 1
+            return None
+
+    def process_folder_recursive(self, folder_structure: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Process folder structure recursively and download all files"""
+        processed_files = []
+        
+        folder_path = folder_structure['path']
+        folder_name = folder_structure['name']
+        
+        # Create current folder path
+        current_folder_path = os.path.join(folder_path, folder_name) if folder_path else folder_name
+        
+        logger.info(f"📂 Processing folder: {current_folder_path}")
+        
+        # Process files in current folder
+        for file_info in folder_structure['files']:
+            file_result = self.download_file_with_duplicate_check(
+                file_info['id'], 
+                file_info['name'], 
+                current_folder_path
+            )
+            if file_result:
+                processed_files.append(file_result)
+        
+        # Process subfolders recursively
+        for subfolder_structure in folder_structure['subfolders'].values():
+            subfolder_files = self.process_folder_recursive(subfolder_structure)
+            processed_files.extend(subfolder_files)
+        
+        return processed_files
+
+    def download_drive_recursive(self, root_folder_id: str) -> Dict[str, Any]:
+        """Main method to download entire Drive folder structure recursively"""
+        logger.info(f"🚀 Starting recursive download of folder: {root_folder_id}")
+        
+        # Reset stats
+        self.download_stats = {
+            'total_folders': 0,
+            'total_files': 0,
+            'downloaded_files': 0,
+            'skipped_duplicates': 0,
+            'errors': 0
+        }
+        self.processed_files.clear()
+        self.file_hashes.clear()
+        
+        start_time = time.time()
+        
+        try:
+            # First, get the complete folder structure
+            logger.info("📊 Analyzing complete folder structure...")
+            folder_structure = self.get_folder_structure(root_folder_id)
+            
+            analysis_time = time.time() - start_time
+            logger.info(f"✅ Structure analysis completed in {analysis_time:.2f}s")
+            logger.info(f"📊 Found {self.download_stats['total_folders']} folders and {self.download_stats['total_files']} files")
+            
+            # Now download all files
+            logger.info("📥 Starting file downloads...")
+            download_start = time.time()
+            processed_files = self.process_folder_recursive(folder_structure)
+            
+            download_time = time.time() - download_start
+            total_time = time.time() - start_time
+            
+            # Final statistics
+            logger.info("🎉 Recursive download completed!")
+            logger.info(f"📊 Final Statistics:")
+            logger.info(f"   Total folders: {self.download_stats['total_folders']}")
+            logger.info(f"   Total files found: {self.download_stats['total_files']}")
+            logger.info(f"   Files downloaded: {self.download_stats['downloaded_files']}")
+            logger.info(f"   Duplicates skipped: {self.download_stats['skipped_duplicates']}")
+            logger.info(f"   Errors: {self.download_stats['errors']}")
+            logger.info(f"   Analysis time: {analysis_time:.2f}s")
+            logger.info(f"   Download time: {download_time:.2f}s")
+            logger.info(f"   Total time: {total_time:.2f}s")
+            
+            return {
+                'status': 'success',
+                'statistics': self.download_stats,
+                'processed_files': processed_files,
+                'folder_structure': folder_structure,
+                'timing': {
+                    'analysis_time': analysis_time,
+                    'download_time': download_time,
+                    'total_time': total_time
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error in recursive download: {str(e)}")
+            return {
+                'status': 'error',
+                'error': str(e),
+                'statistics': self.download_stats
+            }
+
+    def get_file_metadata(self, file_id: str) -> Optional[Dict[str, Any]]:
+        """Get metadata for a file"""
+        try:
+            if not self.service:
+                return None
+
+            file_metadata = self.service.files().get(
+                fileId=file_id,
+                fields="id,name,mimeType,size,parents,createdTime,modifiedTime,webViewLink"
+            ).execute()
+
+            return file_metadata
+
+        except HttpError as e:
+            logger.warning(f"⚠️ HTTP Error getting metadata for file {file_id}: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ Error getting metadata for file {file_id}: {e}")
+            return None
+
+    def try_public_file_access(self, file_id: str) -> Optional[Dict[str, Any]]:
+        """Try to access a file through public methods"""
+        logger.info(f"🔓 Trying public access for file: {file_id}")
+
+        public_urls = [
+            f"https://drive.google.com/uc?export=download&id={file_id}",
+            f"https://drive.google.com/file/d/{file_id}/view",
+            f"https://docs.google.com/document/d/{file_id}/export?format=pdf"
+        ]
+
+        for i, url in enumerate(public_urls):
+            try:
+                logger.info(f"🌐 Trying public URL method {i+1}...")
+                response = requests.get(url, allow_redirects=True, timeout=10)
+                
+                if response.status_code == 200 and len(response.content) > 100:
+                    content_type = response.headers.get('content-type', '').lower()
+                    
+                    # Skip HTML error pages
+                    if 'text/html' in content_type and b'<html' in response.content[:1000]:
+                        continue
+
+                    logger.info(f"✅ Public access successful via URL {i+1}")
+                    return {
+                        'content': response.content,
+                        'size': len(response.content),
+                        'method': f'public_url_{i+1}'
+                    }
+
+            except Exception as e:
+                logger.info(f"⚠️ Public URL method {i+1} failed: {e}")
+                continue
+
+        logger.info("❌ All public access methods failed")
+        return None
+
+    def get_download_stats(self) -> Dict[str, Any]:
+        """Get statistics about downloaded materials"""
+        if not self.materials_dir.exists():
+            return {'total_files': 0, 'total_size': 0, 'file_types': {}}
+
+        files = list(self.materials_dir.rglob("*"))  # Use rglob for recursive
+        total_size = sum(f.stat().st_size for f in files if f.is_file())
+
+        file_types = {}
+        for file in files:
+            if file.is_file():
+                ext = file.suffix.lower()
+                file_types[ext] = file_types.get(ext, 0) + 1
+
+        return {
+            'total_files': len([f for f in files if f.is_file()]),
+            'total_size': total_size,
+            'file_types': file_types,
+            'directory': str(self.materials_dir),
+            'processed_files_count': len(self.processed_files),
+            'unique_hashes_count': len(self.file_hashes)
+        }
+
+    def cleanup_temp_files(self):
+        """Clean up temporary authentication files"""
+        temp_files = ['token.json']  # Keep credentials.json
+        for file in temp_files:
+            if os.path.exists(file):
+                try:
+                    os.remove(file)
+                    logger.info(f"🧹 Cleaned up temporary file: {file}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not remove {file}: {e}")
