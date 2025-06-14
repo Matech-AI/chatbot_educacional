@@ -283,8 +283,8 @@ const HomePage: React.FC = () => {
         transition={{ delay: 0.5 }}
         className="mt-12 text-center text-sm text-gray-500"
       >
-        <p>DNA da Força v1.0 - Sistema de Assistente Educacional</p>
-        <p className="mt-1">Desenvolvido por Matheus Bernardes</p>
+        <p>DNA da Força v1.4 - Sistema de Assistente Educacional</p>
+        <p className="mt-1">Desenvolvido por Matech AI</p>
       </motion.div>
     </div>
   );
