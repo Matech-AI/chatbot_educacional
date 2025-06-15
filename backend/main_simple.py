@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Body, Request
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Request # Added Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import FileResponse, StreamingResponse
@@ -9,6 +9,7 @@ import os
 import json
 from datetime import datetime, timedelta
 import shutil
+import asyncio
 import tempfile
 import mimetypes
 import logging
@@ -741,6 +742,7 @@ async def list_materials(current_user: User = Depends(get_current_user)):
 
 @app.post("/materials/upload")
 async def upload_material(
+    request: Request, # Add Request dependency
     file: UploadFile = File(...),
     description: str = Form(""),
     tags: str = Form(""),
@@ -769,7 +771,7 @@ async def upload_material(
     materials_dir.mkdir(parents=True, exist_ok=True)
 
     # Handle filename conflicts
-    file_path = materials_dir / file.filename
+    file_path = materials_dir / file.filename # type: ignore
     counter = 1
     original_path = file_path
 
@@ -794,6 +796,33 @@ async def upload_material(
             f.write(content)
 
         logger.info(f"✅ File uploaded successfully: {file_path}")
+
+        # Re-process documents for RAG
+        try:
+            logger.info(f"🔄 Triggering RAG processing for directory: {materials_dir}")
+            # Assuming a default knowledge base ID for now, or this could be passed from the frontend
+            # In a multi-tenant or multi-KB setup, this ID would be crucial.
+            knowledge_base_id_for_upload = "default_kb" # Or determine dynamically
+            
+            # Ensure rag_handler is available on app.state
+            if hasattr(request.app.state, 'rag_handler') and request.app.state.rag_handler:
+                success, messages = await asyncio.to_thread(
+                    request.app.state.rag_handler.process_and_initialize, 
+                    str(materials_dir.resolve()), 
+                    knowledge_base_id_for_upload
+                )
+                if success:
+                    logger.info(f"✅ RAG processing successful for {file_path.name}: {', '.join(messages)}")
+                else:
+                    logger.error(f"❌ RAG processing failed for {file_path.name}: {', '.join(messages)}")
+                    # Decide if upload should fail if RAG processing fails
+                    # For now, log error but let upload succeed
+            else:
+                logger.error("❌ RAG handler not found on app.state. Cannot process document for RAG.")
+
+        except Exception as rag_e:
+            logger.error(f"❌ Error during RAG processing after upload: {str(rag_e)}")
+            # Log error but let upload succeed
 
         return {
             "status": "success",

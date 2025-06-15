@@ -142,12 +142,13 @@ class RAGHandler:
             logger.error(f"❌ Error type: {type(e).__name__}")
             raise
 
-    def process_and_initialize(self, docs_dir: str) -> Tuple[bool, List[str]]:
+    def process_and_initialize(self, docs_dir: str, knowledge_base_id: str) -> Tuple[bool, List[str]]:
         """
         Complete processing and initialization pipeline.
 
         Args:
             docs_dir: Directory containing documents
+            knowledge_base_id: Identifier for the knowledge base these documents belong to
 
         Returns:
             Tuple of (success, status messages)
@@ -158,7 +159,8 @@ class RAGHandler:
 
         try:
             # Step 1: Process documents
-            success, messages = self.process_documents(docs_dir)
+            logger.info(f"🧠 Processing documents for knowledge base: {knowledge_base_id}")
+            success, messages = self.process_documents(docs_dir, knowledge_base_id)
             status_messages.extend(messages)
 
             if not success:
@@ -183,12 +185,13 @@ class RAGHandler:
             status_messages.append(f"✗ {error_msg}")
             return False, status_messages
 
-    def process_documents(self, docs_dir: str) -> Tuple[bool, List[str]]:
+    def process_documents(self, docs_dir: str, knowledge_base_id: str) -> Tuple[bool, List[str]]:
         """
         Process documents from the specified directory with enhanced logging.
 
         Args:
             docs_dir: Directory containing documents
+            knowledge_base_id: Identifier for the knowledge base
 
         Returns:
             Tuple of (success, status messages)
@@ -225,8 +228,8 @@ class RAGHandler:
                     f"📄 Found: {file.name} ({file.stat().st_size} bytes)")
 
             # Import documents
-            status_messages.append("📥 Importing documents...")
-            self._import_documents(docs_dir)
+            status_messages.append(f"📥 Importing documents for KB: {knowledge_base_id}...")
+            self._import_documents(docs_dir, knowledge_base_id)
             status_messages.append(
                 f"✓ Imported {len(self.documents)} documents")
             logger.info(f"✅ Imported {len(self.documents)} documents")
@@ -244,8 +247,8 @@ class RAGHandler:
             logger.info(f"✅ Created {len(self.chunks)} chunks")
 
             # Generate embeddings and store in ChromaDB
-            status_messages.append("🧠 Generating embeddings...")
-            self._store_embeddings()
+            status_messages.append(f"🧠 Generating embeddings for KB: {knowledge_base_id}...")
+            self._store_embeddings(knowledge_base_id) # Pass knowledge_base_id here
             status_messages.append("✓ Embeddings generated and stored")
             logger.info("✅ Embeddings stored in ChromaDB")
 
@@ -258,7 +261,7 @@ class RAGHandler:
             status_messages.append(f"✗ {error_msg}")
             return False, status_messages
 
-    def _import_documents(self, docs_dir: str) -> None:
+    def _import_documents(self, docs_dir: str, knowledge_base_id: str) -> None:
         """Import documents from directory with enhanced error handling"""
         logger.info(f"📥 Importing documents from: {docs_dir}")
 
@@ -309,7 +312,8 @@ class RAGHandler:
                 "doc_id": idx,
                 "filename": Path(doc.metadata["source"]).name,
                 "filetype": Path(doc.metadata["source"]).suffix[1:].lower(),
-                "imported_at": time.time()
+                "imported_at": time.time(),
+                "knowledge_base_id": knowledge_base_id
             })
 
         logger.info(f"✅ Total documents imported: {len(self.documents)}")
@@ -333,6 +337,13 @@ class RAGHandler:
             chunk.metadata["chunk_id"] = idx
             chunk.metadata["chunk_size"] = len(chunk.page_content)
             chunk.metadata["created_at"] = time.time()
+            # Propagate knowledge_base_id from parent document
+            if 'knowledge_base_id' in chunk.metadata:
+                pass # Already set if document had it, otherwise it might be missing
+            elif self.documents and hasattr(self.documents[0], 'metadata') and 'knowledge_base_id' in self.documents[0].metadata:
+                 # Fallback: if all docs in this batch are for the same KB, grab from the first one
+                 # This assumes _split_documents is called after _import_documents for a specific KB
+                chunk.metadata['knowledge_base_id'] = self.documents[0].metadata['knowledge_base_id']
 
         logger.info(f"✅ Documents split into {len(self.chunks)} chunks")
 
@@ -343,16 +354,40 @@ class RAGHandler:
             logger.info(
                 f"📊 Chunk stats - Min: {min(sizes)}, Max: {max(sizes)}, Avg: {avg_size:.0f}")
 
-    def _store_embeddings(self) -> None:
+    def _store_embeddings(self, knowledge_base_id: str) -> None:
         """Store document chunks in ChromaDB with progress tracking"""
         logger.info("🗄️ Storing embeddings in ChromaDB...")
 
-        # Clear existing data
-        try:
-            self.collection.delete(where={})
-            logger.info("🧹 Cleared existing embeddings")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not clear existing data: {e}")
+        # Clear existing data for the specific knowledge_base_id if needed, or handle globally
+        # For now, we assume a global collection and will filter at query time.
+        # If strict separation per KB in Chroma is needed, collection naming or metadata filtering at delete is required.
+        # logger.info(f"🧹 Optionally clearing existing embeddings for KB: {knowledge_base_id}...")
+        # Example: self.collection.delete(where={"knowledge_base_id": knowledge_base_id})
+        # Current implementation clears all for simplicity, adjust if granular deletion is paramount.
+        # This part needs careful consideration based on how collections are managed.
+        # If each KB has its own collection, this method would operate on that specific collection.
+        # If one collection holds all KBs, then adding knowledge_base_id to metadata is key.
+
+        # The current code clears the entire collection. This might not be desired if multiple KBs share a collection.
+        # For this iteration, we'll assume that when process_documents is called for a KB,
+        # it's acceptable to re-embed its documents. If KBs are processed incrementally into the same collection,
+        # this delete operation should be removed or scoped to the specific knowledge_base_id.
+        # For now, let's comment out the global delete to support incremental additions.
+        # try:
+        #     # self.collection.delete(where={}) # This would delete all embeddings
+        #     logger.info("🧹 Note: Global embedding clearing is currently commented out for incremental KB updates.")
+        # except Exception as e:
+        #     logger.warning(f"⚠️ Could not clear existing data: {e}")
+
+        # Ensure all chunks have the knowledge_base_id in their metadata
+        for chunk in self.chunks:
+            if 'knowledge_base_id' not in chunk.metadata:
+                # This is a fallback, ideally it's set during _import_documents and propagated by _split_documents
+                chunk.metadata['knowledge_base_id'] = knowledge_base_id 
+                logger.warning(f"Fallback: Added knowledge_base_id '{knowledge_base_id}' to chunk {chunk.metadata.get('chunk_id')} in _store_embeddings")
+            elif chunk.metadata['knowledge_base_id'] != knowledge_base_id:
+                logger.warning(f"Mismatch: Chunk {chunk.metadata.get('chunk_id')} has KB ID {chunk.metadata['knowledge_base_id']}, storing with {knowledge_base_id}")
+                chunk.metadata['knowledge_base_id'] = knowledge_base_id # Ensure it's the current one
 
         # Prepare data for bulk insertion
         ids = []
@@ -440,11 +475,21 @@ Resposta (baseada apenas no contexto fornecido):"""
                 def __init__(self, collection):
                     self.collection = collection
 
-                def get_relevant_documents(self, query: str, k: int = 5):
-                    results = self.collection.query(
-                        query_texts=[query],
-                        n_results=k
-                    )
+                def get_relevant_documents(self, query: str, k: int = 5, allowed_knowledge_base_ids: Optional[List[str]] = None):
+                    query_params = {
+                        "query_texts": [query],
+                        "n_results": k
+                    }
+                    if allowed_knowledge_base_ids:
+                        if len(allowed_knowledge_base_ids) == 1:
+                            query_params["where"] = {"knowledge_base_id": allowed_knowledge_base_ids[0]}
+                        else:
+                            query_params["where"] = {"knowledge_base_id": {"$in": allowed_knowledge_base_ids}}
+                        logger.info(f"🔬 Filtering query with knowledge_base_ids: {allowed_knowledge_base_ids}")
+                    else:
+                        logger.info("🔬 No knowledge_base_id filter applied to query.")
+
+                    results = self.collection.query(**query_params)
 
                     # Convert to LangChain document format
                     documents = []
@@ -483,12 +528,13 @@ Resposta (baseada apenas no contexto fornecido):"""
             logger.error(f"❌ Error type: {type(e).__name__}")
             raise
 
-    def generate_response(self, question: str) -> Dict[str, Any]:
+    def generate_response(self, question: str, allowed_knowledge_base_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Generate a response to a question with enhanced error handling.
 
         Args:
             question: User question
+            allowed_knowledge_base_ids: Optional list of knowledge base IDs to restrict search to.
 
         Returns:
             Dictionary containing answer, sources, and response time
@@ -506,10 +552,11 @@ Resposta (baseada apenas no contexto fornecido):"""
             start_time = time.time()
 
             # Get relevant documents
-            logger.info("🔍 Retrieving relevant documents...")
+            logger.info(f"🔍 Retrieving relevant documents for question: {question[:30]}... with KBs: {allowed_knowledge_base_ids}")
             relevant_docs = self.retriever.get_relevant_documents(
-                question, k=5)
-            logger.info(f"📄 Found {len(relevant_docs)} relevant documents")
+                question, k=5, allowed_knowledge_base_ids=allowed_knowledge_base_ids
+            )
+            logger.info(f"📄 Found {len(relevant_docs)} relevant documents with applied KB filter.")
 
             # Generate response
             logger.info("🤖 Generating AI response...")
