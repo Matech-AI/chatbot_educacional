@@ -27,6 +27,7 @@ credentials.json
 users.json
 token.json
 backend/data/materials
+backend/backup/
 
 # Environments
 .env
@@ -37,8 +38,6 @@ ENV/
 env.bak/
 venv.bak/
 
-# Exclude duplicate backend folder
-backend/backend/
 
 # Temporary auth files
 backend/auth_simple.py

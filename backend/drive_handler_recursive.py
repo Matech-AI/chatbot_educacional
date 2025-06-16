@@ -137,7 +137,7 @@ class RecursiveDriveHandler:
                 if not creds:
                     if not os.path.exists(credentials_path):
                         logger.error(f"❌ Credentials file not found: {credentials_path}")
-                        raise FileNotFoundError(f"Credentials file not found: {credentials_path}")
+                        return False
 
                     logger.info("🌐 Starting OAuth2 flow...")
                     flow = InstalledAppFlow.from_client_secrets_file(credentials_path, self.scopes)
@@ -197,8 +197,12 @@ class RecursiveDriveHandler:
         
         try:
             # Get folder info
-            folder_info = self.service.files().get(fileId=folder_id, fields="id,name").execute()
-            folder_name = folder_info.get('name', 'Unknown')
+            try:
+                folder_info = self.service.files().get(fileId=folder_id, fields="id,name").execute()
+                folder_name = folder_info.get('name', 'Unknown')
+            except Exception as e:
+                logger.warning(f"Could not get folder info for {folder_id}: {e}")
+                folder_name = f'folder_{folder_id[:8]}'
             
             structure = {
                 'id': folder_id,
@@ -210,33 +214,54 @@ class RecursiveDriveHandler:
             
             # List all items in folder
             query = f"'{folder_id}' in parents and trashed = false"
-            results = self.service.files().list(
-                q=query,
-                pageSize=1000,
-                fields="files(id,name,mimeType,size,parents,createdTime,modifiedTime)"
-            ).execute()
-            
-            items = results.get('files', [])
-            logger.info(f"📊 Found {len(items)} items in folder: {folder_name}")
-            
-            for item in items:
-                if item['mimeType'] == 'application/vnd.google-apps.folder':
-                    # It's a subfolder - recurse
-                    subfolder_path = os.path.join(current_path, folder_name) if current_path else folder_name
-                    structure['subfolders'][item['id']] = self.get_folder_structure(
-                        item['id'], subfolder_path
-                    )
-                    self.download_stats['total_folders'] += 1
-                else:
-                    # It's a file
-                    structure['files'].append(item)
-                    self.download_stats['total_files'] += 1
+            try:
+                results = self.service.files().list(
+                    q=query,
+                    pageSize=1000,
+                    fields="files(id,name,mimeType,size,parents,createdTime,modifiedTime)"
+                ).execute()
+                
+                items = results.get('files', [])
+                logger.info(f"📊 Found {len(items)} items in folder: {folder_name}")
+                
+                for item in items:
+                    if item.get('mimeType') == 'application/vnd.google-apps.folder':
+                        # It's a subfolder - recurse
+                        subfolder_path = os.path.join(current_path, folder_name) if current_path else folder_name
+                        try:
+                            structure['subfolders'][item['id']] = self.get_folder_structure(
+                                item['id'], subfolder_path
+                            )
+                            self.download_stats['total_folders'] += 1
+                        except Exception as e:
+                            logger.error(f"Error processing subfolder {item.get('name', 'Unknown')}: {e}")
+                    else:
+                        # It's a file
+                        file_info = {
+                            'id': item.get('id'),
+                            'name': item.get('name', 'Unknown'),
+                            'size': int(item.get('size', 0)) if item.get('size') else 0,
+                            'mimeType': item.get('mimeType', ''),
+                            'createdTime': item.get('createdTime'),
+                            'modifiedTime': item.get('modifiedTime')
+                        }
+                        structure['files'].append(file_info)
+                        self.download_stats['total_files'] += 1
+                        
+            except Exception as e:
+                logger.error(f"Error listing folder contents: {e}")
             
             return structure
             
         except Exception as e:
             logger.error(f"❌ Error getting folder structure: {str(e)}")
-            return {'id': folder_id, 'name': 'Error', 'path': current_path, 'subfolders': {}, 'files': []}
+            return {
+                'id': folder_id,
+                'name': 'Error',
+                'path': current_path,
+                'subfolders': {},
+                'files': []
+            }
 
     def calculate_file_hash(self, file_content: bytes) -> str:
         """Calculate SHA256 hash of file content"""
@@ -250,9 +275,9 @@ class RecursiveDriveHandler:
         if file_hash in self.file_hashes:
             return True, f"Content duplicate of: {self.file_hashes[file_hash]}"
         
-        # Check by filename
+        # Check by filename (more lenient - just warn)
         if filename in self.processed_files:
-            return True, f"Name duplicate: {filename}"
+            logger.warning(f"⚠️ Filename duplicate detected: {filename}")
         
         return False, ""
 
@@ -265,6 +290,7 @@ class RecursiveDriveHandler:
             file_metadata = self.get_file_metadata(file_id)
             if not file_metadata:
                 logger.warning(f"⚠️ Could not get metadata for file: {filename}")
+                self.download_stats['errors'] += 1
                 return None
             
             mime_type = file_metadata.get('mimeType', '')
@@ -286,8 +312,22 @@ class RecursiveDriveHandler:
                     downloader = MediaIoBaseDownload(file, request)
                     
                     done = False
-                    while not done:
-                        status, done = downloader.next_chunk()
+                    retry_count = 0
+                    max_retries = 3
+                    
+                    while not done and retry_count < max_retries:
+                        try:
+                            status, done = downloader.next_chunk()
+                            if status:
+                                progress = int(status.progress() * 100)
+                                if progress % 20 == 0:  # Log every 20%
+                                    logger.debug(f"📥 Download progress for {filename}: {progress}%")
+                        except Exception as chunk_error:
+                            retry_count += 1
+                            logger.warning(f"⚠️ Chunk download error (retry {retry_count}): {chunk_error}")
+                            if retry_count >= max_retries:
+                                raise chunk_error
+                            time.sleep(1)  # Brief pause before retry
                     
                     file_content = file.getvalue()
                     download_method = "api_download"
@@ -300,6 +340,10 @@ class RecursiveDriveHandler:
                     if public_result:
                         file_content = public_result['content']
                         download_method = public_result['method']
+                except Exception as download_error:
+                    logger.error(f"❌ Download error for {filename}: {download_error}")
+                    self.download_stats['errors'] += 1
+                    return None
             
             if not file_content:
                 logger.error(f"❌ Could not download file: {filename}")
@@ -317,8 +361,9 @@ class RecursiveDriveHandler:
             full_folder_path = self.materials_dir / folder_path
             full_folder_path.mkdir(parents=True, exist_ok=True)
             
-            # Save file
-            file_path = full_folder_path / filename
+            # Clean filename for filesystem compatibility
+            safe_filename = self.sanitize_filename(filename)
+            file_path = full_folder_path / safe_filename
             
             # Handle filename conflicts in same directory
             counter = 1
@@ -329,8 +374,14 @@ class RecursiveDriveHandler:
                 file_path = full_folder_path / f"{stem}_{counter}{suffix}"
                 counter += 1
             
-            with open(file_path, 'wb') as f:
-                f.write(file_content)
+            # Write file
+            try:
+                with open(file_path, 'wb') as f:
+                    f.write(file_content)
+            except Exception as write_error:
+                logger.error(f"❌ Error writing file {file_path}: {write_error}")
+                self.download_stats['errors'] += 1
+                return None
             
             # Track this file
             file_hash = self.calculate_file_hash(file_content)
@@ -360,6 +411,27 @@ class RecursiveDriveHandler:
             self.download_stats['errors'] += 1
             return None
 
+    def sanitize_filename(self, filename: str) -> str:
+        """Sanitize filename for filesystem compatibility"""
+        # Replace invalid characters
+        invalid_chars = '<>:"/\\|?*'
+        for char in invalid_chars:
+            filename = filename.replace(char, '_')
+        
+        # Trim whitespace and dots
+        filename = filename.strip(' .')
+        
+        # Ensure not empty
+        if not filename:
+            filename = 'unnamed_file'
+            
+        # Limit length
+        if len(filename) > 255:
+            name, ext = os.path.splitext(filename)
+            filename = name[:250] + ext
+            
+        return filename
+
     def process_folder_recursive(self, folder_structure: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Process folder structure recursively and download all files"""
         processed_files = []
@@ -374,18 +446,26 @@ class RecursiveDriveHandler:
         
         # Process files in current folder
         for file_info in folder_structure['files']:
-            file_result = self.download_file_with_duplicate_check(
-                file_info['id'], 
-                file_info['name'], 
-                current_folder_path
-            )
-            if file_result:
-                processed_files.append(file_result)
+            try:
+                file_result = self.download_file_with_duplicate_check(
+                    file_info['id'], 
+                    file_info['name'], 
+                    current_folder_path
+                )
+                if file_result:
+                    processed_files.append(file_result)
+            except Exception as e:
+                logger.error(f"Error processing file {file_info.get('name', 'Unknown')}: {e}")
+                self.download_stats['errors'] += 1
         
         # Process subfolders recursively
         for subfolder_structure in folder_structure['subfolders'].values():
-            subfolder_files = self.process_folder_recursive(subfolder_structure)
-            processed_files.extend(subfolder_files)
+            try:
+                subfolder_files = self.process_folder_recursive(subfolder_structure)
+                processed_files.extend(subfolder_files)
+            except Exception as e:
+                logger.error(f"Error processing subfolder: {e}")
+                self.download_stats['errors'] += 1
         
         return processed_files
 
@@ -482,13 +562,12 @@ class RecursiveDriveHandler:
         public_urls = [
             f"https://drive.google.com/uc?export=download&id={file_id}",
             f"https://drive.google.com/file/d/{file_id}/view",
-            f"https://docs.google.com/document/d/{file_id}/export?format=pdf"
         ]
 
         for i, url in enumerate(public_urls):
             try:
                 logger.info(f"🌐 Trying public URL method {i+1}...")
-                response = requests.get(url, allow_redirects=True, timeout=10)
+                response = requests.get(url, allow_redirects=True, timeout=30)
                 
                 if response.status_code == 200 and len(response.content) > 100:
                     content_type = response.headers.get('content-type', '').lower()
@@ -514,15 +593,22 @@ class RecursiveDriveHandler:
     def get_download_stats(self) -> Dict[str, Any]:
         """Get statistics about downloaded materials"""
         if not self.materials_dir.exists():
-            return {'total_files': 0, 'total_size': 0, 'file_types': {}}
+            return {
+                'total_files': 0,
+                'total_size': 0,
+                'file_types': {},
+                'directory': str(self.materials_dir),
+                'processed_files_count': 0,
+                'unique_hashes_count': 0
+            }
 
-        files = list(self.materials_dir.rglob("*"))  # Use rglob for recursive
+        files = list(self.materials_dir.rglob("*"))
         total_size = sum(f.stat().st_size for f in files if f.is_file())
 
         file_types = {}
         for file in files:
             if file.is_file():
-                ext = file.suffix.lower()
+                ext = file.suffix.lower() or 'no_extension'
                 file_types[ext] = file_types.get(ext, 0) + 1
 
         return {
@@ -544,3 +630,17 @@ class RecursiveDriveHandler:
                     logger.info(f"🧹 Cleaned up temporary file: {file}")
                 except Exception as e:
                     logger.warning(f"⚠️ Could not remove {file}: {e}")
+
+    def reset(self):
+        """Reset handler state"""
+        logger.info("🔄 Resetting RecursiveDriveHandler...")
+        self.processed_files.clear()
+        self.file_hashes.clear()
+        self.download_stats = {
+            'total_folders': 0,
+            'total_files': 0,
+            'downloaded_files': 0,
+            'skipped_duplicates': 0,
+            'errors': 0
+        }
+        logger.info("✅ Handler reset completed")

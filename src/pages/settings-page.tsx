@@ -537,7 +537,7 @@ const SettingsPage: React.FC = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Última Atualização:</span>
-                    <span className="font-medium">Dezembro 2024</span>
+                    <span className="font-medium">Junho 2025</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Licença:</span>
@@ -545,7 +545,7 @@ const SettingsPage: React.FC = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Desenvolvedor:</span>
-                    <span className="font-medium">Matheus Bernardes</span>
+                    <span className="font-medium">Matech AI</span>
                   </div>
                 </div>
 

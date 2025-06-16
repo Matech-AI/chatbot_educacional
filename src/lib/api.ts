@@ -1,9 +1,17 @@
-// API utility functions
-const API_BASE = 'http://localhost:8000';
+// API utility functions - FIXED VERSION
+const API_BASE = process.env.NODE_ENV === 'production' 
+  ? 'https://your-backend-domain.com' 
+  : 'http://localhost:8000';  // Backend runs on port 8000
 
-// Get auth token from localStorage
+// Get auth token from memory (localStorage not supported in Claude artifacts)
+let authToken: string | null = null;
+
 function getAuthToken(): string | null {
-  return localStorage.getItem('token');
+  return authToken;
+}
+
+function setAuthToken(token: string | null): void {
+  authToken = token;
 }
 
 // Create headers with authentication
@@ -37,9 +45,9 @@ export async function apiRequest(
     
     // Handle authentication errors
     if (response.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
-      throw new Error('Authentication required');
+      setAuthToken(null);
+      // In Claude artifacts, we can't redirect, so just throw error
+      throw new Error('Authentication required - please login again');
     }
 
     return response;
@@ -74,9 +82,6 @@ export async function apiRequestJson<T = any>(
 
 // Specific API functions
 export const api = {
-  // Health check
-  health: () => apiRequestJson('/health'),
-
   // Authentication
   login: (username: string, password: string) => {
     const formData = new FormData();
@@ -88,6 +93,19 @@ export const api = {
       body: formData,
     });
   },
+
+  // Set token after login
+  setToken: (token: string) => {
+    setAuthToken(token);
+  },
+
+  // Clear token on logout
+  clearToken: () => {
+    setAuthToken(null);
+  },
+
+  // Health check
+  health: () => apiRequestJson('/health'),
 
   // Materials
   materials: {
@@ -124,13 +142,118 @@ export const api = {
     body: JSON.stringify({ content }),
   }),
 
+  chatAuth: (content: string) => apiRequestJson('/chat-auth', {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  }),
+
+  // Drive Sync (Recursive)
+  drive: {
+    // Analyze folder structure without downloading
+    analyzeFolder: (folderId: string, apiKey?: string) => {
+      const params = new URLSearchParams({ folder_id: folderId });
+      if (apiKey) params.append('api_key', apiKey);
+      
+      return apiRequestJson(`/drive/analyze-folder?${params}`);
+    },
+
+    // Start recursive sync
+    syncRecursive: (folderId: string, apiKey?: string, credentialsJson?: string) => 
+      apiRequestJson('/drive/sync-recursive', {
+        method: 'POST',
+        body: JSON.stringify({
+          folder_id: folderId,
+          ...(apiKey && { api_key: apiKey }),
+          ...(credentialsJson && { credentials_json: credentialsJson })
+        }),
+      }),
+
+    // Get download progress
+    getProgress: (downloadId?: string) => {
+      const params = downloadId ? `?download_id=${downloadId}` : '';
+      return apiRequestJson(`/drive/download-progress${params}`);
+    },
+
+    // Cancel download
+    cancelDownload: (downloadId: string) => 
+      apiRequestJson('/drive/cancel-download', {
+        method: 'POST',
+        body: JSON.stringify({ download_id: downloadId }),
+      }),
+
+    // Get folder stats
+    getFolderStats: () => apiRequestJson('/drive/folder-stats'),
+
+    // Test connection
+    testConnection: (apiKey?: string) => {
+      const params = apiKey ? `?api_key=${apiKey}` : '';
+      return apiRequestJson(`/drive/test-connection${params}`);
+    },
+
+    // Clear cache
+    clearCache: () => apiRequestJson('/drive/clear-cache', { method: 'POST' }),
+  },
+
+  // Legacy Drive endpoints (for backward compatibility)
+  legacy: {
+    testDriveFolder: (folderId: string, apiKey?: string) => 
+      apiRequestJson('/test-drive-folder', {
+        method: 'POST',
+        body: JSON.stringify({
+          folder_id: folderId,
+          ...(apiKey && { api_key: apiKey })
+        }),
+      }),
+
+    syncDrive: (folderId: string, apiKey?: string, downloadFiles: boolean = true) => 
+      apiRequestJson('/sync-drive', {
+        method: 'POST',
+        body: JSON.stringify({
+          folder_id: folderId,
+          download_files: downloadFiles,
+          ...(apiKey && { api_key: apiKey })
+        }),
+      }),
+
+    getDriveStats: () => apiRequestJson('/drive-stats'),
+    getDriveStatsDetailed: () => apiRequestJson('/drive-stats-detailed'),
+  },
+
+  // Maintenance
+  maintenance: {
+    cleanupDuplicates: () => apiRequestJson('/maintenance/cleanup-duplicates', { method: 'POST' }),
+    cleanupEmptyFolders: () => apiRequestJson('/maintenance/cleanup-empty-folders', { method: 'POST' }),
+    optimizeStorage: () => apiRequestJson('/maintenance/optimize-storage', { method: 'POST' }),
+    resetMaterials: () => apiRequestJson('/maintenance/reset-materials', { method: 'POST' }),
+    resetChromaDB: () => apiRequestJson('/maintenance/reset-chromadb', { method: 'POST' }),
+    resetComponent: (component: string, confirm: boolean = false) => 
+      apiRequestJson('/maintenance/reset-component', {
+        method: 'POST',
+        body: JSON.stringify({ component, confirm }),
+      }),
+    getSystemReport: () => apiRequestJson('/maintenance/system-report'),
+    healthCheck: () => apiRequestJson('/maintenance/health-check'),
+  },
+
+  // Analytics
+  analytics: {
+    getFolderStructure: () => apiRequestJson('/analytics/folder-structure'),
+    getFileDistribution: () => apiRequestJson('/analytics/file-distribution'),
+    getStorageEfficiency: () => apiRequestJson('/analytics/storage-efficiency'),
+    getDownloadReport: () => apiRequestJson('/analytics/download-report'),
+  },
+
   // System initialization
-  initialize: (apiKey: string, driveFolderId?: string, credentialsFile?: File) => {
+  initialize: (apiKey: string, driveFolderId?: string, driveApiKey?: string, credentialsFile?: File) => {
     const formData = new FormData();
     formData.append('api_key', apiKey);
     
     if (driveFolderId) {
       formData.append('drive_folder_id', driveFolderId);
+    }
+    
+    if (driveApiKey) {
+      formData.append('drive_api_key', driveApiKey);
     }
     
     if (credentialsFile) {
@@ -143,9 +266,11 @@ export const api = {
     });
   },
 
-  // Drive sync
-  syncDrive: (folderId: string) => apiRequestJson('/sync-drive', {
-    method: 'POST',
-    body: JSON.stringify({ folder_id: folderId }),
-  }),
+  // System status
+  getStatus: () => apiRequestJson('/status'),
+
+  // Debug endpoints
+  debug: {
+    drive: () => apiRequestJson('/debug/drive'),
+  },
 };
