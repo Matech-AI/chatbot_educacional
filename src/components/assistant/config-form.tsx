@@ -3,6 +3,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { AssistantConfig } from '../../types';
+import { useKnowledgeBaseStore, KnowledgeBase } from "../../store/knowledge-base-store";
 
 interface ConfigFormProps {
   config: AssistantConfig;
@@ -20,6 +21,11 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   const [formState, setFormState] = useState<AssistantConfig>(config);
   const [templateName, setTemplateName] = useState('');
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const { knowledgeBases, fetchKnowledgeBases, isLoading: isLoadingKbs } = useKnowledgeBaseStore();
+
+  useEffect(() => {
+    fetchKnowledgeBases();
+  }, [fetchKnowledgeBases]);
   
   // Update form when config prop changes (when template is loaded)
   useEffect(() => {
@@ -36,6 +42,12 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       setFormState({
         ...formState,
         [name]: Number(value)
+      });
+    } else if (name === 'knowledgeBaseIds') {
+      const selectedOptions = Array.from((e.target as HTMLSelectElement).selectedOptions, option => option.value);
+      setFormState({
+        ...formState,
+        [name]: selectedOptions
       });
     } else {
       setFormState({
@@ -181,6 +193,31 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
           </select>
           <p className="text-xs text-gray-500 mt-1">
             Modelo usado para converter texto em vetores
+          </p>
+        </div>
+        
+        {/* Knowledge Base selection */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Bases de Conhecimento
+          </label>
+          <select
+            multiple
+            name="knowledgeBaseIds"
+            value={formState.knowledgeBaseIds || []}
+            onChange={handleChange}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-24"
+          >
+            {isLoadingKbs ? (
+              <option>Carregando...</option>
+            ) : (
+              knowledgeBases.map((kb: KnowledgeBase) => (
+                <option key={kb.id} value={kb.id}>{kb.name}</option>
+              ))
+            )}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Selecione as bases de conhecimento que o assistente usará para responder (segure Ctrl/Cmd para selecionar várias).
           </p>
         </div>
         

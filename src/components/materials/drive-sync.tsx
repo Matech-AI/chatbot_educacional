@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
+import { formatFileSize } from "../../lib/utils";
 import {
   Cloud,
   AlertCircle,
@@ -202,13 +203,6 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
     setFolderInput(e.target.value);
   };
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
 
   const getFileIcon = (type: string): string => {
     switch (type.toLowerCase()) {
@@ -275,7 +269,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
         <div className="border border-gray-200 rounded-lg p-3">
           <Switch
             checked={downloadFiles}
-            onCheckedChange={setDownloadFiles}
+            onChange={(e) => setDownloadFiles(e.target.checked)}
             disabled={isProcessing || isLoading || isTesting}
             label={downloadFiles ? "Baixar arquivos" : "Apenas listar arquivos"}
             description={

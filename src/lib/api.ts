@@ -4,14 +4,21 @@ const API_BASE = process.env.NODE_ENV === 'production'
   : 'http://localhost:8000';  // Backend runs on port 8000
 
 // Get auth token from memory (localStorage not supported in Claude artifacts)
-let authToken: string | null = null;
-
 function getAuthToken(): string | null {
-  return authToken;
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('authToken');
+  }
+  return null;
 }
 
 function setAuthToken(token: string | null): void {
-  authToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      localStorage.setItem('authToken', token);
+    } else {
+      localStorage.removeItem('authToken');
+    }
+  }
 }
 
 // Create headers with authentication
@@ -59,10 +66,10 @@ export async function apiRequest(
 
 // API request with JSON response
 export async function apiRequestJson<T = any>(
-  endpoint: string, 
+  endpoint: string,
   options: RequestInit = {}
-): Promise<T> {
-  // Add JSON content type for POST/PUT requests
+): Promise<T | null> {
+  // Add JSON content type for POST/PUT/PATCH requests
   if (['POST', 'PUT', 'PATCH'].includes(options.method?.toUpperCase() || '')) {
     options.headers = {
       'Content-Type': 'application/json',
@@ -77,7 +84,9 @@ export async function apiRequestJson<T = any>(
     throw new Error(`HTTP ${response.status}: ${errorData}`);
   }
 
-  return response.json();
+  // Handle cases where the response might be empty
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
 }
 
 // Specific API functions
@@ -134,6 +143,11 @@ export const api = {
     }),
 
     download: (filename: string) => apiRequest(`/materials/${filename}`),
+    
+    embed: (materialId: string) => apiRequestJson('/materials/embed', {
+      method: 'POST',
+      body: JSON.stringify({ material_id: materialId }),
+    }),
   },
 
   // Chat
@@ -142,10 +156,34 @@ export const api = {
     body: JSON.stringify({ content }),
   }),
 
-  chatAuth: (content: string) => apiRequestJson('/chat-auth', {
+  chatAuth: (content: string, knowledgeBaseIds?: string[]) => apiRequestJson('/chat-auth', {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, knowledge_base_ids: knowledgeBaseIds }),
   }),
+
+  knowledgeBases: {
+    list: () => apiRequestJson('/knowledge-bases'),
+  },
+
+  documents: {
+    list: (knowledgeBaseId?: string) => {
+      const params = new URLSearchParams();
+      if (knowledgeBaseId) {
+        params.append('knowledge_base_id', knowledgeBaseId);
+      }
+      return apiRequestJson(`/documents?${params}`);
+    },
+    delete: (knowledgeBaseId?: string, filename?: string) => {
+      const params = new URLSearchParams();
+      if (knowledgeBaseId) {
+        params.append('knowledge_base_id', knowledgeBaseId);
+      }
+      if (filename) {
+        params.append('filename', filename);
+      }
+      return apiRequestJson(`/documents?${params}`, { method: 'DELETE' });
+    },
+  },
 
   // Drive Sync (Recursive)
   drive: {
@@ -216,7 +254,6 @@ export const api = {
       }),
 
     getDriveStats: () => apiRequestJson('/drive-stats'),
-    getDriveStatsDetailed: () => apiRequestJson('/drive-stats-detailed'),
   },
 
   // Maintenance

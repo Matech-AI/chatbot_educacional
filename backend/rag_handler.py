@@ -9,13 +9,13 @@ import chromadb
 from chromadb.config import Settings
 from chromadb.utils import embedding_functions
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.document_loaders.text import TextLoader
-from langchain.document_loaders.directory import DirectoryLoader
+from langchain_community.document_loaders.text import TextLoader
+from langchain_community.document_loaders.directory import DirectoryLoader
 
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.chat_models import ChatOpenAI
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
@@ -29,12 +29,22 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ProcessingConfig:
-    """Configuration for document processing"""
+class IngestionConfig:
+    """Configuration for document ingestion"""
     chunk_size: int = 2000
     chunk_overlap: int = 200
-    model_name: str = "gpt-4o-mini"
+
+
+@dataclass
+class EmbeddingConfig:
+    """Configuration for embedding model"""
     embedding_model: str = "text-embedding-ada-002"
+
+
+@dataclass
+class GenerationConfig:
+    """Configuration for response generation"""
+    model_name: str = "gpt-4o-mini"
     temperature: float = 0.1
     max_tokens: int = 500
 
@@ -57,21 +67,25 @@ class RAGHandler:
     def __init__(
         self,
         api_key: str,
-        config: Optional[ProcessingConfig] = None,
+        ingestion_config: Optional[IngestionConfig] = None,
+        embedding_config: Optional[EmbeddingConfig] = None,
+        generation_config: Optional[GenerationConfig] = None,
         persist_dir: str = ".chromadb"
     ):
         """
         Initialize the RAG handler.
-
         Args:
             api_key: OpenAI API key
-            config: Processing configuration
+            ingestion_config: Configuration for document ingestion
+            embedding_config: Configuration for embedding model
+            generation_config: Configuration for response generation
             persist_dir: Directory to persist ChromaDB
         """
         logger.info("🚀 Initializing RAG handler...")
-
         self.api_key = api_key
-        self.config = config or ProcessingConfig()
+        self.ingestion_config = ingestion_config or IngestionConfig()
+        self.embedding_config = embedding_config or EmbeddingConfig()
+        self.generation_config = generation_config or GenerationConfig()
         self.persist_dir = persist_dir
 
         # Initialize components
@@ -87,7 +101,9 @@ class RAGHandler:
             raise ValueError("Valid OpenAI API key is required")
 
         logger.info(f"🔑 API key validated (length: {len(api_key)})")
-        logger.info(f"⚙️ Configuration: {self.config}")
+        logger.info(f"⚙️ Ingestion Config: {self.ingestion_config}")
+        logger.info(f"⚙️ Embedding Config: {self.embedding_config}")
+        logger.info(f"⚙️ Generation Config: {self.generation_config}")
 
         # Set up ChromaDB
         self._setup_chromadb()
@@ -114,10 +130,10 @@ class RAGHandler:
 
             # Use OpenAI embeddings
             logger.info(
-                f"🔧 Setting up OpenAI embeddings with model: {self.config.embedding_model}")
+                f"🔧 Setting up OpenAI embeddings with model: {self.embedding_config.embedding_model}")
             embedding_function = embedding_functions.OpenAIEmbeddingFunction(
                 api_key=self.api_key,
-                model_name=self.config.embedding_model
+                model_name=self.embedding_config.embedding_model
             )
             logger.info("✅ OpenAI embedding function created")
 
@@ -142,12 +158,13 @@ class RAGHandler:
             logger.error(f"❌ Error type: {type(e).__name__}")
             raise
 
-    def process_and_initialize(self, docs_dir: str) -> Tuple[bool, List[str]]:
+    def process_and_initialize(self, docs_dir: str, knowledge_base_id: str) -> Tuple[bool, List[str]]:
         """
         Complete processing and initialization pipeline.
 
         Args:
             docs_dir: Directory containing documents
+            knowledge_base_id: Identifier for the knowledge base these documents belong to
 
         Returns:
             Tuple of (success, status messages)
@@ -158,7 +175,8 @@ class RAGHandler:
 
         try:
             # Step 1: Process documents
-            success, messages = self.process_documents(docs_dir)
+            logger.info(f"🧠 Processing documents for knowledge base: {knowledge_base_id}")
+            success, messages = self.process_documents(docs_dir, knowledge_base_id)
             status_messages.extend(messages)
 
             if not success:
@@ -183,12 +201,13 @@ class RAGHandler:
             status_messages.append(f"✗ {error_msg}")
             return False, status_messages
 
-    def process_documents(self, docs_dir: str) -> Tuple[bool, List[str]]:
+    def process_documents(self, docs_dir: str, knowledge_base_id: str) -> Tuple[bool, List[str]]:
         """
         Process documents from the specified directory with enhanced logging.
 
         Args:
             docs_dir: Directory containing documents
+            knowledge_base_id: Identifier for the knowledge base
 
         Returns:
             Tuple of (success, status messages)
@@ -225,8 +244,8 @@ class RAGHandler:
                     f"📄 Found: {file.name} ({file.stat().st_size} bytes)")
 
             # Import documents
-            status_messages.append("📥 Importing documents...")
-            self._import_documents(docs_dir)
+            status_messages.append(f"📥 Importing documents for KB: {knowledge_base_id}...")
+            self._import_documents(docs_dir, knowledge_base_id)
             status_messages.append(
                 f"✓ Imported {len(self.documents)} documents")
             logger.info(f"✅ Imported {len(self.documents)} documents")
@@ -244,8 +263,8 @@ class RAGHandler:
             logger.info(f"✅ Created {len(self.chunks)} chunks")
 
             # Generate embeddings and store in ChromaDB
-            status_messages.append("🧠 Generating embeddings...")
-            self._store_embeddings()
+            status_messages.append(f"🧠 Generating embeddings for KB: {knowledge_base_id}...")
+            self._store_embeddings(knowledge_base_id) # Pass knowledge_base_id here
             status_messages.append("✓ Embeddings generated and stored")
             logger.info("✅ Embeddings stored in ChromaDB")
 
@@ -258,7 +277,60 @@ class RAGHandler:
             status_messages.append(f"✗ {error_msg}")
             return False, status_messages
 
-    def _import_documents(self, docs_dir: str) -> None:
+    def process_single_file(self, file_path: str, knowledge_base_id: str) -> Tuple[bool, List[str]]:
+        """Process a single document file."""
+        logger.info(f"📄 Processing single file: {file_path} for KB: {knowledge_base_id}")
+        status_messages = []
+        
+        try:
+            file = Path(file_path)
+            if not file.exists():
+                msg = f"File not found: {file_path}"
+                logger.error(f"❌ {msg}")
+                return False, [msg]
+
+            # Use the appropriate loader based on file extension
+            ext = file.suffix.lower()
+            loader_cls = None
+            if ext == '.pdf':
+                loader_cls = PyPDFLoader
+            elif ext == '.txt':
+                loader_cls = TextLoader
+            elif ext == '.docx':
+                try:
+                    from langchain_community.document_loaders.docx import Docx2txtLoader
+                    loader_cls = Docx2txtLoader
+                except ImportError:
+                    msg = "DOCX support not available. Please install python-docx."
+                    logger.error(f"❌ {msg}")
+                    return False, [msg]
+            
+            if not loader_cls:
+                msg = f"Unsupported file type: {ext}"
+                logger.error(f"❌ {msg}")
+                return False, [msg]
+
+            # Load, split, and store the single document
+            loader = loader_cls(file_path)
+            self.documents = loader.load()
+            for doc in self.documents:
+                doc.metadata["knowledge_base_id"] = knowledge_base_id
+
+            self._split_documents()
+            self._store_embeddings(knowledge_base_id)
+            
+            msg = f"✓ Successfully processed and embedded {file.name} into KB: {knowledge_base_id}"
+            logger.info(f"✅ {msg}")
+            status_messages.append(msg)
+            
+            return True, status_messages
+
+        except Exception as e:
+            error_msg = f"Error processing single file: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            return False, [error_msg]
+
+    def _import_documents(self, docs_dir: str, knowledge_base_id: str) -> None:
         """Import documents from directory with enhanced error handling"""
         logger.info(f"📥 Importing documents from: {docs_dir}")
 
@@ -273,7 +345,7 @@ class RAGHandler:
 
         # Try to add DOCX support
         try:
-            from langchain.document_loaders.docx import Docx2txtLoader
+            from langchain_community.document_loaders.docx import Docx2txtLoader
             loaders["**/*.docx"] = Docx2txtLoader
             logger.info("✅ DOCX support enabled")
         except ImportError:
@@ -309,7 +381,8 @@ class RAGHandler:
                 "doc_id": idx,
                 "filename": Path(doc.metadata["source"]).name,
                 "filetype": Path(doc.metadata["source"]).suffix[1:].lower(),
-                "imported_at": time.time()
+                "imported_at": time.time(),
+                "knowledge_base_id": knowledge_base_id
             })
 
         logger.info(f"✅ Total documents imported: {len(self.documents)}")
@@ -318,11 +391,11 @@ class RAGHandler:
         """Split documents into chunks with logging"""
         logger.info("✂️ Splitting documents into chunks...")
         logger.info(
-            f"⚙️ Chunk size: {self.config.chunk_size}, Overlap: {self.config.chunk_overlap}")
+            f"⚙️ Chunk size: {self.ingestion_config.chunk_size}, Overlap: {self.ingestion_config.chunk_overlap}")
 
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.config.chunk_size,
-            chunk_overlap=self.config.chunk_overlap,
+            chunk_size=self.ingestion_config.chunk_size,
+            chunk_overlap=self.ingestion_config.chunk_overlap,
             separators=["\n\n", "\n", ".", " ", ""]
         )
 
@@ -333,6 +406,13 @@ class RAGHandler:
             chunk.metadata["chunk_id"] = idx
             chunk.metadata["chunk_size"] = len(chunk.page_content)
             chunk.metadata["created_at"] = time.time()
+            # Propagate knowledge_base_id from parent document
+            if 'knowledge_base_id' in chunk.metadata:
+                pass # Already set if document had it, otherwise it might be missing
+            elif self.documents and hasattr(self.documents[0], 'metadata') and 'knowledge_base_id' in self.documents[0].metadata:
+                 # Fallback: if all docs in this batch are for the same KB, grab from the first one
+                 # This assumes _split_documents is called after _import_documents for a specific KB
+                chunk.metadata['knowledge_base_id'] = self.documents[0].metadata['knowledge_base_id']
 
         logger.info(f"✅ Documents split into {len(self.chunks)} chunks")
 
@@ -343,16 +423,19 @@ class RAGHandler:
             logger.info(
                 f"📊 Chunk stats - Min: {min(sizes)}, Max: {max(sizes)}, Avg: {avg_size:.0f}")
 
-    def _store_embeddings(self) -> None:
+    def _store_embeddings(self, knowledge_base_id: str) -> None:
         """Store document chunks in ChromaDB with progress tracking"""
         logger.info("🗄️ Storing embeddings in ChromaDB...")
 
-        # Clear existing data
-        try:
-            self.collection.delete(where={})
-            logger.info("🧹 Cleared existing embeddings")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not clear existing data: {e}")
+        # Ensure all chunks have the knowledge_base_id in their metadata
+        for chunk in self.chunks:
+            if 'knowledge_base_id' not in chunk.metadata:
+                # This is a fallback, ideally it's set during _import_documents and propagated by _split_documents
+                chunk.metadata['knowledge_base_id'] = knowledge_base_id 
+                logger.warning(f"Fallback: Added knowledge_base_id '{knowledge_base_id}' to chunk {chunk.metadata.get('chunk_id')} in _store_embeddings")
+            elif chunk.metadata['knowledge_base_id'] != knowledge_base_id:
+                logger.warning(f"Mismatch: Chunk {chunk.metadata.get('chunk_id')} has KB ID {chunk.metadata['knowledge_base_id']}, storing with {knowledge_base_id}")
+                chunk.metadata['knowledge_base_id'] = knowledge_base_id # Ensure it's the current one
 
         # Prepare data for bulk insertion
         ids = []
@@ -363,6 +446,7 @@ class RAGHandler:
             chunk_id = f"chunk_{chunk.metadata['chunk_id']}"
             ids.append(chunk_id)
             texts.append(chunk.page_content)
+            chunk.metadata["last_updated"] = time.time()
             metadatas.append(chunk.metadata)
 
         logger.info(f"📤 Preparing to store {len(ids)} chunks...")
@@ -389,211 +473,221 @@ class RAGHandler:
         logger.info("🔗 Setting up conversation chain...")
 
         try:
-            # Initialize LLM
-            logger.info(f"🤖 Initializing LLM: {self.config.model_name}")
-            llm = ChatOpenAI(
-                api_key=self.api_key,
-                model_name=self.config.model_name,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens
-            )
-            logger.info("✅ LLM initialized")
-
-            # Create memory
-            logger.info("🧠 Creating conversation memory...")
-            memory = ConversationBufferMemory(
-                memory_key="chat_history",
-                return_messages=True
-            )
-            logger.info("✅ Memory created")
-
-            # Create enhanced prompt template
-            template = """Você é um assistente especializado em treinamento físico e educação física do sistema DNA da Força.
-
-DIRETRIZES IMPORTANTES:
-1. Use APENAS o contexto fornecido para responder às perguntas
-2. Se a informação não estiver no contexto, diga claramente que não pode responder
-3. Cite as fontes quando possível (nome do documento, página)
-4. Mantenha um tom profissional e educativo
-5. Forneça explicações claras e práticas
-6. Use exemplos quando apropriado
-
-Histórico da conversa: {chat_history}
-
-Contexto dos documentos: {context}
-
-Pergunta do usuário: {question}
-
-Resposta (baseada apenas no contexto fornecido):"""
-
-            prompt = PromptTemplate(
-                input_variables=["chat_history", "context", "question"],
-                template=template
-            )
-            logger.info("✅ Prompt template created")
-
-            # Create retriever
-            logger.info("🔍 Creating document retriever...")
-
-            # Use the collection as a retriever through a custom wrapper
-            class ChromaRetriever:
-                def __init__(self, collection):
-                    self.collection = collection
-
-                def get_relevant_documents(self, query: str, k: int = 5):
-                    results = self.collection.query(
-                        query_texts=[query],
-                        n_results=k
-                    )
-
-                    # Convert to LangChain document format
-                    documents = []
-                    if results['documents']:
-                        for i, doc_text in enumerate(results['documents'][0]):
-                            metadata = results['metadatas'][0][i] if results['metadatas'] else {
-                            }
-                            from langchain.schema import Document
-                            documents.append(Document(
-                                page_content=doc_text,
-                                metadata=metadata
-                            ))
-
-                    return documents
-
-            retriever = ChromaRetriever(self.collection)
-            logger.info("✅ Retriever created")
-
-            # Create a simple QA chain
-            from langchain.chains.question_answering import load_qa_chain
-
-            self.chain = load_qa_chain(
-                llm=llm,
-                chain_type="stuff",
-                prompt=prompt,
-                memory=memory
-            )
-
-            # Store retriever for later use
-            self.retriever = retriever
-
-            logger.info("✅ Conversation chain created successfully")
+            # This is a placeholder. The actual chain is now created on-the-fly in generate_response
+            self.chain = "initialized"
+            logger.info("✅ Chain setup placeholder is set. Chain will be constructed per-request.")
 
         except Exception as e:
-            logger.error(f"❌ Error setting up conversation chain: {str(e)}")
-            logger.error(f"❌ Error type: {type(e).__name__}")
+            logger.error(f"❌ Error in post-embedding setup: {str(e)}")
             raise
 
-    def generate_response(self, question: str) -> Dict[str, Any]:
+    def generate_response(self, question: str, allowed_knowledge_base_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """
-        Generate a response to a question with enhanced error handling.
-
+        Generate a response to a question using a dynamically constructed RAG chain.
         Args:
-            question: User question
-
+            question: The user's question
+            allowed_knowledge_base_ids: Optional list of knowledge base IDs to filter the search
         Returns:
-            Dictionary containing answer, sources, and response time
+            A dictionary containing the answer and sources.
         """
-        if not self.chain or not hasattr(self, 'retriever'):
-            logger.error("❌ System not properly initialized")
-            return {
-                "answer": "Sistema não inicializado corretamente. Execute a inicialização primeiro.",
-                "sources": [],
-                "response_time": 0
-            }
+        if not self.collection:
+            logger.error("❌ Collection not initialized")
+            return {"answer": "O sistema de chat não foi inicializado corretamente.", "sources": []}
+
+        logger.info(f"💬 Generating response for: '{question[:50]}...' with KBs: {allowed_knowledge_base_ids}")
+        start_time = time.time()
 
         try:
-            logger.info(f"💭 Generating response for: {question[:50]}...")
-            start_time = time.time()
-
-            # Get relevant documents
-            logger.info("🔍 Retrieving relevant documents...")
-            relevant_docs = self.retriever.get_relevant_documents(
-                question, k=5)
-            logger.info(f"📄 Found {len(relevant_docs)} relevant documents")
-
-            # Generate response
-            logger.info("🤖 Generating AI response...")
-            response = self.chain.run(
-                input_documents=relevant_docs,
-                question=question
+            # 1. Retriever
+            retriever = self.collection.as_retriever(
+                search_kwargs={
+                    "k": 5,
+                    "where": {"knowledge_base_id": {"$in": allowed_knowledge_base_ids}} if allowed_knowledge_base_ids else {}
+                }
             )
 
-            # Format sources
+            # 2. LLM
+            llm = ChatOpenAI(
+                api_key=self.api_key,
+                model_name=self.generation_config.model_name,
+                temperature=self.generation_config.temperature,
+                max_tokens=self.generation_config.max_tokens
+            )
+
+            # 3. Memory
+            memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+
+            # 4. Prompt
+            template = """Você é um assistente especializado em treinamento físico e educação física do sistema DNA da Força.
+            DIRETRIZES IMPORTANTES:
+            1. Use APENAS o contexto fornecido para responder às perguntas
+            2. Se a informação não estiver no contexto, diga claramente que não pode responder
+            3. Cite as fontes quando possível (nome do documento, página)
+            4. Mantenha um tom profissional e educativo
+            5. Forneça explicações claras e práticas
+            6. Use exemplos quando apropriado
+
+            Histórico da conversa: {chat_history}
+            Contexto dos documentos: {context}
+            Pergunta do usuário: {question}
+            Resposta (baseada apenas no contexto fornecido):"""
+            prompt = PromptTemplate(input_variables=["chat_history", "context", "question"], template=template)
+
+            # 5. Chain
+            chain = ConversationalRetrievalChain.from_llm(
+                llm=llm,
+                retriever=retriever,
+                memory=memory,
+                combine_docs_chain_kwargs={"prompt": prompt},
+                return_source_documents=True
+            )
+
+            result = chain({"question": question})
+            answer = result.get("answer", "Não foi possível gerar uma resposta.")
+
             sources = []
-            for doc in relevant_docs:
-                source = {
-                    "title": doc.metadata.get("filename", "Unknown"),
-                    "source": doc.metadata.get("source", "Unknown"),
-                    "page": doc.metadata.get("page"),
-                    "chunk": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content
-                }
-                sources.append(source)
+            if 'source_documents' in result:
+                for doc in result['source_documents']:
+                    metadata = doc.metadata
+                    sources.append(Source(
+                        title=metadata.get('filename', 'N/A'),
+                        source=metadata.get('source', 'N/A'),
+                        page=metadata.get('page'),
+                        chunk=doc.page_content
+                    ))
 
             response_time = time.time() - start_time
             logger.info(f"✅ Response generated in {response_time:.2f}s")
 
             return {
-                "answer": response,
-                "sources": sources,
+                "answer": answer,
+                "sources": [s.__dict__ for s in sources],
                 "response_time": response_time
             }
 
         except Exception as e:
             logger.error(f"❌ Error generating response: {str(e)}")
-            logger.error(f"❌ Error type: {type(e).__name__}")
-            return {
-                "answer": "Ocorreu um erro ao gerar a resposta. Verifique os logs para mais detalhes.",
-                "sources": [],
-                "response_time": 0
-            }
+            raise
+
+    def get_available_knowledge_bases(self) -> List[str]:
+        """Get a list of unique knowledge_base_id values from the collection efficiently."""
+        try:
+            if not self.collection:
+                logger.warning("⚠️ Collection not initialized, cannot get knowledge bases")
+                return []
+
+            # Efficiently get unique metadata values if the backend supports it.
+            # ChromaDB's get() with include=['metadatas'] is the way for smaller sets.
+            # For very large dbs, this might still be slow.
+            metadatas = self.collection.get(include=["metadatas"])['metadatas']
+            if not metadatas:
+                return []
+
+            kb_ids = set(md['knowledge_base_id'] for md in metadatas if md and 'knowledge_base_id' in md)
+            
+            logger.info(f"📚 Found knowledge bases: {list(kb_ids)}")
+            return sorted(list(kb_ids))
+
+        except Exception as e:
+            logger.error(f"❌ Error getting knowledge bases: {str(e)}")
+            return []
 
     def get_system_stats(self) -> Dict[str, Any]:
         """Get system statistics for debugging"""
         try:
             stats = {
-                "documents_loaded": len(self.documents),
-                "chunks_created": len(self.chunks),
-                "collection_count": self.collection.count() if self.collection else 0,
                 "chain_initialized": self.chain is not None,
-                "retriever_available": hasattr(self, 'retriever'),
-                "config": {
-                    "model_name": self.config.model_name,
-                    "chunk_size": self.config.chunk_size,
-                    "chunk_overlap": self.config.chunk_overlap,
-                    "temperature": self.config.temperature
-                }
+                "collection_name": self.collection.name if self.collection else "N/A",
+                "collection_count": self.collection.count() if self.collection else 0,
+                "ingestion_config": self.ingestion_config.__dict__,
+                "embedding_config": self.embedding_config.__dict__,
+                "generation_config": self.generation_config.__dict__,
             }
-
-            if self.documents:
-                file_types = {}
-                for doc in self.documents:
-                    file_type = doc.metadata.get("filetype", "unknown")
-                    file_types[file_type] = file_types.get(file_type, 0) + 1
-                stats["file_types"] = file_types
-
+            logger.info(f"📊 System stats: {stats}")
             return stats
-
         except Exception as e:
-            logger.error(f"❌ Error getting system stats: {e}")
+            logger.error(f"❌ Error getting system stats: {str(e)}")
             return {"error": str(e)}
 
     def reset(self) -> None:
         """Reset the handler state with logging"""
         logger.info("🔄 Resetting RAG handler...")
-
         try:
+            if self.collection:
+                # This is a more complex operation depending on Chroma's capabilities.
+                # For a full reset, you might need to delete and recreate the collection.
+                # self.db.delete_collection(name=self.collection.name)
+                # self._setup_chromadb() # Re-initialize
+                logger.warning("⚠️ Full collection reset is not implemented. Clearing in-memory state.")
+
             self.documents = []
             self.chunks = []
-
-            if self.collection:
-                self.collection.delete(where={})
-                logger.info("🧹 Cleared collection")
-
             self.chain = None
-            if hasattr(self, 'retriever'):
-                delattr(self, 'retriever')
+            logger.info("✅ RAG handler state reset")
+        except Exception as e:
+            logger.error(f"❌ Error resetting handler: {str(e)}")
+            raise
 
-            logger.info("✅ RAG handler reset successfully")
+    def list_documents(self, knowledge_base_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List all documents in the vector store, optionally filtered by knowledge base."""
+        logger.info(f"Listing documents for KB: {knowledge_base_id or 'all'}")
+        try:
+            if not self.collection:
+                logger.warning("⚠️ Collection not initialized, cannot list documents")
+                return []
+
+            where_filter = {}
+            if knowledge_base_id:
+                where_filter = {"knowledge_base_id": knowledge_base_id}
+
+            results = self.collection.get(where=where_filter, include=["metadatas"])
+            
+            # Deduplicate by filename
+            unique_docs = {}
+            for metadata in results.get('metadatas', []):
+                filename = metadata.get('filename')
+                if filename and filename not in unique_docs:
+                    unique_docs[filename] = {
+                        "filename": filename,
+                        "knowledge_base_id": metadata.get('knowledge_base_id'),
+                        "last_updated": metadata.get('last_updated'),
+                        "source": metadata.get('source'),
+                    }
+            
+            return list(unique_docs.values())
 
         except Exception as e:
-            logger.error(f"❌ Error resetting handler: {e}")
+            logger.error(f"❌ Error listing documents: {str(e)}")
+            return []
+
+    def delete_documents(self, knowledge_base_id: Optional[str] = None, filename: Optional[str] = None) -> Dict[str, Any]:
+        """Delete documents from the collection by knowledge_base_id or filename."""
+        if not knowledge_base_id and not filename:
+            raise ValueError("Either knowledge_base_id or filename must be provided")
+
+        logger.info(f"Deleting documents with KB: {knowledge_base_id} and filename: {filename}")
+        try:
+            if not self.collection:
+                logger.warning("⚠️ Collection not initialized, cannot delete documents")
+                return {"deleted_count": 0, "error": "Collection not initialized"}
+
+            where_filter = {}
+            if knowledge_base_id:
+                where_filter["knowledge_base_id"] = knowledge_base_id
+            if filename:
+                where_filter["filename"] = filename
+            
+            # First, get the IDs of the documents to be deleted
+            ids_to_delete = self.collection.get(where=where_filter, include=[])['ids']
+
+            if not ids_to_delete:
+                logger.info("No documents found to delete.")
+                return {"deleted_count": 0}
+
+            self.collection.delete(ids=ids_to_delete)
+            logger.info(f"✅ Deleted {len(ids_to_delete)} document chunks.")
+            return {"deleted_count": len(ids_to_delete)}
+
+        except Exception as e:
+            logger.error(f"❌ Error deleting documents: {str(e)}")
+            return {"deleted_count": 0, "error": str(e)}

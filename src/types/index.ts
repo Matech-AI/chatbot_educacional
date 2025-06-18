@@ -54,4 +54,5 @@ export interface AssistantConfig {
   chunkOverlap: number;
   retrievalSearchType: string;
   embeddingModel: string;
+  knowledgeBaseIds?: string[];
 }

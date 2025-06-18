@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { api } from "../lib/api";
 import { useMaterialsStore } from "../store/materials-store";
 import { useAuthStore } from "../store/auth-store";
 import { MaterialCard } from "../components/materials/material-card";
@@ -58,11 +59,8 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
 
   const loadDriveStats = async () => {
     try {
-      const response = await fetch("/api/drive-stats-detailed", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-      });
-      if (response.ok) {
-        const stats = await response.json();
+      const stats = await api.legacy.getDriveStats();
+      if (stats) {
         setDriveStats(stats);
         setFolderStructure(stats.folder_structure);
       }
@@ -89,8 +87,9 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
     file: File,
     description: string,
     tags: string[]
-  ) => {
-    const success = await uploadMaterial(file, description, tags);
+  ): Promise<boolean> => {
+    const response = await api.materials.upload(file, description, tags);
+    const success = response.ok;
     if (success) {
       setActiveTab("materials");
       loadDriveStats(); // Refresh stats
@@ -100,7 +99,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
 
   const handleDelete = async (id: string) => {
     if (window.confirm("Tem certeza que deseja excluir este material?")) {
-      await deleteMaterial(id);
+      await api.materials.delete(id);
       loadDriveStats(); // Refresh stats
     }
   };
@@ -428,7 +427,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
           >
-            <UploadForm onUpload={handleUpload} isLoading={isProcessing} />
+            <UploadForm onUpload={handleUpload} isLoading={isLoading} />
           </motion.div>
         )}
 
@@ -439,7 +438,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
           >
-            <DriveSync onSync={handleSync} isLoading={isProcessing} />
+            <DriveSync onSync={handleSync} isLoading={isLoading} />
           </motion.div>
         )}
 
@@ -450,7 +449,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
           >
-            <RecursiveDriveSync onSync={handleSync} isLoading={isProcessing} />
+            <RecursiveDriveSync onSync={handleSync} isLoading={isLoading} />
           </motion.div>
         )}
 

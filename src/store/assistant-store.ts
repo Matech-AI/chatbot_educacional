@@ -45,7 +45,8 @@ Use {context}, {chat_history} e {question} como variáveis no template.`,
     chunkSize: 2000,
     chunkOverlap: 100,
     retrievalSearchType: 'mmr',
-    embeddingModel: 'text-embedding-ada-002'
+    embeddingModel: 'text-embedding-ada-002',
+    knowledgeBaseIds: ['material_de_treino']
   },
   'Nutrição Esportiva': {
     name: 'Assistente Educacional de Nutrição Esportiva',
@@ -80,7 +81,8 @@ Use {context}, {chat_history} e {question} como variáveis no template.`,
     chunkSize: 2200,
     chunkOverlap: 150,
     retrievalSearchType: 'mmr',
-    embeddingModel: 'text-embedding-ada-002'
+    embeddingModel: 'text-embedding-ada-002',
+    knowledgeBaseIds: []
   },
   'Anatomia Humana': {
     name: 'Assistente Educacional de Anatomia Humana',
@@ -115,7 +117,8 @@ Use {context}, {chat_history} e {question} como variáveis no template.`,
     chunkSize: 1800,
     chunkOverlap: 200,
     retrievalSearchType: 'mmr',
-    embeddingModel: 'text-embedding-ada-002'
+    embeddingModel: 'text-embedding-ada-002',
+    knowledgeBaseIds: []
   }
 };
 

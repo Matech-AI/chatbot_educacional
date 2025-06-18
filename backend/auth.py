@@ -5,77 +5,104 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
+import json
+import os
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Security configuration
-SECRET_KEY = "your-secret-key-here"  # Change in production
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 180
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 180))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+USERS_FILE = "users.json"
+users_cache = {}
 
 class Token(BaseModel):
     access_token: str
     token_type: str
 
-
 class TokenData(BaseModel):
     username: Optional[str] = None
     role: Optional[str] = None
-
 
 class User(BaseModel):
     username: str
     role: str
     disabled: Optional[bool] = None
 
+def load_users(force_reload=False):
+    """Load users from JSON file into cache, with forced reload option."""
+    global users_cache
+    if not force_reload and users_cache:
+        return users_cache
 
-# Mock users database - Corrigido para sincronizar com o frontend
-USERS_DB = {
-    "admin": {
-        "username": "admin",
-        "role": "admin",
-        "hashed_password": pwd_context.hash("adminpass"),
-        "disabled": False
-    },
-    "instrutor": {
-        "username": "instrutor",
-        "role": "instructor",
-        "hashed_password": pwd_context.hash("instrutorpass"),
-        "disabled": False
-    },
-    "aluno": {
-        "username": "aluno",
-        "role": "student",
-        "hashed_password": pwd_context.hash("alunopass"),
-        "disabled": False
-    }
-}
+    if not os.path.exists(USERS_FILE):
+        logger.error(f"'{USERS_FILE}' not found. Please create it.")
+        return {}
 
+    try:
+        with open(USERS_FILE, "r") as f:
+            users_list = json.load(f)
+        
+        users_cache = {
+            user["username"]: {
+                "username": user["username"],
+                "role": user.get("role", "student"),
+                "hashed_password": get_password_hash(user["password"]),
+                "disabled": user.get("disabled", False)
+            }
+            for user in users_list
+        }
+        logger.info(f"👥 Loaded and processed {len(users_cache)} users.")
+        return users_cache
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"Error loading or processing '{USERS_FILE}': {e}")
+        return {}
+
+def get_user(username: str):
+    """Get a user from the cache."""
+    users = load_users()
+    if username in users:
+        return User(**users[username])
+    return None
+
+def authenticate_user(username: str, password: str):
+    """Authenticate a user by checking credentials against the cache."""
+    users = load_users(force_reload=True) # Force reload on auth attempt
+    user_data = users.get(username)
+
+    if not user_data:
+        logger.warning(f"Authentication failed: User '{username}' not found.")
+        return None
+
+    # Compatibility with plain text passwords from users.json
+    if not pwd_context.verify(password, user_data["hashed_password"]):
+        logger.warning(f"Authentication failed: Incorrect password for '{username}'.")
+        return None
+        
+    if user_data.get("disabled", False):
+        logger.warning(f"Authentication failed: User '{username}' is disabled.")
+        return None
+
+    return User(**user_data)
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
-
 def get_password_hash(password):
-    return pwd_context.hash(password)
-
-
-def get_user(username: str):
-    if username in USERS_DB:
-        user_dict = USERS_DB[username]
-        return User(**user_dict)
-    return None
-
-
-def authenticate_user(username: str, password: str):
-    user = get_user(username)
-    if not user:
-        return False
-    if not verify_password(password, USERS_DB[username]["hashed_password"]):
-        return False
-    return user
+    # Check if the password is already hashed
+    try:
+        return pwd_context.hash(password)
+    except Exception:
+        # If it fails, it might be already hashed
+        return password
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
