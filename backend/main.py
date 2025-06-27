@@ -3,11 +3,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
+from dotenv import load_dotenv
+import os
+
+# Import RAG handler
+from rag_handler import RAGHandler, ProcessingConfig
 
 # Import auth functionality
 from passlib.context import CryptContext
 from jose import JWTError, jwt
+
+# Load environment variables
+load_dotenv()
 
 # Simple working backend for Chatbot Educacional
 app = FastAPI(title="Chatbot Educacional API")
@@ -21,8 +29,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# RAG Handler Initialization
+API_KEY = os.getenv("OPENAI_API_KEY")
+if not API_KEY:
+    raise ValueError("OPENAI_API_KEY environment variable not set")
+
+rag_config = ProcessingConfig()
+rag_handler = RAGHandler(api_key=API_KEY, config=rag_config)
+
 # Security configuration (from auth.py)
-SECRET_KEY = "your-secret-key-here"
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 180
 
@@ -72,6 +88,13 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     conversation_id: str
+    sources: Optional[List[dict]] = None
+
+
+class IndexResponse(BaseModel):
+    success: bool
+    message: str
+    details: Optional[List[str]] = None
 
 # Auth helper functions (from auth.py)
 def verify_password(plain_password, hashed_password):
@@ -149,11 +172,70 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, current_user: User = Depends(get_current_user)):
-    # Simple chatbot response (placeholder)
-    response_text = f"Olá {current_user.username}! Você disse: '{request.message}'. Esta é uma resposta automática do chatbot educacional."
+    if not rag_handler:
+        raise HTTPException(status_code=503, detail="RAG system not initialized")
+
+    response_data = rag_handler.generate_response(request.message)
     
     return ChatResponse(
-        response=response_text,
-        conversation_id=request.conversation_id or "default-conversation"
+        response=response_data["answer"],
+        conversation_id=request.conversation_id or "default-conversation",
+        sources=response_data.get("sources", [])
     )
+
+@app.post("/index", response_model=IndexResponse)
+async def index_documents(current_user: User = Depends(get_current_user)):
+    """
+    Scans the 'data/materials' directory, processes all documents,
+    and adds them to the ChromaDB 'materials' collection.
+    This is a full re-indexing operation.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can index documents")
+
+    # The directory containing the documents to be indexed
+    docs_dir = "data/materials"
+
+    # Get the absolute path for file system operations
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    absolute_docs_dir = os.path.join(backend_dir, docs_dir)
+
+    if not os.path.isdir(absolute_docs_dir):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Materials directory not found at {absolute_docs_dir}"
+        )
+
+    try:
+        # Reset handler state before processing to ensure a clean index
+        rag_handler.reset()
+        
+        # Process documents and initialize the chain
+        success, messages = rag_handler.process_and_initialize(absolute_docs_dir)
+        
+        if success:
+            return IndexResponse(
+                success=True,
+                message=f"Documents from '{docs_dir}' indexed successfully.",
+                details=messages
+            )
+        else:
+            # Handle the case where no documents are found as a success
+            if messages and "No documents found" in messages[0]:
+                 return IndexResponse(
+                    success=True,
+                    message=f"No documents found in '{docs_dir}' to index.",
+                    details=messages
+                )
+            return IndexResponse(
+                success=False,
+                message=f"Failed to index documents from '{docs_dir}'.",
+                details=messages
+            )
+    except Exception as e:
+        # In a real app, you'd want to log this exception
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected error occurred during indexing: {str(e)}"
+        )
 

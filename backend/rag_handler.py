@@ -58,7 +58,7 @@ class RAGHandler:
         self,
         api_key: str,
         config: Optional[ProcessingConfig] = None,
-        persist_dir: str = ".chromadb"
+        persist_dir: Optional[str] = None,
     ):
         """
         Initialize the RAG handler.
@@ -66,13 +66,19 @@ class RAGHandler:
         Args:
             api_key: OpenAI API key
             config: Processing configuration
-            persist_dir: Directory to persist ChromaDB
+            persist_dir: Directory to persist ChromaDB. Defaults to 'backend/.chromadb'
         """
         logger.info("🚀 Initializing RAG handler...")
 
         self.api_key = api_key
         self.config = config or ProcessingConfig()
-        self.persist_dir = persist_dir
+
+        if persist_dir:
+            self.persist_dir = persist_dir
+        else:
+            # Default to .chromadb inside the backend directory
+            backend_dir = Path(__file__).parent
+            self.persist_dir = str(backend_dir / ".chromadb")
 
         # Initialize components
         self.documents = []
@@ -122,7 +128,7 @@ class RAGHandler:
             logger.info("✅ OpenAI embedding function created")
 
             # Create or get collection
-            collection_name = "dna_da_forca"
+            collection_name = "materials"
             logger.info(f"📦 Creating/getting collection: {collection_name}")
 
             self.collection = self.db.get_or_create_collection(
