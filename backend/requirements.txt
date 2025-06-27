@@ -6,7 +6,7 @@ langchain==0.3.26
 langchain-openai==0.3.23
 langchain-core
 langchain-text-splitters
-chromadb==1.0.13
+langchain-chroma
 openai==1.88.0
 python-jose==3.3.0
 passlib[bcrypt]==1.7.4

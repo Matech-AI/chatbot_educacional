@@ -5,20 +5,19 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass
 
-import chromadb
-from chromadb.config import Settings
-from chromadb.utils import embedding_functions
-
+from langchain_chroma import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.document_loaders.text import TextLoader
 from langchain.document_loaders.directory import DirectoryLoader
 
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.chat_models import ChatOpenAI
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
-from langchain.prompts import PromptTemplate
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain.prompts import PromptTemplate, ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+from langchain.load import dumps, loads
+from operator import itemgetter
+
 
 # Configure enhanced logging
 logging.basicConfig(
@@ -83,8 +82,8 @@ class RAGHandler:
         # Initialize components
         self.documents = []
         self.chunks = []
-        self.db = None
-        self.collection = None
+        self.vector_store = None
+        self.embeddings = None
         self.chain = None
 
         # Validate API key
@@ -101,45 +100,32 @@ class RAGHandler:
         logger.info("✅ RAG handler initialized successfully")
 
     def _setup_chromadb(self) -> None:
-        """Set up ChromaDB with persistence and enhanced logging"""
+        """Set up ChromaDB using langchain-chroma with persistence."""
         try:
-            logger.info("🗄️ Setting up ChromaDB...")
+            logger.info("🗄️ Setting up ChromaDB with langchain-chroma...")
             logger.info(f"📁 Persist directory: {self.persist_dir}")
 
             # Create persist directory if it doesn't exist
             os.makedirs(self.persist_dir, exist_ok=True)
             logger.info("✅ Persist directory created/verified")
 
-            self.db = chromadb.Client(
-                Settings(
-                    persist_directory=self.persist_dir,
-                    chroma_db_impl="duckdb+parquet"
-                )
+            # Initialize embeddings
+            self.embeddings = OpenAIEmbeddings(
+                api_key=self.api_key, model=self.config.embedding_model
             )
-            logger.info("✅ ChromaDB client initialized")
-
-            # Use OpenAI embeddings
             logger.info(
-                f"🔧 Setting up OpenAI embeddings with model: {self.config.embedding_model}")
-            embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-                api_key=self.api_key,
-                model_name=self.config.embedding_model
-            )
-            logger.info("✅ OpenAI embedding function created")
+                f"✅ OpenAI embeddings initialized with model: {self.config.embedding_model}")
 
-            # Create or get collection
-            collection_name = "materials"
-            logger.info(f"📦 Creating/getting collection: {collection_name}")
-
-            self.collection = self.db.get_or_create_collection(
-                name=collection_name,
-                embedding_function=embedding_function
+            # Initialize Chroma vector store
+            self.vector_store = Chroma(
+                collection_name="materials",
+                embedding_function=self.embeddings,
+                persist_directory=self.persist_dir,
             )
 
-            # Check existing documents in collection
-            existing_count = self.collection.count()
+            existing_count = self.vector_store._collection.count()
             logger.info(
-                f"📊 Existing documents in collection: {existing_count}")
+                f"📊 Collection 'materials' loaded with {existing_count} documents.")
 
             logger.info("✅ ChromaDB setup completed successfully")
 
@@ -164,7 +150,7 @@ class RAGHandler:
 
         try:
             # Step 1: Process documents
-            success, messages = self.process_documents(docs_dir)
+            success, messages = self.add_documents(docs_dir)
             status_messages.extend(messages)
 
             if not success:
@@ -189,9 +175,9 @@ class RAGHandler:
             status_messages.append(f"✗ {error_msg}")
             return False, status_messages
 
-    def process_documents(self, docs_dir: str) -> Tuple[bool, List[str]]:
+    def add_documents(self, docs_dir: str) -> Tuple[bool, List[str]]:
         """
-        Process documents from the specified directory with enhanced logging.
+        Add documents from the specified directory with enhanced logging.
 
         Args:
             docs_dir: Directory containing documents
@@ -350,40 +336,22 @@ class RAGHandler:
                 f"📊 Chunk stats - Min: {min(sizes)}, Max: {max(sizes)}, Avg: {avg_size:.0f}")
 
     def _store_embeddings(self) -> None:
-        """Store document chunks in ChromaDB with progress tracking"""
+        """Store document chunks in ChromaDB using the langchain wrapper."""
         logger.info("🗄️ Storing embeddings in ChromaDB...")
 
-        # Clear existing data
+        if not self.chunks:
+            logger.warning("⚠️ No chunks to store. Skipping embedding process.")
+            return
+
+        logger.info(f"📤 Storing {len(self.chunks)} chunks...")
+
         try:
-            self.collection.delete(where={})
-            logger.info("🧹 Cleared existing embeddings")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not clear existing data: {e}")
-
-        # Prepare data for bulk insertion
-        ids = []
-        texts = []
-        metadatas = []
-
-        for chunk in self.chunks:
-            chunk_id = f"chunk_{chunk.metadata['chunk_id']}"
-            ids.append(chunk_id)
-            texts.append(chunk.page_content)
-            metadatas.append(chunk.metadata)
-
-        logger.info(f"📤 Preparing to store {len(ids)} chunks...")
-
-        # Add to collection with progress tracking
-        try:
-            self.collection.add(
-                ids=ids,
-                documents=texts,
-                metadatas=metadatas
-            )
-            logger.info(f"✅ Successfully stored {len(ids)} embeddings")
+            # The add_documents method handles chunking, embedding, and storage
+            self.vector_store.add_documents(self.chunks)
+            logger.info(f"✅ Successfully stored {len(self.chunks)} chunks.")
 
             # Verify storage
-            count = self.collection.count()
+            count = self.vector_store._collection.count()
             logger.info(f"📊 Collection now contains {count} documents")
 
         except Exception as e:
@@ -391,13 +359,12 @@ class RAGHandler:
             raise
 
     def _setup_chain(self) -> None:
-        """Set up the conversation chain with enhanced configuration"""
-        logger.info("🔗 Setting up conversation chain...")
+        """Set up the components for the RAG-Fusion conversation chain."""
+        logger.info("🔗 Setting up RAG-Fusion components...")
 
         try:
             # Initialize LLM
-            logger.info(f"🤖 Initializing LLM: {self.config.model_name}")
-            llm = ChatOpenAI(
+            self.llm = ChatOpenAI(
                 api_key=self.api_key,
                 model_name=self.config.model_name,
                 temperature=self.config.temperature,
@@ -405,101 +372,45 @@ class RAGHandler:
             )
             logger.info("✅ LLM initialized")
 
-            # Create memory
-            logger.info("🧠 Creating conversation memory...")
-            memory = ConversationBufferMemory(
-                memory_key="chat_history",
-                return_messages=True
-            )
-            logger.info("✅ Memory created")
+            # RAG-Fusion: Query Generation Prompt
+            query_gen_template = """You are a helpful assistant that generates multiple search queries based on a single input query.
+Generate multiple search queries related to: {question}
+Output (4 queries):"""
+            self.query_gen_prompt = ChatPromptTemplate.from_template(
+                query_gen_template)
 
-            # Create enhanced prompt template
-            template = """Você é um assistente especializado em treinamento físico e educação física do sistema DNA da Força.
+            # Final RAG Chain Prompt
+            answer_template = """Answer the following question based on this context:
 
-DIRETRIZES IMPORTANTES:
-1. Use APENAS o contexto fornecido para responder às perguntas
-2. Se a informação não estiver no contexto, diga claramente que não pode responder
-3. Cite as fontes quando possível (nome do documento, página)
-4. Mantenha um tom profissional e educativo
-5. Forneça explicações claras e práticas
-6. Use exemplos quando apropriado
+{context}
 
-Histórico da conversa: {chat_history}
+Question: {question}
+"""
+            self.answer_prompt = ChatPromptTemplate.from_template(
+                answer_template)
 
-Contexto dos documentos: {context}
-
-Pergunta do usuário: {question}
-
-Resposta (baseada apenas no contexto fornecido):"""
-
-            prompt = PromptTemplate(
-                input_variables=["chat_history", "context", "question"],
-                template=template
-            )
-            logger.info("✅ Prompt template created")
-
-            # Create retriever
-            logger.info("🔍 Creating document retriever...")
-
-            # Use the collection as a retriever through a custom wrapper
-            class ChromaRetriever:
-                def __init__(self, collection):
-                    self.collection = collection
-
-                def get_relevant_documents(self, query: str, k: int = 5):
-                    results = self.collection.query(
-                        query_texts=[query],
-                        n_results=k
-                    )
-
-                    # Convert to LangChain document format
-                    documents = []
-                    if results['documents']:
-                        for i, doc_text in enumerate(results['documents'][0]):
-                            metadata = results['metadatas'][0][i] if results['metadatas'] else {
-                            }
-                            from langchain.schema import Document
-                            documents.append(Document(
-                                page_content=doc_text,
-                                metadata=metadata
-                            ))
-
-                    return documents
-
-            retriever = ChromaRetriever(self.collection)
-            logger.info("✅ Retriever created")
-
-            # Create a simple QA chain
-            from langchain.chains.question_answering import load_qa_chain
-
-            self.chain = load_qa_chain(
-                llm=llm,
-                chain_type="stuff",
-                prompt=prompt,
-                memory=memory
-            )
-
-            # Store retriever for later use
-            self.retriever = retriever
-
-            logger.info("✅ Conversation chain created successfully")
+            self.chain = True  # Mark as initialized
+            logger.info("✅ RAG-Fusion components created successfully")
 
         except Exception as e:
-            logger.error(f"❌ Error setting up conversation chain: {str(e)}")
+            logger.error(
+                f"❌ Error setting up conversation chain components: {str(e)}")
             logger.error(f"❌ Error type: {type(e).__name__}")
+            self.chain = None
             raise
 
-    def generate_response(self, question: str) -> Dict[str, Any]:
+    def query(self, question: str, material_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """
-        Generate a response to a question with enhanced error handling.
+        Query the RAG system using RAG-Fusion with optional material filtering.
 
         Args:
             question: User question
+            material_ids: Optional list of source material IDs to filter by.
 
         Returns:
             Dictionary containing answer, sources, and response time
         """
-        if not self.chain or not hasattr(self, 'retriever'):
+        if not self.chain:
             logger.error("❌ System not properly initialized")
             return {
                 "answer": "Sistema não inicializado corretamente. Execute a inicialização primeiro.",
@@ -508,39 +419,65 @@ Resposta (baseada apenas no contexto fornecido):"""
             }
 
         try:
-            logger.info(f"💭 Generating response for: {question[:50]}...")
+            logger.info(f"💭 Generating response for: '{question[:50]}...'")
+            if material_ids:
+                logger.info(f"🔍 Filtering by {len(material_ids)} material(s).")
             start_time = time.time()
 
-            # Get relevant documents
-            logger.info("🔍 Retrieving relevant documents...")
-            relevant_docs = self.retriever.get_relevant_documents(
-                question, k=5)
-            logger.info(f"📄 Found {len(relevant_docs)} relevant documents")
-
-            # Generate response
-            logger.info("🤖 Generating AI response...")
-            response = self.chain.run(
-                input_documents=relevant_docs,
-                question=question
+            # 1. Generate multiple queries
+            query_gen_chain = (
+                self.query_gen_prompt
+                | self.llm
+                | StrOutputParser()
+                | (lambda x: [q for q in x.split("\n") if q])
             )
+            generated_queries = query_gen_chain.invoke({"question": question})
+            logger.info(f"🔍 Generated {len(generated_queries)} queries.")
 
-            # Format sources
-            sources = []
-            for doc in relevant_docs:
-                source = {
-                    "title": doc.metadata.get("filename", "Unknown"),
-                    "source": doc.metadata.get("source", "Unknown"),
-                    "page": doc.metadata.get("page"),
-                    "chunk": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content
-                }
-                sources.append(source)
+            # 2. Retrieve documents for each query
+            search_kwargs = {'k': 5}
+            if material_ids:
+                # ChromaDB metadata filter format for langchain
+                search_kwargs['filter'] = {"source": {"$in": material_ids}}
+
+            retriever = self.vector_store.as_retriever(
+                search_kwargs=search_kwargs)
+
+            retrieved_docs = []
+            for q in generated_queries:
+                docs = retriever.get_relevant_documents(q)
+                retrieved_docs.append(docs)
+
+            # 3. Rerank documents
+            reranked_results = reciprocal_rank_fusion(retrieved_docs)
+            logger.info(f"🔄 Reranked {len(reranked_results)} documents.")
+
+            # 4. Format context and extract sources
+            context = "\n\n".join([doc.page_content for doc,
+                                 score in reranked_results[:5]])
+
+            unique_sources = []
+            seen_sources = set()
+            for doc, score in reranked_results[:5]:
+                source = doc.metadata.get('source')
+                if source and source not in seen_sources:
+                    unique_sources.append({
+                        "source": source,
+                        "filename": doc.metadata.get('filename', Path(source).name)
+                    })
+                    seen_sources.add(source)
+
+            # 5. Generate final answer
+            answer_chain = self.answer_prompt | self.llm | StrOutputParser()
+            answer = answer_chain.invoke(
+                {"context": context, "question": question})
 
             response_time = time.time() - start_time
             logger.info(f"✅ Response generated in {response_time:.2f}s")
 
             return {
-                "answer": response,
-                "sources": sources,
+                "answer": answer,
+                "sources": unique_sources,
                 "response_time": response_time
             }
 
@@ -559,7 +496,7 @@ Resposta (baseada apenas no contexto fornecido):"""
             stats = {
                 "documents_loaded": len(self.documents),
                 "chunks_created": len(self.chunks),
-                "collection_count": self.collection.count() if self.collection else 0,
+                "collection_count": self.vector_store._collection.count() if self.vector_store else 0,
                 "chain_initialized": self.chain is not None,
                 "retriever_available": hasattr(self, 'retriever'),
                 "config": {
@@ -591,8 +528,9 @@ Resposta (baseada apenas no contexto fornecido):"""
             self.documents = []
             self.chunks = []
 
-            if self.collection:
-                self.collection.delete(where={})
+            if self.vector_store:
+                # Access the underlying collection to delete all items
+                self.vector_store._collection.delete(where={})
                 logger.info("🧹 Cleared collection")
 
             self.chain = None
@@ -603,3 +541,34 @@ Resposta (baseada apenas no contexto fornecido):"""
 
         except Exception as e:
             logger.error(f"❌ Error resetting handler: {e}")
+
+
+def reciprocal_rank_fusion(results: list[list], k=60):
+    """ Reciprocal_rank_fusion that takes multiple lists of ranked documents
+        and an optional parameter k used in the RRF formula """
+
+    # Initialize a dictionary to hold fused scores for each unique document
+    fused_scores = {}
+
+    # Iterate through each list of ranked documents
+    for docs in results:
+        # Iterate through each document in the list, with its rank (position in the list)
+        for rank, doc in enumerate(docs):
+            # Convert the document to a string format to use as a key (assumes documents can be serialized to JSON)
+            doc_str = dumps(doc)
+            # If the document is not yet in the fused_scores dictionary, add it with an initial score of 0
+            if doc_str not in fused_scores:
+                fused_scores[doc_str] = 0
+            # Retrieve the current score of the document, if any
+            previous_score = fused_scores[doc_str]
+            # Update the score of the document using the RRF formula: 1 / (rank + k)
+            fused_scores[doc_str] += 1 / (rank + k)
+
+    # Sort the documents based on their fused scores in descending order to get the final reranked results
+    reranked_results = [
+        (loads(doc), score)
+        for doc, score in sorted(fused_scores.items(), key=lambda x: x[1], reverse=True)
+    ]
+
+    # Return the reranked results as a list of tuples, each containing the document and its fused score
+    return reranked_results
