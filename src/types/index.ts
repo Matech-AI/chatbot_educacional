@@ -30,6 +30,7 @@ export interface ChatSession {
   messages: Message[];
   createdAt: Date;
   updatedAt: Date;
+  agentName: string;
 }
 
 export interface Material {

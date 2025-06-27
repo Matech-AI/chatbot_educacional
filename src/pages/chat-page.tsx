@@ -1,10 +1,11 @@
-import React, { useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   useChatSessions,
   useChatActions,
   useSessionMessages,
 } from "../store/chat-store";
+import { useAssistantStore } from "../store/assistant-store";
 import { ChatInput } from "../components/chat/chat-input";
 import { ChatHistory } from "../components/chat/chat-history";
 import { Button } from "../components/ui/button";
@@ -17,6 +18,8 @@ const ChatPage: React.FC = () => {
   const { sessions, activeSessionId, isProcessing } = useChatSessions();
   const { createSession, setActiveSession, deleteSession, sendMessage } =
     useChatActions();
+  const { templates } = useAssistantStore();
+  const [selectedAgent, setSelectedAgent] = useState(templates[0] || "");
 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -62,7 +65,7 @@ const ChatPage: React.FC = () => {
     // ✅ Sempre criar uma sessão se não houver nenhuma
     if (sessions.length === 0) {
       console.log("📝 ChatPage: No sessions exist, creating first session automatically");
-      const newSessionId = createSession();
+      const newSessionId = createSession(selectedAgent);
       // Navegar imediatamente para a nova sessão
       setSearchParams({ session: newSessionId }, { replace: true });
     }
@@ -87,11 +90,11 @@ const ChatPage: React.FC = () => {
   );
 
   const handleNewSession = useCallback(() => {
-    console.log("➕ Creating SINGLE new session from button");
-    const newSessionId = createSession();
+    console.log("➕ Creating SINGLE new session from button with agent:", selectedAgent);
+    const newSessionId = createSession(selectedAgent);
     // Forçar navegação imediata para a nova sessão
     setSearchParams({ session: newSessionId }, { replace: true });
-  }, [createSession, setSearchParams]);
+  }, [createSession, setSearchParams, selectedAgent]);
   
   // Função temporária para resetar todas as sessões
   const handleResetSessions = useCallback(() => {
@@ -178,6 +181,17 @@ const ChatPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            <select
+              value={selectedAgent}
+              onChange={(e) => setSelectedAgent(e.target.value)}
+              className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+            >
+              {templates.map((template) => (
+                <option key={template} value={template}>
+                  {template}
+                </option>
+              ))}
+            </select>
             <Button
               onClick={handleResetSessions}
               variant="ghost"
@@ -245,7 +259,7 @@ const ChatPage: React.FC = () => {
 // ========================================
 
 interface SessionTabProps {
-  session: { id: string; title: string };
+  session: { id: string; title: string; agentName: string };
   isActive: boolean;
   canDelete: boolean;
   onSelect: (sessionId: string) => void;
@@ -282,7 +296,10 @@ const SessionTab: React.FC<SessionTabProps> = ({
       }`}
       onClick={handleClick}
     >
-      <span className="truncate max-w-[150px]">{session.title}</span>
+      <div className="flex flex-col">
+        <span className="truncate max-w-[150px] font-semibold">{session.title}</span>
+        <span className="text-xs text-gray-500 truncate max-w-[150px]">{session.agentName}</span>
+      </div>
 
       {canDelete && (
         <button

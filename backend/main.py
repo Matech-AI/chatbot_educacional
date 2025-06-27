@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import os
 
 # Import RAG handler
-from rag_handler import RAGHandler, ProcessingConfig
+from rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
 
 # Import auth functionality
 from passlib.context import CryptContext
@@ -84,6 +84,7 @@ class User(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
+    agent_config: Optional[AssistantConfigModel] = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -91,10 +92,23 @@ class ChatResponse(BaseModel):
     sources: Optional[List[dict]] = None
 
 
+class AssistantConfigModel(BaseModel):
+    name: str
+    description: str
+    prompt: str
+    model: str
+    temperature: float
+    chunkSize: int
+    chunkOverlap: int
+    retrievalSearchType: str
+    embeddingModel: str
+
+
 class IndexResponse(BaseModel):
     success: bool
     message: str
     details: Optional[List[str]] = None
+
 
 # Auth helper functions (from auth.py)
 def verify_password(plain_password, hashed_password):
@@ -175,13 +189,69 @@ async def chat(request: ChatRequest, current_user: User = Depends(get_current_us
     if not rag_handler:
         raise HTTPException(status_code=503, detail="RAG system not initialized")
 
-    response_data = rag_handler.generate_response(request.message)
+    response_data = rag_handler.generate_response(
+        request.message,
+        config=request.agent_config
+    )
     
     return ChatResponse(
         response=response_data["answer"],
         conversation_id=request.conversation_id or "default-conversation",
         sources=response_data.get("sources", [])
     )
+
+
+@app.get("/assistant/config", response_model=AssistantConfigModel)
+async def get_assistant_config(current_user: User = Depends(get_current_user)):
+    """
+    Retrieves the current assistant configuration.
+    """
+    if not rag_handler:
+        raise HTTPException(status_code=503, detail="RAG system not initialized")
+
+    current_config = rag_handler.config
+    return AssistantConfigModel(
+        name="Assistente de Treino",  # Name and description can be customized
+        description="Configuração atual do assistente de treino",
+        prompt="Prompt atual",  # The prompt is not stored in the config object
+        model=current_config.model_name,
+        temperature=current_config.temperature,
+        chunkSize=current_config.chunk_size,
+        chunkOverlap=current_config.chunk_overlap,
+        retrievalSearchType="mmr",  # This is not part of the backend config
+        embeddingModel=current_config.embedding_model,
+    )
+
+
+@app.post("/assistant/config", response_model=AssistantConfigModel)
+async def update_assistant_config(
+    config: AssistantConfigModel, current_user: User = Depends(get_current_user)
+):
+    """
+    Updates the assistant's configuration.
+    """
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins and instructors can update the configuration",
+        )
+
+    if not rag_handler:
+        raise HTTPException(status_code=503, detail="RAG system not initialized")
+
+    try:
+        new_config = ProcessingConfig(
+            chunk_size=config.chunkSize,
+            chunk_overlap=config.chunkOverlap,
+            model_name=config.model,
+            embedding_model=config.embeddingModel,
+            temperature=config.temperature,
+        )
+        rag_handler.update_config(new_config)
+        return config
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update config: {e}")
+
 
 @app.post("/index", response_model=IndexResponse)
 async def index_documents(current_user: User = Depends(get_current_user)):

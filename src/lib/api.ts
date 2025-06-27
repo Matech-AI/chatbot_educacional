@@ -137,14 +137,14 @@ export const api = {
   },
 
   // Chat
-  chat: (content: string) => apiRequestJson('/chat', {
+  chat: (message: string, agentConfig?: any) => apiRequestJson('/chat', {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ message, agent_config: agentConfig }),
   }),
 
-  chatAuth: (content: string) => apiRequestJson('/chat-auth', {
+  chatAuth: (message: string) => apiRequestJson('/chat-auth', {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ message }),
   }),
 
   // Drive Sync (Recursive)
@@ -272,5 +272,14 @@ export const api = {
   // Debug endpoints
   debug: {
     drive: () => apiRequestJson('/debug/drive'),
+  },
+
+  // Assistant configuration
+  assistant: {
+    getConfig: () => apiRequestJson('/assistant/config'),
+    updateConfig: (config: any) => apiRequestJson('/assistant/config', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
   },
 };

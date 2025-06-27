@@ -1,9 +1,11 @@
 import os
 import logging
+import openai
 import time
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pydantic import BaseModel
 
 from langchain_chroma import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -37,6 +39,19 @@ class ProcessingConfig:
     temperature: float = 0.1
     max_tokens: int = 500
 
+
+class AssistantConfigModel(BaseModel):
+    """Data model for assistant configuration."""
+    name: str = "Assistente Padrão"
+    description: str = "Um assistente de IA geral."
+    prompt: str = "Você é um assistente de IA. Responda à pergunta com base no contexto fornecido."
+    model: str = "gpt-4o-mini"
+    temperature: float = 0.1
+    # Os campos a seguir não são usados diretamente na geração de resposta, mas fazem parte do modelo
+    chunkSize: int = 2000
+    chunkOverlap: int = 200
+    retrievalSearchType: str = "mmr"
+    embeddingModel: str = "text-embedding-ada-002"
 
 @dataclass
 class Source:
@@ -97,7 +112,40 @@ class RAGHandler:
         # Set up ChromaDB
         self._setup_chromadb()
 
+        self._setup_chain()
+
         logger.info("✅ RAG handler initialized successfully")
+
+    def update_config(self, new_config: ProcessingConfig) -> None:
+        """
+        Update the RAG handler's configuration dynamically.
+
+        Args:
+            new_config: The new processing configuration.
+        """
+        logger.info(f"🔄 Updating RAG handler configuration to: {new_config}")
+        self.config = new_config
+        
+        # Re-initialize components that depend on the configuration
+        try:
+            try:
+                self.embeddings = OpenAIEmbeddings(
+                    api_key=self.api_key, model=self.config.embedding_model
+                )
+                self.llm = ChatOpenAI(
+                    api_key=self.api_key,
+                    model_name=self.config.model_name,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens
+                )
+            except openai.AuthenticationError:
+                logger.error("❌ Invalid OpenAI API key provided.")
+                raise ValueError("Invalid OpenAI API key provided.")
+            logger.info("✅ Components re-initialized with new configuration")
+        except Exception as e:
+            logger.error(f"❌ Error re-initializing components with new config: {e}")
+            # Optionally, revert to old config or handle the error appropriately
+            raise
 
     def _setup_chromadb(self) -> None:
         """Set up ChromaDB using langchain-chroma with persistence."""
@@ -110,9 +158,13 @@ class RAGHandler:
             logger.info("✅ Persist directory created/verified")
 
             # Initialize embeddings
-            self.embeddings = OpenAIEmbeddings(
-                api_key=self.api_key, model=self.config.embedding_model
-            )
+            try:
+                self.embeddings = OpenAIEmbeddings(
+                    api_key=self.api_key, model=self.config.embedding_model
+                )
+            except openai.AuthenticationError:
+                logger.error("❌ Invalid OpenAI API key provided.")
+                raise ValueError("Invalid OpenAI API key provided.")
             logger.info(
                 f"✅ OpenAI embeddings initialized with model: {self.config.embedding_model}")
 
@@ -364,12 +416,16 @@ class RAGHandler:
 
         try:
             # Initialize LLM
-            self.llm = ChatOpenAI(
-                api_key=self.api_key,
-                model_name=self.config.model_name,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens
-            )
+            try:
+                self.llm = ChatOpenAI(
+                    api_key=self.api_key,
+                    model_name=self.config.model_name,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens
+                )
+            except openai.AuthenticationError:
+                logger.error("❌ Invalid OpenAI API key provided.")
+                raise ValueError("Invalid OpenAI API key provided.")
             logger.info("✅ LLM initialized")
 
             # RAG-Fusion: Query Generation Prompt
@@ -380,14 +436,14 @@ Output (4 queries):"""
                 query_gen_template)
 
             # Final RAG Chain Prompt
-            answer_template = """Answer the following question based on this context:
+            answer_template = """{prompt}
 
+Context:
 {context}
 
 Question: {question}
 """
-            self.answer_prompt = ChatPromptTemplate.from_template(
-                answer_template)
+            self.answer_prompt = ChatPromptTemplate.from_template(answer_template)
 
             self.chain = True  # Mark as initialized
             logger.info("✅ RAG-Fusion components created successfully")
@@ -399,16 +455,23 @@ Question: {question}
             self.chain = None
             raise
 
-    def query(self, question: str, material_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+    def generate_response(
+        self,
+        question: str,
+        material_ids: Optional[List[str]] = None,
+        config: Optional[AssistantConfigModel] = None
+    ) -> Dict[str, Any]:
         """
-        Query the RAG system using RAG-Fusion with optional material filtering.
+        Generate a response using the RAG system. If a config is provided,
+        it uses a temporary chain for the request.
 
         Args:
-            question: User question
+            question: User question.
             material_ids: Optional list of source material IDs to filter by.
+            config: Optional assistant configuration for this specific request.
 
         Returns:
-            Dictionary containing answer, sources, and response time
+            Dictionary containing answer, sources, and response time.
         """
         if not self.chain:
             logger.error("❌ System not properly initialized")
@@ -424,12 +487,32 @@ Question: {question}
                 logger.info(f"🔍 Filtering by {len(material_ids)} material(s).")
             start_time = time.time()
 
-            # 1. Generate multiple queries
+            # Determine which LLM and prompt to use
+            if config:
+                logger.info(f"⚡ Using temporary config for this request: {config.name}")
+                # Create a temporary LLM instance for this request
+                temp_llm = ChatOpenAI(
+                    api_key=self.api_key,
+                    model_name=config.model,
+                    temperature=config.temperature,
+                    max_tokens=self.config.max_tokens  # Keep max_tokens from default
+                )
+                # Use the prompt from the provided config
+                final_prompt = self.answer_prompt.partial(prompt=config.prompt)
+            else:
+                # Fallback to the handler's default LLM and a generic prompt
+                temp_llm = self.llm
+                final_prompt = self.answer_prompt.partial(
+                    prompt="Você é um assistente de IA. Responda à pergunta com base no contexto fornecido."
+                )
+
+
+            # 1. Generate multiple queries (using the default LLM for this step)
             query_gen_chain = (
                 self.query_gen_prompt
                 | self.llm
                 | StrOutputParser()
-                | (lambda x: [q for q in x.split("\n") if q])
+                | (lambda x: [q.strip() for q in x.split("\n") if q.strip()])
             )
             generated_queries = query_gen_chain.invoke({"question": question})
             logger.info(f"🔍 Generated {len(generated_queries)} queries.")
@@ -437,11 +520,9 @@ Question: {question}
             # 2. Retrieve documents for each query
             search_kwargs = {'k': 5}
             if material_ids:
-                # ChromaDB metadata filter format for langchain
                 search_kwargs['filter'] = {"source": {"$in": material_ids}}
 
-            retriever = self.vector_store.as_retriever(
-                search_kwargs=search_kwargs)
+            retriever = self.vector_store.as_retriever(search_kwargs=search_kwargs)
 
             retrieved_docs = []
             for q in generated_queries:
@@ -453,8 +534,7 @@ Question: {question}
             logger.info(f"🔄 Reranked {len(reranked_results)} documents.")
 
             # 4. Format context and extract sources
-            context = "\n\n".join([doc.page_content for doc,
-                                 score in reranked_results[:5]])
+            context = "\n\n".join([doc.page_content for doc, score in reranked_results[:5]])
 
             unique_sources = []
             seen_sources = set()
@@ -467,10 +547,9 @@ Question: {question}
                     })
                     seen_sources.add(source)
 
-            # 5. Generate final answer
-            answer_chain = self.answer_prompt | self.llm | StrOutputParser()
-            answer = answer_chain.invoke(
-                {"context": context, "question": question})
+            # 5. Generate final answer using the selected LLM and prompt
+            answer_chain = final_prompt | temp_llm | StrOutputParser()
+            answer = answer_chain.invoke({"context": context, "question": question})
 
             response_time = time.time() - start_time
             logger.info(f"✅ Response generated in {response_time:.2f}s")
