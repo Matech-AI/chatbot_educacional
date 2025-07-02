@@ -11,7 +11,7 @@ from langchain_chroma import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.document_loaders.text import TextLoader
-from langchain.document_loaders.directory import DirectoryLoader
+from langchain_community.document_loaders.directory import DirectoryLoader
 
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.prompts import PromptTemplate, ChatPromptTemplate
@@ -85,6 +85,7 @@ class RAGHandler:
         logger.info("🚀 Initializing RAG handler...")
 
         self.api_key = api_key
+        openai.api_key = self.api_key
         self.config = config or ProcessingConfig()
 
         if persist_dir:
@@ -130,13 +131,12 @@ class RAGHandler:
         try:
             try:
                 self.embeddings = OpenAIEmbeddings(
-                    api_key=self.api_key, model=self.config.embedding_model
+                    model=self.config.embedding_model
                 )
                 self.llm = ChatOpenAI(
-                    api_key=self.api_key,
-                    model_name=self.config.model_name,
+                    model=self.config.model_name,
                     temperature=self.config.temperature,
-                    max_tokens=self.config.max_tokens
+                    max_completion_tokens=self.config.max_tokens
                 )
             except openai.AuthenticationError:
                 logger.error("❌ Invalid OpenAI API key provided.")
@@ -160,7 +160,7 @@ class RAGHandler:
             # Initialize embeddings
             try:
                 self.embeddings = OpenAIEmbeddings(
-                    api_key=self.api_key, model=self.config.embedding_model
+                    model=self.config.embedding_model
                 )
             except openai.AuthenticationError:
                 logger.error("❌ Invalid OpenAI API key provided.")
@@ -317,7 +317,7 @@ class RAGHandler:
 
         # Try to add DOCX support
         try:
-            from langchain.document_loaders.docx import Docx2txtLoader
+            from langchain_community.document_loaders import Docx2txtLoader
             loaders["**/*.docx"] = Docx2txtLoader
             logger.info("✅ DOCX support enabled")
         except ImportError:
@@ -397,6 +397,10 @@ class RAGHandler:
 
         logger.info(f"📤 Storing {len(self.chunks)} chunks...")
 
+        if not self.vector_store:
+            logger.error("❌ Vector store not initialized. Skipping embedding process.")
+            raise ValueError("Vector store not initialized")
+
         try:
             # The add_documents method handles chunking, embedding, and storage
             self.vector_store.add_documents(self.chunks)
@@ -418,10 +422,9 @@ class RAGHandler:
             # Initialize LLM
             try:
                 self.llm = ChatOpenAI(
-                    api_key=self.api_key,
-                    model_name=self.config.model_name,
+                    model=self.config.model_name,
                     temperature=self.config.temperature,
-                    max_tokens=self.config.max_tokens
+                    max_completion_tokens=self.config.max_tokens
                 )
             except openai.AuthenticationError:
                 logger.error("❌ Invalid OpenAI API key provided.")
@@ -473,7 +476,7 @@ Question: {question}
         Returns:
             Dictionary containing answer, sources, and response time.
         """
-        if not self.chain:
+        if not self.chain or not self.vector_store:
             logger.error("❌ System not properly initialized")
             return {
                 "answer": "Sistema não inicializado corretamente. Execute a inicialização primeiro.",
@@ -492,10 +495,9 @@ Question: {question}
                 logger.info(f"⚡ Using temporary config for this request: {config.name}")
                 # Create a temporary LLM instance for this request
                 temp_llm = ChatOpenAI(
-                    api_key=self.api_key,
-                    model_name=config.model,
+                    model=config.model,
                     temperature=config.temperature,
-                    max_tokens=self.config.max_tokens  # Keep max_tokens from default
+                    max_completion_tokens=self.config.max_tokens  # Keep max_tokens from default
                 )
                 # Use the prompt from the provided config
                 final_prompt = self.answer_prompt.partial(prompt=config.prompt)
@@ -518,7 +520,7 @@ Question: {question}
             logger.info(f"🔍 Generated {len(generated_queries)} queries.")
 
             # 2. Retrieve documents for each query
-            search_kwargs = {'k': 5}
+            search_kwargs: Dict[str, Any] = {'k': 5}
             if material_ids:
                 search_kwargs['filter'] = {"source": {"$in": material_ids}}
 

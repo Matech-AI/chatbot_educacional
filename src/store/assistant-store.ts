@@ -130,6 +130,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
   isLoading: false,
 
   loadConfig: async () => {
+    console.log('[Store] Attempting to load assistant config...');
     try {
       set({ isLoading: true });
       const remoteConfig = await api.assistant.getConfig();

@@ -7,11 +7,27 @@ const API_BASE = process.env.NODE_ENV === 'production'
 let authToken: string | null = null;
 
 function getAuthToken(): string | null {
-  return authToken;
+  try {
+    // Prefer localStorage for persistence across reloads
+    return window.localStorage.getItem('authToken');
+  } catch (e) {
+    // Fallback to in-memory for environments without localStorage
+    console.warn('localStorage not available, using in-memory token.');
+    return authToken;
+  }
 }
 
 function setAuthToken(token: string | null): void {
-  authToken = token;
+  authToken = token; // Keep in-memory copy
+  try {
+    if (token) {
+      window.localStorage.setItem('authToken', token);
+    } else {
+      window.localStorage.removeItem('authToken');
+    }
+  } catch (e) {
+    console.warn('localStorage not available, token will not be persisted.');
+  }
 }
 
 // Create headers with authentication
