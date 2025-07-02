@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Body, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Body, Request, BackgroundTasks, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import FileResponse, StreamingResponse
@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from dotenv import load_dotenv
 
-from rag_handler import RAGHandler
+from rag_handler import RAGHandler, ProcessingConfig
 from drive_handler_recursive import RecursiveDriveHandler
 from auth import (
     create_access_token,
@@ -74,14 +74,30 @@ logger.info("🚀 DNA da Força API v1.4.0 - Complete Recursive Drive Integratio
 # ========================================
 
 
-class Question(BaseModel):
-    content: str
+class ChatRequest(BaseModel):
+    message: str
+    conversation_id: Optional[str] = None
 
+class ChatResponse(BaseModel):
+    response: str
+    conversation_id: str
+    sources: Optional[List[dict]] = None
 
-class Response(BaseModel):
-    answer: str
-    sources: List[dict]
-    response_time: float
+class AssistantConfigModel(BaseModel):
+    name: str
+    description: str
+    prompt: str
+    model: str
+    temperature: float
+    chunkSize: int
+    chunkOverlap: int
+    retrievalSearchType: str
+    embeddingModel: str
+
+class IndexResponse(BaseModel):
+    success: bool
+    message: str
+    details: Optional[List[str]] = None
 
 
 class MaterialUpload(BaseModel):
@@ -419,7 +435,8 @@ async def initialize_system(
 
         # Initialize RAG handler
         logger.info("🤖 Initializing RAG handler...")
-        rag_handler = RAGHandler(api_key)
+        rag_config = ProcessingConfig()
+        rag_handler = RAGHandler(api_key=api_key, config=rag_config)
         messages.append("✓ Initialized RAG handler")
         logger.info("✅ RAG handler initialized successfully")
 
@@ -529,47 +546,106 @@ async def initialize_system(
 # CHAT ENDPOINTS
 # ========================================
 
-
-@app.post("/chat", response_model=Response)
-async def chat(question: Question):
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
     """Simplified chat endpoint"""
-    logger.info(f"💬 Chat request: {question.content[:50]}...")
-
+    logger.info(f"💬 Chat request: {request.message[:50]}...")
+    
     if not rag_handler:
-        simulated_answer = f"Sistema não inicializado. Esta é uma resposta simulada para: '{question.content}'. Configure uma chave OpenAI válida para funcionalidades completas."
-        return Response(
-            answer=simulated_answer,
-            sources=[{"title": "Sistema de Teste",
-                      "source": "backend/main_simple.py", "page": 1, "relevance": 0.9}],
-            response_time=0.1
+        simulated_answer = f"Sistema não inicializado. Esta é uma resposta simulada para: '{request.message}'. Configure uma chave OpenAI válida para funcionalidades completas."
+        return ChatResponse(
+            response=simulated_answer,
+            conversation_id=request.conversation_id or "simulated-conversation",
+            sources=[{"title": "Sistema de Teste", "source": "backend/main_simple.py", "page": 1, "relevance": 0.9}]
         )
 
     try:
-        response = rag_handler.generate_response(question.content)
-        return response
+        response_data = rag_handler.generate_response(request.message)
+        logger.info(f"✅ Chat response generated (time: {response_data.get('response_time', 0):.2f}s)")
+        return ChatResponse(
+            response=response_data["answer"],
+            conversation_id=request.conversation_id or "default-conversation",
+            sources=response_data.get("sources", [])
+        )
     except Exception as e:
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.post("/chat-auth", response_model=Response)
-async def chat_auth(question: Question, current_user: User = Depends(get_current_user)):
+@app.post("/chat-auth", response_model=ChatResponse)
+async def chat_auth(request: ChatRequest, current_user: User = Depends(get_current_user)):
     """Process a chat question with authentication"""
-    logger.info(
-        f"💬 Chat request from {current_user.username}: {question.content[:50]}...")
+    logger.info(f"💬 Chat request from {current_user.username}: {request.message[:50]}...")
 
     if not rag_handler:
         logger.error("❌ RAG handler not initialized")
         raise HTTPException(status_code=400, detail="System not initialized")
 
     try:
-        response = rag_handler.generate_response(question.content)
-        logger.info(
-            f"✅ Chat response generated (time: {response.get('response_time', 0):.2f}s)")
-        return response
+        response_data = rag_handler.generate_response(request.message)
+        logger.info(f"✅ Chat response generated (time: {response_data.get('response_time', 0):.2f}s)")
+        return ChatResponse(
+            response=response_data["answer"],
+            conversation_id=request.conversation_id or "default-conversation",
+            sources=response_data.get("sources", [])
+        )
     except Exception as e:
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ========================================
+# ASSISTANT ENDPOINTS
+# ========================================
+
+@app.get("/assistant/config", response_model=AssistantConfigModel)
+async def get_assistant_config(current_user: User = Depends(get_current_user)):
+    """
+    Retrieves the current assistant configuration.
+    """
+    if not rag_handler:
+        raise HTTPException(status_code=503, detail="RAG system not initialized")
+
+    current_config = rag_handler.config
+    return AssistantConfigModel(
+        name="Assistente de Treino",  # Name and description can be customized
+        description="Configuração atual do assistente de treino",
+        prompt="Prompt atual",  # The prompt is not stored in the config object
+        model=current_config.model_name,
+        temperature=current_config.temperature,
+        chunkSize=current_config.chunk_size,
+        chunkOverlap=current_config.chunk_overlap,
+        retrievalSearchType="mmr",  # This is not part of the backend config
+        embeddingModel=current_config.embedding_model,
+    )
+
+
+@app.post("/assistant/config", response_model=AssistantConfigModel)
+async def update_assistant_config(
+    config: AssistantConfigModel, current_user: User = Depends(get_current_user)
+):
+    """
+    Updates the assistant's configuration.
+    """
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins and instructors can update the configuration",
+        )
+
+    if not rag_handler:
+        raise HTTPException(status_code=503, detail="RAG system not initialized")
+
+    try:
+        new_config = ProcessingConfig(
+            chunk_size=config.chunkSize,
+            chunk_overlap=config.chunkOverlap,
+            model_name=config.model,
+            embedding_model=config.embeddingModel,
+            temperature=config.temperature,
+        )
+        rag_handler.update_config(new_config)
+        return config
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update config: {e}")
 
 # ========================================
 # RECURSIVE DRIVE ENDPOINTS
@@ -1056,6 +1132,61 @@ async def get_drive_stats(current_user: User = Depends(get_current_user)):
 # MAINTENANCE ENDPOINTS
 # ========================================
 
+@app.post("/index", response_model=IndexResponse)
+async def index_documents(current_user: User = Depends(get_current_user)):
+    """
+    Scans the 'data/materials' directory, processes all documents,
+    and adds them to the ChromaDB 'materials' collection.
+    This is a full re-indexing operation.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can index documents")
+
+    # The directory containing the documents to be indexed
+    docs_dir = "data/materials"
+
+    # Get the absolute path for file system operations
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    absolute_docs_dir = os.path.join(backend_dir, docs_dir)
+
+    if not os.path.isdir(absolute_docs_dir):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Materials directory not found at {absolute_docs_dir}"
+        )
+
+    try:
+        # Reset handler state before processing to ensure a clean index
+        rag_handler.reset()
+        
+        # Process documents and initialize the chain
+        success, messages = rag_handler.process_and_initialize(absolute_docs_dir)
+        
+        if success:
+            return IndexResponse(
+                success=True,
+                message=f"Documents from '{docs_dir}' indexed successfully.",
+                details=messages
+            )
+        else:
+            # Handle the case where no documents are found as a success
+            if messages and "No documents found" in messages[0]:
+                 return IndexResponse(
+                    success=True,
+                    message=f"No documents found in '{docs_dir}' to index.",
+                    details=messages
+                )
+            return IndexResponse(
+                success=False,
+                message=f"Failed to index documents from '{docs_dir}'.",
+                details=messages
+            )
+    except Exception as e:
+        # In a real app, you'd want to log this exception
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected error occurred during indexing: {str(e)}"
+        )
 
 @app.post("/maintenance/cleanup-duplicates")
 async def cleanup_duplicate_files(current_user: User = Depends(get_current_user)):

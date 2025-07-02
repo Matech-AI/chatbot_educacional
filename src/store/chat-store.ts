@@ -3,12 +3,14 @@ import { persist } from 'zustand/middleware';
 import { ChatSession, Message, Source } from '../types';
 import { generateUniqueId } from '../lib/utils';
 import { api } from '../lib/api';
+import { getAssistantConfig } from './assistant-store';
+import { AssistantConfig } from '../types';
 
 interface ChatState {
   sessions: ChatSession[];
   activeSessionId: string | null;
   isProcessing: boolean;
-  createSession: () => string;
+  createSession: (agentName: string) => string;
   renameSession: (sessionId: string, title: string) => void;
   deleteSession: (sessionId: string) => void;
   setActiveSession: (sessionId: string) => void;
@@ -18,14 +20,14 @@ interface ChatState {
 }
 
 // Function to send message to AI backend
-const sendToAI = async (message: string): Promise<{ content: string, sources: Source[] }> => {
+const sendToAI = async (message: string, agentConfig?: AssistantConfig): Promise<{ content: string, sources: Source[] }> => {
   try {
     console.log('🤖 Sending message to AI:', message.substring(0, 50) + '...');
-    const response = await api.chat(message);
+    const response = await api.chat(message, agentConfig);
     
     console.log('✅ AI response received');
     return {
-      content: response.answer || "Desculpe, não consegui processar sua mensagem.",
+      content: response.response || "Desculpe, não consegui processar sua mensagem.",
       sources: response.sources ? response.sources.map((source: any) => ({
         title: source.title || 'Documento',
         source: source.source || '',
@@ -56,7 +58,8 @@ const initializeStore = () => {
       title: 'Nova conversa 1',
       messages: [],
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      agentName: 'Educação Física'
     };
     
     return {
@@ -76,7 +79,7 @@ const initializeStore = () => {
 export const useChatStore = create<ChatState>()(persist((set, get) => ({
   ...initializeStore(),
   
-  createSession: () => {
+  createSession: (agentName: string) => {
     const state = get();
     
     // ✅ Verificar se já há uma sessão sendo criada recentemente (últimos 100ms)
@@ -112,10 +115,11 @@ export const useChatStore = create<ChatState>()(persist((set, get) => ({
       title: `Nova conversa ${conversationNumber}`,
       messages: [],
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      agentName: agentName,
     };
     
-    console.log('💬 Creating new chat session:', id, 'with number:', conversationNumber);
+    console.log('💬 Creating new chat session:', id, 'with agent:', agentName);
     
     // ✅ ADICIONAR nova sessão (não substituir)
     set(state => ({
@@ -251,7 +255,9 @@ export const useChatStore = create<ChatState>()(persist((set, get) => ({
     
     try {
       // Get AI response
-      const response = await sendToAI(content);
+      const currentSession = state.sessions.find(s => s.id === sessionId);
+      const agentConfig = currentSession ? getAssistantConfig(currentSession.agentName) : undefined;
+      const response = await sendToAI(content, agentConfig);
       
       // Replace the temporary message with the actual response
       set(state => ({
@@ -278,8 +284,8 @@ export const useChatStore = create<ChatState>()(persist((set, get) => ({
       
       // Auto-rename session based on first message
       const updatedState = get();
-      const session = updatedState.sessions.find(s => s.id === sessionId);
-      if (session && session.messages.length === 2) { // User + AI response
+      const sessionToRename = updatedState.sessions.find(s => s.id === sessionId);
+      if (sessionToRename && sessionToRename.messages.length === 2) { // User + AI response
         const title = content.length > 30 ? content.substring(0, 30) + '...' : content;
         get().renameSession(sessionId, title);
       }

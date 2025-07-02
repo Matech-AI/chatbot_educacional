@@ -1,17 +1,19 @@
 import { create } from 'zustand';
 import { AssistantConfig } from '../types';
+import { api } from '../lib/api';
 
 interface AssistantState {
   config: AssistantConfig;
   templates: string[];
   isLoading: boolean;
+  loadConfig: () => Promise<boolean>;
   updateConfig: (updates: Partial<AssistantConfig>) => Promise<boolean>;
   saveAsTemplate: (name: string) => Promise<boolean>;
   loadTemplate: (name: string) => Promise<boolean>;
 }
 
 // Template configurations for each specialty
-const TEMPLATE_CONFIGS: Record<string, AssistantConfig> = {
+export const TEMPLATE_CONFIGS: Record<string, AssistantConfig> = {
   'Educação Física': {
     name: 'Assistente Educacional de Educação Física',
     description: 'Especializado em responder dúvidas sobre treinamento, fisiologia do exercício e metodologia do ensino',
@@ -122,22 +124,33 @@ Use {context}, {chat_history} e {question} como variáveis no template.`,
 // Default configuration (Educação Física)
 const DEFAULT_CONFIG: AssistantConfig = TEMPLATE_CONFIGS['Educação Física'];
 
-export const useAssistantStore = create<AssistantState>((set) => ({
+export const useAssistantStore = create<AssistantState>((set, get) => ({
   config: DEFAULT_CONFIG,
   templates: ['Educação Física', 'Nutrição Esportiva', 'Anatomia Humana'],
   isLoading: false,
+
+  loadConfig: async () => {
+    console.log('[Store] Attempting to load assistant config...');
+    try {
+      set({ isLoading: true });
+      const remoteConfig = await api.assistant.getConfig();
+      set({ config: remoteConfig, isLoading: false });
+      return true;
+    } catch (error) {
+      set({ isLoading: false });
+      console.error('Error loading assistant config:', error);
+      return false;
+    }
+  },
   
   updateConfig: async (updates) => {
     try {
       set({ isLoading: true });
+      const currentConfig = get().config;
+      const newConfig = { ...currentConfig, ...updates };
+      await api.assistant.updateConfig(newConfig);
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      set(state => ({ 
-        config: { ...state.config, ...updates },
-        isLoading: false
-      }));
+      set({ config: newConfig, isLoading: false });
       
       return true;
     } catch (error) {
@@ -200,3 +213,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     }
   }
 }));
+
+export function getAssistantConfig(name: string): AssistantConfig | undefined {
+  return TEMPLATE_CONFIGS[name];
+}

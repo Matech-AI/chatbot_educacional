@@ -41,3 +41,9 @@ venv.bak/
 
 # Temporary auth files
 backend/auth_simple.py
+
+# Backend environment
+backend/.env
+
+# ChromaDB
+.chromadb/

@@ -7,11 +7,27 @@ const API_BASE = process.env.NODE_ENV === 'production'
 let authToken: string | null = null;
 
 function getAuthToken(): string | null {
-  return authToken;
+  try {
+    // Prefer localStorage for persistence across reloads
+    return window.localStorage.getItem('authToken');
+  } catch (e) {
+    // Fallback to in-memory for environments without localStorage
+    console.warn('localStorage not available, using in-memory token.');
+    return authToken;
+  }
 }
 
 function setAuthToken(token: string | null): void {
-  authToken = token;
+  authToken = token; // Keep in-memory copy
+  try {
+    if (token) {
+      window.localStorage.setItem('authToken', token);
+    } else {
+      window.localStorage.removeItem('authToken');
+    }
+  } catch (e) {
+    console.warn('localStorage not available, token will not be persisted.');
+  }
 }
 
 // Create headers with authentication
@@ -137,14 +153,14 @@ export const api = {
   },
 
   // Chat
-  chat: (content: string) => apiRequestJson('/chat', {
+  chat: (message: string, agentConfig?: any) => apiRequestJson('/chat', {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ message, agent_config: agentConfig }),
   }),
 
-  chatAuth: (content: string) => apiRequestJson('/chat-auth', {
+  chatAuth: (message: string) => apiRequestJson('/chat-auth', {
     method: 'POST',
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ message }),
   }),
 
   // Drive Sync (Recursive)
@@ -272,5 +288,14 @@ export const api = {
   // Debug endpoints
   debug: {
     drive: () => apiRequestJson('/debug/drive'),
+  },
+
+  // Assistant configuration
+  assistant: {
+    getConfig: () => apiRequestJson('/assistant/config'),
+    updateConfig: (config: any) => apiRequestJson('/assistant/config', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
   },
 };

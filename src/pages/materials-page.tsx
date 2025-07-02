@@ -34,6 +34,8 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
     fetchMaterials,
     uploadMaterial,
     deleteMaterial,
+    embedAllMaterials,
+    isEmbedding,
   } = useMaterialsStore();
   const { user } = useAuthStore();
 
@@ -114,6 +116,18 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
     fetchMaterials();
     loadDriveStats();
     setActiveTab("materials");
+  };
+
+  const handleEmbedAll = async () => {
+    if (
+      !window.confirm(
+        "Atenção: Esta ação irá reindexar todos os materiais e pode levar algum tempo. Deseja continuar?"
+      )
+    ) {
+      return;
+    }
+    const result = await embedAllMaterials();
+    alert(result.message);
   };
 
   const handleTabChange = (tab: typeof activeTab) => {
@@ -345,6 +359,21 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
                     >
                       <Upload size={16} />
                       Upload Manual
+                    </Button>
+                    <Button
+                      onClick={handleEmbedAll}
+                      disabled={isEmbedding}
+                      variant="success"
+                      className="flex items-center gap-2"
+                    >
+                      {isEmbedding ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <Zap size={16} />
+                      )}
+                      <span>
+                        {isEmbedding ? "Embedding..." : "Embed All Materials"}
+                      </span>
                     </Button>
                   </div>
                 </motion.div>
