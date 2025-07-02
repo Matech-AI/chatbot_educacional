@@ -77,22 +77,22 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
   };
 
   const testFolderAccess = async () => {
+    setIsTesting(true);
+    setError("");
+    setSuccess("");
     try {
-      setError(null);
-      setSuccess(null);
-      setIsTesting(true);
-      setTestResult(null);
-
       const folderId =
         extractFolderIdFromUrl(folderInput.trim()) || folderInput.trim();
 
       if (!folderId) {
         setError("ID da pasta é obrigatório");
+        setIsTesting(false);
         return;
       }
 
       if (!validateDriveFolderId(folderId)) {
         setError("Formato do ID da pasta inválido");
+        setIsTesting(false);
         return;
       }
 
@@ -116,16 +116,17 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
       setTestResult(result);
 
       if (result.accessible) {
-        setSuccess(
-          `✅ Pasta acessível! ${result.file_count} arquivos encontrados`
-        );
+        setSuccess("✅ Pasta acessível!");
+        setTimeout(() => setSuccess(""), 2000);
       } else {
-        setError(`❌ ${result.error || "Não foi possível acessar a pasta"}`);
+        setError("❌ Não foi possível acessar a pasta");
+        setTimeout(() => setError(""), 4000);
       }
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Erro desconhecido";
       setError(`Erro ao testar acesso: ${errorMessage}`);
+      setTimeout(() => setError(""), 4000);
       console.error("Erro no teste:", err);
     } finally {
       setIsTesting(false);
@@ -177,7 +178,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
 
       const actionText = downloadFiles ? "baixados" : "listados";
       setSuccess(
-        `✅ ${result.files?.length || 0} arquivos ${actionText} com sucesso!`
+        `✅ ${result.files?.length ?? 0} arquivos ${actionText} com sucesso!`
       );
 
       // Refresh materials list
@@ -275,7 +276,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
         <div className="border border-gray-200 rounded-lg p-3">
           <Switch
             checked={downloadFiles}
-            onCheckedChange={setDownloadFiles}
+            onChange={(e) => setDownloadFiles(e.target.checked)}
             disabled={isProcessing || isLoading || isTesting}
             label={downloadFiles ? "Baixar arquivos" : "Apenas listar arquivos"}
             description={
@@ -305,12 +306,12 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
                     Informações da Pasta: {testResult.folder_name || "Sem nome"}
                   </p>
                   <div className="mt-1 space-y-1 text-blue-700">
-                    <p>• Arquivos encontrados: {testResult.file_count}</p>
+                    <p>• Arquivos encontrados: {testResult.file_count ?? 0}</p>
                     <p>• Acesso público: {testResult.public ? "Sim" : "Não"}</p>
-                    {testResult.files_sample.length > 0 && (
+                    {(testResult.files_sample || []).length > 0 && (
                       <p>
                         • Exemplos:{" "}
-                        {testResult.files_sample.slice(0, 3).join(", ")}
+                        {(testResult.files_sample || []).slice(0, 3).join(", ")}
                       </p>
                     )}
                   </div>

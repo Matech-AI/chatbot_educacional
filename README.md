@@ -211,6 +211,15 @@ ls -la backend/data/materials/
 ls -la backend/.chromadb/
 ```
 
+### Erro de autenticação Google Drive (token expirado ou revogado)
+
+1. Apague o arquivo `token.json` na pasta do backend.
+2. Feche programas que possam estar usando a porta 8080 ou 8000.
+3. Rode novamente o script e faça o login Google na janela que abrir.
+4. Se necessário, baixe um novo `credentials.json` no Google Cloud Console.
+
+Se continuar com problemas, reinicie o computador e repita os passos.
+
 ---
 
 ## 🤝 Contribuição
