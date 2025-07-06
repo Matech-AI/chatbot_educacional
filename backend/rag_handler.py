@@ -34,9 +34,9 @@ class ProcessingConfig:
     """Configuration for document processing"""
     chunk_size: int = 2000
     chunk_overlap: int = 200
-    model_name: str = "gdpt-4o-mini"
+    model_name: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-ada-002"
-    temperature: float = 0.1
+    temperature: float = 0.7
     max_tokens: int = 500
     use_rag_fusion: bool = False
 

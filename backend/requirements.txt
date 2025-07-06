@@ -29,5 +29,4 @@ unstructured
 python-magic
 supabase
 langchain-google-genai
-tavily-python
 google-generativeai

@@ -8,7 +8,6 @@ from langchain_core.documents import Document
 from langchain_core.messages import SystemMessage
 from langchain_core.tools.retriever import create_retriever_tool
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, START, END
 from rag_handler import RAGHandler
 from langgraph.graph.message import add_messages
@@ -51,8 +50,7 @@ else:
         retriever_tool = None
 
 # 3. Setup Tools
-search_tool = TavilySearchResults(max_results=2)
-tools: list = [search_tool]
+tools: list = []
 if retriever_tool:
     tools.append(retriever_tool)
 

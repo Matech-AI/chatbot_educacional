@@ -16,7 +16,10 @@ import mimetypes
 import logging
 from datetime import datetime, timedelta
 from collections import defaultdict
+from uuid import uuid4
+import asyncio
 from dotenv import load_dotenv
+from langchain_core.runnables import RunnableConfig
 
 # Import RAG handler
 from rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
@@ -85,6 +88,11 @@ class Response(BaseModel):
     answer: str
     sources: List[dict]
     response_time: float
+
+
+class ChatRequest(BaseModel):
+    message: str
+    thread_id: Optional[str] = None
 
 
 class MaterialUpload(BaseModel):
@@ -300,15 +308,19 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @app.post("/change-password")
 async def change_password(
     request: Request,
-    data: dict = None,
+    data: Optional[Dict[str, Any]] = None,
     current_user: User = Depends(get_current_user)
 ):
     """Change user password"""
-    if data is None:
-        data = await request.json()
+    request_data = data
+    if request_data is None:
+        request_data = await request.json()
 
-    current_password = data.get("current_password")
-    new_password = data.get("new_password")
+    if not isinstance(request_data, dict):
+        raise HTTPException(status_code=400, detail="Invalid request body")
+
+    current_password = request_data.get("current_password")
+    new_password = request_data.get("new_password")
 
     logger.info(f"🔑 Password change request for: {current_user.username}")
 
@@ -442,7 +454,7 @@ async def initialize_system(
                 else:
                     logger.info("🔑 Attempting authentication with API key...")
                     auth_success = drive_handler.authenticate(
-                        api_key=drive_api_key)
+                        api_key=drive_api_key or "")
 
                 if auth_success:
                     messages.append("✓ Authenticated with Google Drive")
@@ -574,6 +586,62 @@ async def chat_auth(question: Question, current_user: User = Depends(get_current
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+async def stream_agent_response(message: str, thread_id: str):
+    """Generator function to stream agent responses."""
+    config = RunnableConfig(configurable={"thread_id": thread_id})
+    async for event in chat_agent_graph.astream_events(
+        {"messages": [("user", message)]},
+        config=config,
+        version="v1"
+    ):
+        kind = event["event"]
+        if kind == "on_chat_model_stream" and "chunk" in event["data"] and event["data"]["chunk"].content:
+            content = event["data"]["chunk"].content
+            data = {
+                "thread_id": thread_id,
+                "event": "stream",
+                "data": content,
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+        elif kind == "on_tool_start":
+            data = {
+                "thread_id": thread_id,
+                "event": "tool_start",
+                "data": {
+                    "name": event["name"],
+                    "input": event["data"].get("input"),
+                },
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+        elif kind == "on_tool_end":
+            data = {
+                "thread_id": thread_id,
+                "event": "tool_end",
+                "data": {
+                    "name": event["name"],
+                    "output": event["data"].get("output"),
+                },
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+
+
+@app.post("/chat/agent")
+async def chat_agent_stream(request: ChatRequest, current_user: User = Depends(get_current_user)):
+    """Endpoint to stream responses from the chat agent."""
+    thread_id = request.thread_id or str(uuid4())
+    logger.info(f"🤖 Agent chat request from {current_user.username} on thread {thread_id}: {request.message[:50]}...")
+
+    if not rag_handler:
+        logger.error("❌ RAG handler not initialized for agent chat")
+        raise HTTPException(status_code=400, detail="System not initialized. Cannot use agent.")
+
+    return StreamingResponse(
+        stream_agent_response(request.message, thread_id),
+        media_type="text/event-stream"
+    )
+
+
 # ========================================
 # RECURSIVE DRIVE ENDPOINTS
 # ========================================
@@ -594,7 +662,7 @@ async def sync_drive_recursive(
 
     try:
         # Authenticate with Drive
-        auth_success = drive_handler.authenticate(api_key=data.api_key)
+        auth_success = drive_handler.authenticate(api_key=data.api_key or "")
         if not auth_success:
             raise HTTPException(
                 status_code=400, detail="Could not authenticate with Google Drive")
@@ -662,7 +730,7 @@ async def analyze_folder(
     logger.info(f"🔍 Folder analysis requested: {folder_id}")
 
     try:
-        auth_success = drive_handler.authenticate(api_key=api_key)
+        auth_success = drive_handler.authenticate(api_key=api_key or "")
         if not auth_success:
             raise HTTPException(
                 status_code=400, detail="Authentication failed")
@@ -847,7 +915,7 @@ async def test_drive_connection(
 
     try:
         # Test authentication
-        auth_success = drive_handler.authenticate(api_key=api_key)
+        auth_success = drive_handler.authenticate(api_key=api_key or "")
 
         if auth_success:
             # Try a minimal operation to verify connection
@@ -952,7 +1020,7 @@ async def test_drive_folder(
         f"🧪 Legacy drive folder test requested by: {current_user.username}")
 
     try:
-        auth_success = drive_handler.authenticate(api_key=data.api_key)
+        auth_success = drive_handler.authenticate(api_key=data.api_key or "")
         if not auth_success:
             return {"accessible": False, "error": "Authentication failed"}
 
@@ -998,7 +1066,7 @@ async def sync_drive(
         )
 
         # Authenticate with Drive
-        auth_success = drive_handler.authenticate(api_key=data.api_key)
+        auth_success = drive_handler.authenticate(api_key=data.api_key or "")
         if not auth_success:
             raise HTTPException(
                 status_code=400, detail="Could not authenticate with Google Drive")
@@ -1729,6 +1797,9 @@ async def upload_material(
 
     logger.info(f"📤 File upload by {current_user.username}: {file.filename}")
 
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File has no name")
+
     allowed_extensions = {'.pdf', '.docx', '.txt',
                           '.mp4', '.avi', '.mov', '.pptx', '.webm'}
     file_ext = Path(file.filename).suffix.lower()
@@ -1882,7 +1953,7 @@ async def sync_drive_simple(
 
     try:
         # Autentica com o handler simples
-        auth_success = simple_drive_handler.authenticate(api_key=data.api_key)
+        auth_success = simple_drive_handler.authenticate(api_key=data.api_key or "")
         if not auth_success:
             raise HTTPException(
                 status_code=400, detail="Could not authenticate with Google Drive")
@@ -1918,6 +1989,7 @@ async def sync_drive_simple(
 @app.on_event("startup")
 async def startup_event():
     """Initialize application on startup"""
+    global rag_handler
     logger.info(
         "🚀 DNA da Força Backend v1.4 - Complete Recursive Drive Integration Starting...")
 
@@ -1925,8 +1997,23 @@ async def startup_event():
     Path("data/materials").mkdir(parents=True, exist_ok=True)
     logger.info("📁 Materials directory created/verified")
 
+    # Initialize RAG handler if API key is available
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if openai_api_key:
+        logger.info("🔑 OpenAI API key found, initializing RAG handler...")
+        try:
+            rag_handler = RAGHandler(api_key=openai_api_key)
+            rag_handler.process_and_initialize("data/materials")
+            logger.info("✅ RAG handler initialized successfully.")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize RAG handler: {e}")
+    else:
+        logger.warning("⚠️ OpenAI API key not found. RAG handler not initialized.")
+
     # Log environment info
     logger.info(f"📊 Environment check:")
+    logger.info(
+        f"  - OpenAI API Key: {'✅' if openai_api_key else '❌'}")
     logger.info(
         f"  - Google Drive API Key: {'✅' if os.getenv('GOOGLE_DRIVE_API_KEY') else '❌'}")
     logger.info(
