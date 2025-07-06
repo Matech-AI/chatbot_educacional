@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
@@ -6,13 +6,22 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 from dotenv import load_dotenv
 import os
+import shutil
 
 # Import RAG handler
 from rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
+from conversational_agent import graph as conversational_graph
+from drive_handler import DriveHandler
 
 # Import auth functionality
-from passlib.context import CryptContext
-from jose import JWTError, jwt
+from auth import (
+    User,
+    Token,
+    get_current_user,
+    create_access_token,
+    authenticate_user,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+)
 
 # Load environment variables
 load_dotenv()
@@ -26,7 +35,7 @@ app.add_middleware(
     allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "x-auth-token"],
 )
 
 # RAG Handler Initialization
@@ -37,49 +46,8 @@ if not API_KEY:
 rag_config = ProcessingConfig()
 rag_handler = RAGHandler(api_key=API_KEY, config=rag_config)
 
-# Security configuration (from auth.py)
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 180
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-# Mock users database from auth.py
-USERS_DB = {
-    "admin": {
-        "username": "admin",
-        "role": "admin",
-        "hashed_password": pwd_context.hash("adminpass"),
-        "disabled": False
-    },
-    "instrutor": {
-        "username": "instrutor",
-        "role": "instructor",
-        "hashed_password": pwd_context.hash("instrutorpass"),
-        "disabled": False
-    },
-    "aluno": {
-        "username": "aluno",
-        "role": "student",
-        "hashed_password": pwd_context.hash("alunopass"),
-        "disabled": False
-    }
-}
 
 # Models
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-class TokenData(BaseModel):
-    username: Optional[str] = None
-    role: Optional[str] = None
-
-class User(BaseModel):
-    username: str
-    role: str
-    disabled: Optional[bool] = None
 
 class ChatRequest(BaseModel):
     message: str
@@ -92,73 +60,115 @@ class ChatResponse(BaseModel):
     sources: Optional[List[dict]] = None
 
 
-class AssistantConfigModel(BaseModel):
-    name: str
-    description: str
-    prompt: str
-    model: str
-    temperature: float
-    chunkSize: int
-    chunkOverlap: int
-    retrievalSearchType: str
-    embeddingModel: str
-
-
 class IndexResponse(BaseModel):
     success: bool
     message: str
     details: Optional[List[str]] = None
 
 
-# Auth helper functions (from auth.py)
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+# Drive Handler Initialization
+drive_handler = DriveHandler()
 
-def get_user(username: str):
-    if username in USERS_DB:
-        user_dict = USERS_DB[username]
-        return User(**user_dict)
-    return None
+class Material(BaseModel):
+    id: str
+    title: str
+    description: Optional[str] = None
+    type: str
+    path: str
+    size: int
+    uploadedAt: datetime
+    uploadedBy: str
+    tags: Optional[List[str]] = None
 
-def authenticate_user(username: str, password: str):
-    user = get_user(username)
-    if not user:
-        return False
-    if not verify_password(password, USERS_DB[username]["hashed_password"]):
-        return False
-    return user
+@app.get("/materials", response_model=List[Material])
+async def get_materials_list():
+    """
+    Lists all materials currently available in the data/materials directory.
+    """
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    materials_dir = os.path.join(backend_dir, "data", "materials")
+    
+    if not os.path.isdir(materials_dir):
+        os.makedirs(materials_dir, exist_ok=True)
+        return []
+    
+    materials = []
+    for filename in os.listdir(materials_dir):
+        file_path = os.path.join(materials_dir, filename)
+        if os.path.isfile(file_path):
+            file_stat = os.stat(file_path)
+            file_type = os.path.splitext(filename)[1].replace('.', '') or 'file'
+            
+            materials.append(Material(
+                id=filename,
+                title=filename,
+                description=f"Arquivo {filename} localizado no servidor.",
+                type=file_type,
+                path=file_path,
+                size=file_stat.st_size,
+                uploadedAt=datetime.fromtimestamp(file_stat.st_ctime),
+                uploadedBy="system",
+                tags=[file_type, "local"],
+            ))
+    return materials
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+@app.post("/materials/upload", response_model=List[Material])
+async def upload_material(file: UploadFile = File(...)):
+    """
+    Uploads a new material to the data/materials directory and returns the updated list.
+    """
+    
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    materials_dir = os.path.join(backend_dir, "data", "materials")
+    os.makedirs(materials_dir, exist_ok=True)
+    
+    # Sanitize filename to prevent security issues
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided.")
+    safe_filename = os.path.basename(file.filename)
+    file_path = os.path.join(materials_dir, safe_filename)
+    
+    # Security check: ensure the final path is within the intended directory
+    if not os.path.abspath(file_path).startswith(os.path.abspath(materials_dir)):
+        raise HTTPException(status_code=400, detail="Invalid file path")
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username)
-    except JWTError:
-        raise credentials_exception
-    user = get_user(username=token_data.username)
-    if user is None:
-        raise credentials_exception
-    return user
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    finally:
+        file.file.close()
+        
+    # Return the updated list of materials
+    materials = []
+    for filename_loop in os.listdir(materials_dir):
+        file_path_loop = os.path.join(materials_dir, filename_loop)
+        if os.path.isfile(file_path_loop):
+            file_stat = os.stat(file_path_loop)
+            file_type = os.path.splitext(filename_loop)[1].replace('.', '') or 'file'
+            
+            materials.append(Material(
+                id=filename_loop,
+                title=filename_loop,
+                description=f"Arquivo {filename_loop} localizado no servidor.",
+                type=file_type,
+                path=file_path_loop,
+                size=file_stat.st_size,
+                uploadedAt=datetime.fromtimestamp(file_stat.st_ctime),
+                uploadedBy="system",
+                tags=[file_type, "local"],
+            ))
+    return materials
+
+@app.get("/drive-stats-detailed")
+async def get_drive_stats_detailed():
+    """
+    Returns statistics about the local materials directory.
+    The name is a legacy from a previous implementation.
+    """
+    stats = drive_handler.get_download_stats()
+    return stats
+
 
 @app.get("/")
 def read_root():
@@ -185,24 +195,35 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, current_user: User = Depends(get_current_user)):
+async def chat(request: ChatRequest):
+    """
+    Handles a chat request by generating a response using the RAG system.
+    """
     if not rag_handler:
         raise HTTPException(status_code=503, detail="RAG system not initialized")
 
-    response_data = rag_handler.generate_response(
-        request.message,
-        config=request.agent_config
-    )
-    
-    return ChatResponse(
-        response=response_data["answer"],
-        conversation_id=request.conversation_id or "default-conversation",
-        sources=response_data.get("sources", [])
-    )
+    try:
+        # Generate a response using the RAG handler
+        result = rag_handler.generate_response(
+            question=request.message,
+            config=request.agent_config
+        )
+        
+        # The conversation_id can be managed based on your application's needs.
+        # For now, we'll just pass it through if provided.
+        conversation_id = request.conversation_id or f"thread_{datetime.now().timestamp()}"
+
+        return ChatResponse(
+            response=result.get("answer", "No answer found."),
+            conversation_id=conversation_id,
+            sources=result.get("sources", [])
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error during chat processing: {e}")
 
 
 @app.get("/assistant/config", response_model=AssistantConfigModel)
-async def get_assistant_config(current_user: User = Depends(get_current_user)):
+async def get_assistant_config():
     """
     Retrieves the current assistant configuration.
     """
@@ -225,17 +246,11 @@ async def get_assistant_config(current_user: User = Depends(get_current_user)):
 
 @app.post("/assistant/config", response_model=AssistantConfigModel)
 async def update_assistant_config(
-    config: AssistantConfigModel, current_user: User = Depends(get_current_user)
+    config: AssistantConfigModel
 ):
     """
     Updates the assistant's configuration.
     """
-    if current_user.role not in ["admin", "instructor"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins and instructors can update the configuration",
-        )
-
     if not rag_handler:
         raise HTTPException(status_code=503, detail="RAG system not initialized")
 
@@ -254,15 +269,12 @@ async def update_assistant_config(
 
 
 @app.post("/index", response_model=IndexResponse)
-async def index_documents(current_user: User = Depends(get_current_user)):
+async def index_documents():
     """
     Scans the 'data/materials' directory, processes all documents,
     and adds them to the ChromaDB 'materials' collection.
     This is a full re-indexing operation.
     """
-    if current_user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can index documents")
-
     # The directory containing the documents to be indexed
     docs_dir = "data/materials"
 

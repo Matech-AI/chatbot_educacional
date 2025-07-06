@@ -1,18 +1,25 @@
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, status, Request
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Security configuration
-SECRET_KEY = "your-secret-key-here"  # Change in production
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")  # Change in production
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 180
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# Setup logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 class Token(BaseModel):
@@ -89,21 +96,44 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(request: Request):
+    """
+    Parses and validates a JWT token from the 'X-Auth-Token' header.
+    Includes detailed logging for diagnostics.
+    """
+    token = request.headers.get("x-auth-token")
+    logger.info(f"--- Auth Check ---")
+    logger.info(f"Headers: {dict(request.headers)}")
+    logger.info(f"Attempting to use token from 'x-auth-token': {token[:30] if token else 'None'}...")
+
+    if not token:
+        logger.error("❌ 'x-auth-token' header not found.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token is missing in 'x-auth-token' header",
+        )
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        username: Optional[str] = payload.get("sub")
+        logger.info(f"✅ Token decoded successfully for subject: {username}")
+
+        if not username or not isinstance(username, str):
+            logger.error(f"❌ 'sub' claim is missing, invalid, or not a string in payload: {payload}")
             raise credentials_exception
-        token_data = TokenData(username=username)
-    except JWTError:
+            
+    except JWTError as e:
+        logger.error(f"❌ JWT decoding failed. Error: {e}. Token: {token}")
         raise credentials_exception
-    user = get_user(username=token_data.username)
+
+    user = get_user(username=username)
     if user is None:
+        logger.error(f"❌ User '{username}' from token not found in database.")
         raise credentials_exception
+    
+    logger.info(f"✅ User '{username}' authenticated successfully.")
     return user

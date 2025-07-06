@@ -10,7 +10,6 @@ interface MaterialsState {
   isEmbedding: boolean;
   fetchMaterials: () => Promise<void>;
   uploadMaterial: (file: File, description?: string, tags?: string[]) => Promise<boolean>;
-  deleteMaterial: (id: string) => Promise<boolean>;
   embedAllMaterials: () => Promise<{ success: boolean; message: string }>;
 }
 
@@ -50,29 +49,12 @@ export const useMaterialsStore = create<MaterialsState>((set, get) => ({
     }
   },
 
-  deleteMaterial: async (id: string) => {
-    set({ isProcessing: true });
-    try {
-      console.log('🗑️ Deleting material:', id);
-      await api.materials.delete(id);
-      console.log('✅ Delete successful, updating local state...');
-      set(state => ({
-        materials: state.materials.filter(material => material.id !== id),
-        isProcessing: false,
-      }));
-      return true;
-    } catch (error) {
-      console.error('❌ Error in deleteMaterial:', error);
-      set({ isProcessing: false });
-      return false;
-    }
-  },
 
   embedAllMaterials: async () => {
     set({ isEmbedding: true });
     try {
       console.log('⚡ Starting embedding process for all materials...');
-      const response = await api.materials.embedAll();
+      const response = await api.materials.index();
       console.log('✅ Embedding process finished:', response.message);
       set({ isEmbedding: false });
       return { success: response.success, message: response.message };
@@ -92,7 +74,6 @@ export const useMaterialsActions = () => {
   return {
     fetchMaterials: useCallback(store.fetchMaterials, []),
     uploadMaterial: useCallback(store.uploadMaterial, []),
-    deleteMaterial: useCallback(store.deleteMaterial, []),
     embedAllMaterials: useCallback(store.embedAllMaterials, []),
   };
 };

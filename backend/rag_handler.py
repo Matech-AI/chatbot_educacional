@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from langchain_chroma import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.document_loaders.text import TextLoader
+from langchain_community.document_loaders.text import TextLoader
 from langchain_community.document_loaders.directory import DirectoryLoader
 
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -34,10 +34,11 @@ class ProcessingConfig:
     """Configuration for document processing"""
     chunk_size: int = 2000
     chunk_overlap: int = 200
-    model_name: str = "gpt-4o-mini"
+    model_name: str = "gdpt-4o-mini"
     embedding_model: str = "text-embedding-ada-002"
     temperature: float = 0.1
     max_tokens: int = 500
+    use_rag_fusion: bool = False
 
 
 class AssistantConfigModel(BaseModel):
@@ -509,45 +510,61 @@ Question: {question}
                 )
 
 
-            # 1. Generate multiple queries (using the default LLM for this step)
-            query_gen_chain = (
-                self.query_gen_prompt
-                | self.llm
-                | StrOutputParser()
-                | (lambda x: [q.strip() for q in x.split("\n") if q.strip()])
-            )
-            generated_queries = query_gen_chain.invoke({"question": question})
-            logger.info(f"🔍 Generated {len(generated_queries)} queries.")
+            # Determine retrieval strategy based on the feature flag
+            if self.config.use_rag_fusion:
+                logger.info("🔥 Using RAG-Fusion strategy.")
+                # 1. Generate multiple queries
+                query_gen_chain = (
+                    self.query_gen_prompt
+                    | self.llm
+                    | StrOutputParser()
+                    | (lambda x: [q.strip() for q in x.split("\n") if q.strip()])
+                )
+                generated_queries = query_gen_chain.invoke({"question": question})
+                logger.info(f"🔍 Generated {len(generated_queries)} queries for RAG-Fusion.")
 
-            # 2. Retrieve documents for each query
-            search_kwargs: Dict[str, Any] = {'k': 5}
-            if material_ids:
-                search_kwargs['filter'] = {"source": {"$in": material_ids}}
+                # 2. Retrieve documents for each query
+                search_kwargs: Dict[str, Any] = {'k': 5}
+                if material_ids:
+                    search_kwargs['filter'] = {"source": {"$in": material_ids}}
+                
+                retriever = self.vector_store.as_retriever(search_kwargs=search_kwargs)
+                
+                retrieved_docs_lists = [retriever.invoke(q) for q in generated_queries]
+                
+                # 3. Rerank documents using Reciprocal Rank Fusion
+                fused_results = reciprocal_rank_fusion(retrieved_docs_lists)
+                logger.info(f"🔄 Reranked {len(fused_results)} documents.")
+                
+                # Extract documents from fused results
+                final_docs = [doc for doc, score in fused_results]
 
-            retriever = self.vector_store.as_retriever(search_kwargs=search_kwargs)
+            else:
+                logger.info("🌿 Using standard hybrid search strategy.")
+                # Standard retrieval
+                search_kwargs: Dict[str, Any] = {'k': 10} # Retrieve more to ensure good context
+                if material_ids:
+                    search_kwargs['filter'] = {"source": {"$in": material_ids}}
+                
+                retriever = self.vector_store.as_retriever(search_kwargs=search_kwargs)
+                final_docs = retriever.invoke(question)
+                logger.info(f"🔍 Retrieved {len(final_docs)} documents with standard search.")
 
-            retrieved_docs = []
-            for q in generated_queries:
-                docs = retriever.get_relevant_documents(q)
-                retrieved_docs.append(docs)
-
-            # 3. Rerank documents
-            reranked_results = reciprocal_rank_fusion(retrieved_docs)
-            logger.info(f"🔄 Reranked {len(reranked_results)} documents.")
-
-            # 4. Format context and extract sources
-            context = "\n\n".join([doc.page_content for doc, score in reranked_results[:5]])
+            # 4. Format context and extract sources from the final list of documents
+            context = "\n\n".join([doc.page_content for doc in final_docs[:5]])
 
             unique_sources = []
             seen_sources = set()
-            for doc, score in reranked_results[:5]:
-                source = doc.metadata.get('source')
-                if source and source not in seen_sources:
+            for doc in final_docs[:5]:
+                source_path = doc.metadata.get('source')
+                if source_path and source_path not in seen_sources:
                     unique_sources.append({
-                        "source": source,
-                        "filename": doc.metadata.get('filename', Path(source).name)
+                        "title": doc.metadata.get('filename', Path(source_path).name),
+                        "source": source_path,
+                        "page": doc.metadata.get('page'),
+                        "chunk": doc.page_content
                     })
-                    seen_sources.add(source)
+                    seen_sources.add(source_path)
 
             # 5. Generate final answer using the selected LLM and prompt
             answer_chain = final_prompt | temp_llm | StrOutputParser()

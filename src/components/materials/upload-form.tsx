@@ -9,14 +9,17 @@ import { formatFileSize } from '../../lib/utils';
 interface UploadFormProps {
   onUpload: (file: File, description: string, tags: string[]) => Promise<boolean>;
   isLoading: boolean;
+  onEmbed: () => Promise<void>;
+  isEmbedding: boolean;
 }
 
-export const UploadForm: React.FC<UploadFormProps> = ({ onUpload, isLoading }) => {
+export const UploadForm: React.FC<UploadFormProps> = ({ onUpload, isLoading, onEmbed, isEmbedding }) => {
   const [file, setFile] = useState<File | null>(null);
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -80,12 +83,14 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onUpload, isLoading }) =
         setFile(null);
         setDescription('');
         setTags([]);
+        setUploadSuccess(true); // Set success state
       }
     }
   };
   
   const removeFile = () => {
     setFile(null);
+    setUploadSuccess(false); // Reset success state
   };
   
   return (
@@ -243,6 +248,27 @@ export const UploadForm: React.FC<UploadFormProps> = ({ onUpload, isLoading }) =
             Fazer upload
           </Button>
         </div>
+
+        {uploadSuccess && (
+          <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg text-center">
+            <p className="text-green-800 font-medium mb-2">
+              Upload bem-sucedido!
+            </p>
+            <p className="text-sm text-gray-600 mb-3">
+              Agora você pode adicionar o conhecimento do material à base de dados.
+            </p>
+            <Button
+              type="button"
+              onClick={onEmbed}
+              disabled={isEmbedding}
+              isLoading={isEmbedding}
+              variant="success"
+              className="w-full"
+            >
+              {isEmbedding ? "Adicionando..." : "Adicionar Conhecimento"}
+            </Button>
+          </div>
+        )}
       </div>
     </form>
   );

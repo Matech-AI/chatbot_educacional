@@ -93,7 +93,7 @@ const SourceItem: React.FC<SourceItemProps> = ({ source }) => {
         {source.page && <span className="text-gray-500">Pág. {source.page}</span>}
       </div>
       
-      <p className="mt-1 text-gray-600 line-clamp-2">{source.chunk}</p>
+      <p className="mt-1 text-gray-600">{source.chunk}</p>
       
       <a 
         href={source.source} 

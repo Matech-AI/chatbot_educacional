@@ -7,7 +7,6 @@ import { motion } from "framer-motion";
 interface MaterialCardProps {
   material: Material;
   onEdit: (material: Material) => void;
-  onDelete: (id: string) => void;
   canManage?: boolean;
 }
 
@@ -136,7 +135,6 @@ const ExternalLinkIcon: React.FC<{ className?: string }> = ({
 export const MaterialCard: React.FC<MaterialCardProps> = ({
   material,
   onEdit,
-  onDelete,
   canManage = false,
 }) => {
   // ========================================
@@ -208,11 +206,6 @@ export const MaterialCard: React.FC<MaterialCardProps> = ({
     onEdit(material);
   };
 
-  const handleDelete = () => {
-    if (window.confirm(`Tem certeza que deseja excluir "${material.title}"?`)) {
-      onDelete(material.id);
-    }
-  };
 
   // ========================================
   // RENDER
@@ -315,13 +308,6 @@ export const MaterialCard: React.FC<MaterialCardProps> = ({
                   <EditIcon />
                 </button>
 
-                <button
-                  onClick={handleDelete}
-                  className="p-2 rounded-md hover:bg-white hover:shadow-sm transition-all duration-200 text-gray-600 hover:text-red-600"
-                  title="Excluir"
-                >
-                  <TrashIcon />
-                </button>
               </>
             )}
           </div>

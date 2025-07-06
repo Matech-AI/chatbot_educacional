@@ -30,70 +30,73 @@ function setAuthToken(token: string | null): void {
   }
 }
 
-// Create headers with authentication
-function createHeaders(additionalHeaders: Record<string, string> = {}): HeadersInit {
-  const headers: Record<string, string> = {
-    ...additionalHeaders,
-  };
-
-  const token = getAuthToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  return headers;
-}
-
 // Generic API request function
 export async function apiRequest(
-  endpoint: string, 
+  endpoint: string,
   options: RequestInit = {}
 ): Promise<Response> {
   const url = `${API_BASE}${endpoint}`;
-  
+
+  // Always work with a Headers object for robust header management
+  const headers = new Headers(options.headers);
+
+  // Add custom authentication header if a token exists
+
   const config: RequestInit = {
     ...options,
-    headers: createHeaders(options.headers as Record<string, string>),
+    headers,
   };
+
+  // For FormData, let the browser set the Content-Type header.
+  // This is crucial for the boundary to be set correctly.
+  if (config.body instanceof FormData) {
+    headers.delete('Content-Type');
+  }
 
   try {
     const response = await fetch(url, config);
-    
-    // Handle authentication errors
-    if (response.status === 401) {
-      setAuthToken(null);
-      // In Claude artifacts, we can't redirect, so just throw error
-      throw new Error('Authentication required - please login again');
-    }
+
 
     return response;
   } catch (error) {
-    console.error(`API request failed: ${endpoint}`, error);
+    console.error(`API request failed for endpoint: ${endpoint}`, error);
     throw error;
   }
 }
 
-// API request with JSON response
+// API request helper for JSON responses
 export async function apiRequestJson<T = any>(
-  endpoint: string, 
+  endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  // Add JSON content type for POST/PUT requests
-  if (['POST', 'PUT', 'PATCH'].includes(options.method?.toUpperCase() || '')) {
-    options.headers = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
-  }
+  const newOptions = { ...options };
+  const headers = new Headers(newOptions.headers);
 
-  const response = await apiRequest(endpoint, options);
-  
+  // Set Content-Type for JSON requests if not already set
+  if (['POST', 'PUT', 'PATCH'].includes(newOptions.method?.toUpperCase() || '')) {
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+  }
+  newOptions.headers = headers;
+
+  const response = await apiRequest(endpoint, newOptions);
+
   if (!response.ok) {
-    const errorData = await response.text();
-    throw new Error(`HTTP ${response.status}: ${errorData}`);
+    const errorText = await response.text();
+    try {
+      // Attempt to parse error response as JSON for more details
+      const errorJson = JSON.parse(errorText);
+      throw new Error(`HTTP ${response.status}: ${errorJson.detail || errorText}`);
+    } catch (e) {
+      // Fallback to plain text if not JSON
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
   }
 
-  return response.json();
+  // Handle empty responses (e.g., 204 No Content)
+  const responseText = await response.text();
+  return responseText ? (JSON.parse(responseText) as T) : ({} as T);
 }
 
 // Specific API functions
@@ -145,9 +148,7 @@ export const api = {
       });
     },
 
-    delete: (filename: string) => apiRequest(`/materials/${filename}`, {
-      method: 'DELETE',
-    }),
+    index: () => apiRequestJson('/index', { method: 'POST' }),
 
     download: (filename: string) => apiRequest(`/materials/${filename}`),
   },

@@ -33,7 +33,6 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
     isProcessing,
     fetchMaterials,
     uploadMaterial,
-    deleteMaterial,
     embedAllMaterials,
     isEmbedding,
   } = useMaterialsStore();
@@ -100,12 +99,6 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
     return success;
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Tem certeza que deseja excluir este material?")) {
-      await deleteMaterial(id);
-      loadDriveStats(); // Refresh stats
-    }
-  };
 
   const handleEdit = (material: Material) => {
     // TODO: Implement edit functionality
@@ -401,7 +394,6 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
                       key={material.id}
                       material={material}
                       onEdit={handleEdit}
-                      onDelete={handleDelete}
                       canManage={canManage}
                     />
                   ))
@@ -457,7 +449,12 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
           >
-            <UploadForm onUpload={handleUpload} isLoading={isProcessing} />
+            <UploadForm
+              onUpload={handleUpload}
+              isLoading={isProcessing}
+              onEmbed={handleEmbedAll}
+              isEmbedding={isEmbedding}
+            />
           </motion.div>
         )}
 
