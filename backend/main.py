@@ -686,10 +686,21 @@ async def sync_drive_recursive(
 
                 if result["status"] == "success":
                     download_progress[download_id].update({
-                        "status": "completed",
-                        "progress": 100,
+                        "status": "processing",
+                        "progress": 95, # Still processing
                         "total_files": result["statistics"]["total_files"],
                         "downloaded_files": result["statistics"]["downloaded_files"],
+                    })
+
+                    # Re-index materials in RAG handler
+                    if rag_handler:
+                        logger.info("🧠 Re-indexing materials in RAG handler...")
+                        rag_handler.process_and_initialize("data/materials")
+                        logger.info("✅ Re-indexing complete.")
+
+                    download_progress[download_id].update({
+                        "status": "completed",
+                        "progress": 100,
                         "completed_at": datetime.now().isoformat(),
                         "result": result
                     })
@@ -1075,6 +1086,12 @@ async def sync_drive(
         result = drive_handler.download_drive_recursive(data.folder_id)
 
         if result['status'] == 'success':
+            # Re-index materials in RAG handler
+            if rag_handler:
+                logger.info("🧠 Re-indexing materials after legacy sync...")
+                rag_handler.process_and_initialize("data/materials")
+                logger.info("✅ Re-indexing complete.")
+
             stats = drive_handler.get_download_stats()
             return {
                 "status": "success",
@@ -1329,13 +1346,19 @@ async def reset_chromadb(current_user: User = Depends(get_current_user)):
         if rag_handler:
             rag_handler.reset()
             logger.info("🔄 RAG handler reset")
+            # Set handler to None to release file locks before deleting the directory
+            rag_handler = None
+            # Add a small delay to allow the OS to release file locks
+            time.sleep(1)
 
         chromadb_dir = Path(".chromadb")
         if chromadb_dir.exists():
-            shutil.rmtree(chromadb_dir)
-            logger.info("🗑️ Removed ChromaDB directory")
-
-        rag_handler = None
+            try:
+                shutil.rmtree(chromadb_dir)
+                logger.info("🗑️ Removed ChromaDB directory")
+            except Exception as e:
+                logger.error(f"❌ Failed to remove ChromaDB directory: {e}")
+                raise HTTPException(status_code=500, detail=f"Could not remove ChromaDB directory. It might be locked. Error: {e}")
 
         return {
             "status": "success",
@@ -1835,6 +1858,12 @@ async def upload_material(
             f.write(content)
 
         logger.info(f"✅ File uploaded successfully: {file_path}")
+
+        # Re-index materials in RAG handler
+        if rag_handler:
+            logger.info("🧠 Re-indexing materials after upload...")
+            rag_handler.process_and_initialize("data/materials")
+            logger.info("✅ Re-indexing complete.")
 
         return {
             "status": "success",

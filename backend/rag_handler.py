@@ -136,8 +136,7 @@ class RAGHandler:
                 )
                 self.llm = ChatOpenAI(
                     model=self.config.model_name,
-                    temperature=self.config.temperature,
-                    max_completion_tokens=self.config.max_tokens
+                    temperature=self.config.temperature
                 )
             except openai.AuthenticationError:
                 logger.error("❌ Invalid OpenAI API key provided.")
@@ -240,6 +239,11 @@ class RAGHandler:
         """
         logger.info(f"📂 Processing documents from: {docs_dir}")
         status_messages = []
+
+        # Reset document lists for this processing run
+        self.documents = []
+        self.chunks = []
+        logger.info("🧹 Cleared internal document and chunk lists for a fresh run.")
 
         try:
             # Verify directory exists
@@ -389,23 +393,43 @@ class RAGHandler:
                 f"📊 Chunk stats - Min: {min(sizes)}, Max: {max(sizes)}, Avg: {avg_size:.0f}")
 
     def _store_embeddings(self) -> None:
-        """Store document chunks in ChromaDB using the langchain wrapper."""
+        """
+        Store document chunks in ChromaDB, ensuring no duplicates by deleting
+        existing chunks for the same source files before adding new ones.
+        """
         logger.info("🗄️ Storing embeddings in ChromaDB...")
 
         if not self.chunks:
             logger.warning("⚠️ No chunks to store. Skipping embedding process.")
             return
 
-        logger.info(f"📤 Storing {len(self.chunks)} chunks...")
-
         if not self.vector_store:
             logger.error("❌ Vector store not initialized. Skipping embedding process.")
             raise ValueError("Vector store not initialized")
 
+        # Get unique source file paths from the new chunks
+        source_files = list(set(chunk.metadata['source'] for chunk in self.chunks))
+        logger.info(f"🔄 Updating embeddings for {len(source_files)} source files.")
+
         try:
-            # The add_documents method handles chunking, embedding, and storage
+            # Find and delete existing chunks for these source files
+            if source_files:
+                existing_chunks = self.vector_store._collection.get(
+                    where={"source": {"$in": source_files}}
+                )
+                existing_ids = existing_chunks.get('ids', [])
+
+                if existing_ids:
+                    logger.info(f"🗑️ Found {len(existing_ids)} existing chunks to remove for updated files.")
+                    self.vector_store._collection.delete(ids=existing_ids)
+                    logger.info(f"✅ Removed existing chunks.")
+                else:
+                    logger.info("ℹ️ No existing chunks found for these files. Adding new ones.")
+
+            # Add the new chunks
+            logger.info(f"📤 Storing {len(self.chunks)} new chunks...")
             self.vector_store.add_documents(self.chunks)
-            logger.info(f"✅ Successfully stored {len(self.chunks)} chunks.")
+            logger.info(f"✅ Successfully stored {len(self.chunks)} new chunks.")
 
             # Verify storage
             count = self.vector_store._collection.count()
@@ -424,8 +448,7 @@ class RAGHandler:
             try:
                 self.llm = ChatOpenAI(
                     model=self.config.model_name,
-                    temperature=self.config.temperature,
-                    max_completion_tokens=self.config.max_tokens
+                    temperature=self.config.temperature
                 )
             except openai.AuthenticationError:
                 logger.error("❌ Invalid OpenAI API key provided.")
@@ -497,8 +520,7 @@ Question: {question}
                 # Create a temporary LLM instance for this request
                 temp_llm = ChatOpenAI(
                     model=config.model,
-                    temperature=config.temperature,
-                    max_completion_tokens=self.config.max_tokens  # Keep max_tokens from default
+                    temperature=config.temperature
                 )
                 # Use the prompt from the provided config
                 final_prompt = self.answer_prompt.partial(prompt=config.prompt)
@@ -627,9 +649,16 @@ Question: {question}
             self.chunks = []
 
             if self.vector_store:
-                # Access the underlying collection to delete all items
-                self.vector_store._collection.delete(where={})
-                logger.info("🧹 Cleared collection")
+                try:
+                    # To delete all items, get all IDs first, then delete by ID
+                    collection_items = self.vector_store._collection.get()
+                    if collection_items and collection_items['ids']:
+                        self.vector_store._collection.delete(ids=collection_items['ids'])
+                        logger.info(f"🧹 Cleared {len(collection_items['ids'])} items from collection")
+                    else:
+                        logger.info("ℹ️ Collection is already empty.")
+                except Exception as e:
+                    logger.error(f"❌ Error clearing ChromaDB collection: {e}")
 
             self.chain = None
             if hasattr(self, 'retriever'):
