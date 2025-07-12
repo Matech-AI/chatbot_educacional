@@ -11,6 +11,7 @@ from langchain_chroma import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.document_loaders.text import TextLoader
+from langchain_community.document_loaders import UnstructuredExcelLoader
 from langchain_community.document_loaders.directory import DirectoryLoader
 
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -258,7 +259,7 @@ class RAGHandler:
             # Count files before processing
             all_files = list(docs_path.rglob("*"))
             doc_files = [f for f in all_files if f.is_file() and f.suffix.lower() in [
-                '.pdf', '.txt', '.docx']]
+                '.pdf', '.txt', '.docx', '.xlsx']]
 
             logger.info(
                 f"📊 Found {len(all_files)} total files, {len(doc_files)} processable documents")
@@ -328,6 +329,15 @@ class RAGHandler:
         except ImportError:
             logger.warning(
                 "⚠️ DOCX support not available - install python-docx if needed")
+
+        # Try to add XLSX support
+        try:
+            from langchain_community.document_loaders import UnstructuredExcelLoader
+            loaders["**/*.xlsx"] = UnstructuredExcelLoader
+            logger.info("✅ XLSX support enabled")
+        except ImportError:
+            logger.warning(
+                "⚠️ XLSX support not available - install openpyxl if needed")
 
         # Process each file type
         for glob_pattern, loader_class in loaders.items():
