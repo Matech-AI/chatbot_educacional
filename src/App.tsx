@@ -41,6 +41,14 @@ const ChatPage = lazy(() =>
   )
 );
 
+const EnhancedChatPage = lazy(() =>
+  import("./pages/enhanced-chat-page").catch(() =>
+    import("./pages/enhanced-chat-page").then((m) => ({
+      default: m.EnhancedChatPage || m.default,
+    }))
+  )
+);
+
 const MaterialsPage = lazy(() =>
   import("./pages/materials-page").catch(() =>
     import("./pages/materials-page").then((m) => ({
@@ -181,6 +189,14 @@ const SettingsPage = lazy(() =>
   )
 );
 
+const UserManagementPage = lazy(() =>
+  import("./pages/user-management-page").catch(() =>
+    import("./pages/user-management-page").then((m) => ({
+      default: m.UserManagementPage || m.default,
+    }))
+  )
+);
+
 const SimpleDebugPage: React.FC = () => {
   const { user, isAuthenticated } = useAuthStore();
 
@@ -289,6 +305,17 @@ function App() {
                 <Suspense
                   fallback={<LoadingSpinner message="Carregando chat..." />}
                 >
+                  <EnhancedChatPage />
+                </Suspense>
+              }
+            />
+
+            <Route
+              path="chat/classic"
+              element={
+                <Suspense
+                  fallback={<LoadingSpinner message="Carregando chat clássico..." />}
+                >
                   <ChatPage />
                 </Suspense>
               }
@@ -334,6 +361,21 @@ function App() {
                     }
                   >
                     <SettingsPage />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="users"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <Suspense
+                    fallback={
+                      <LoadingSpinner message="Carregando gerenciamento de usuários..." />
+                    }
+                  >
+                    <UserManagementPage />
                   </Suspense>
                 </ProtectedRoute>
               }

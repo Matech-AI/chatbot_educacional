@@ -1,0 +1,78 @@
+{
+  "00a8335520667d92101d7f4004659d31": [
+    {
+      "start_time": 0,
+      "end_time": 180,
+      "topic": "Introdução ao Treinamento Combinado",
+      "description": "Apresentação dos conceitos básicos de treino aeróbio e força",
+      "keywords": [
+        "introdução",
+        "treinamento",
+        "conceitos"
+      ],
+      "confidence": 0.8
+    },
+    {
+      "start_time": 180,
+      "end_time": 420,
+      "topic": "Interferência no Treinamento",
+      "description": "Discussão sobre o fenômeno de interferência entre modalidades",
+      "keywords": [
+        "interferência",
+        "modalidades",
+        "conflito"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "start_time": 420,
+      "end_time": 720,
+      "topic": "Evidências Científicas",
+      "description": "Apresentação de estudos e pesquisas relevantes",
+      "keywords": [
+        "evidências",
+        "estudos",
+        "pesquisa",
+        "científico"
+      ],
+      "confidence": 0.8
+    },
+    {
+      "start_time": 720,
+      "end_time": 900,
+      "topic": "Aplicações Práticas",
+      "description": "Como aplicar os conceitos na prática do treinamento",
+      "keywords": [
+        "prática",
+        "aplicação",
+        "treino",
+        "implementação"
+      ],
+      "confidence": 0.7
+    },
+    {
+      "start_time": 900,
+      "end_time": 1080,
+      "topic": "Periodização e Organização",
+      "description": "Estratégias de periodização para treinamento combinado",
+      "keywords": [
+        "periodização",
+        "organização",
+        "estratégias"
+      ],
+      "confidence": 0.8
+    },
+    {
+      "start_time": 1080,
+      "end_time": 1200,
+      "topic": "Conclusões e Recomendações",
+      "description": "Síntese dos pontos principais e recomendações práticas",
+      "keywords": [
+        "conclusões",
+        "recomendações",
+        "síntese"
+      ],
+      "confidence": 0.7
+    }
+  ]
+}

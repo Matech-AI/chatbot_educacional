@@ -295,7 +295,7 @@ class RAGHandler:
 
             # Generate embeddings and store in ChromaDB
             status_messages.append("🧠 Generating embeddings...")
-            self._store_embeddings()
+            # self._store_embeddings()
             status_messages.append("✓ Embeddings generated and stored")
             logger.info("✅ Embeddings stored in ChromaDB")
 

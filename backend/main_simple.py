@@ -28,6 +28,9 @@ from auth import (
     Token
 )
 from drive_handler import DriveHandler
+from user_management import router as auth_router
+from educational_agent import get_educational_agent
+from video_handler import get_video_handler
 
 # Configure enhanced logging
 logging.basicConfig(
@@ -59,15 +62,19 @@ app.add_middleware(
 rag_handler = None
 drive_handler = RecursiveDriveHandler()
 simple_drive_handler = DriveHandler()
+video_handler = get_video_handler(drive_handler)
 
 # Global state for download tracking
 download_progress = {}
 active_downloads = {}
 
 # OAuth2 scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
 logger.info("🚀 DNA da Força API v1.4.0 - Complete Recursive Drive Integration")
+
+# Include authentication router
+app.include_router(auth_router)
 
 # ========================================
 # MODELS
@@ -76,6 +83,25 @@ logger.info("🚀 DNA da Força API v1.4.0 - Complete Recursive Drive Integratio
 
 class Question(BaseModel):
     content: str
+
+class EducationalChatRequest(BaseModel):
+    content: str
+    user_level: str = "intermediate"  # beginner, intermediate, advanced
+    learning_style: str = "mixed"  # visual, auditory, kinesthetic, mixed
+    session_id: Optional[str] = None
+    current_topic: Optional[str] = None
+    learning_objectives: List[str] = []
+
+class EducationalChatResponse(BaseModel):
+    response: str
+    sources: List[Dict[str, Any]] = []
+    follow_up_questions: List[str] = []
+    learning_suggestions: List[str] = []
+    related_topics: List[str] = []
+    educational_metadata: Dict[str, Any] = {}
+    learning_context: Dict[str, Any] = {}
+    video_suggestions: List[Dict[str, Any]] = []
+    response_time: float = 0.0
 
 
 class Response(BaseModel):
@@ -120,37 +146,21 @@ class ResetComponent(BaseModel):
     component: str
     confirm: bool = False
 
+class VideoEmbedRequest(BaseModel):
+    video_path: str
+    drive_id: Optional[str] = None
+    topic_query: Optional[str] = None
+
+class VideoSearchRequest(BaseModel):
+    topic_query: str
+    user_level: str = "intermediate"
+
 # ========================================
 # USER MANAGEMENT
 # ========================================
 
 
-USERS_FILE = "users.json"
-
-
-def load_users():
-    """Load users from JSON file"""
-    if not os.path.exists(USERS_FILE):
-        users = [
-            {"username": "admin", "password": "admin123", "role": "admin"},
-            {"username": "instrutor", "password": "instrutor123", "role": "instructor"},
-            {"username": "aluno", "password": "aluno123", "role": "student"}
-        ]
-        save_users(users)
-        logger.info("👥 Created default users file")
-        return users
-
-    with open(USERS_FILE, "r") as f:
-        users = json.load(f)
-        logger.info(f"👥 Loaded {len(users)} users from file")
-        return users
-
-
-def save_users(users):
-    """Save users to JSON file"""
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=2)
-    logger.info(f"💾 Saved {len(users)} users to file")
+# Old user management functions removed - now handled by auth.py
 
 # ========================================
 # UTILITY FUNCTIONS
@@ -268,66 +278,11 @@ def format_bytes(bytes_value: int) -> str:
     return f"{size:.1f} {units[unit_index]}"
 
 # ========================================
-# AUTHENTICATION ENDPOINTS
+# AUTHENTICATION ENDPOINTS - Now handled by auth_router
 # ========================================
 
 
-@app.post("/token", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """User login endpoint"""
-    logger.info(f"🔐 Login attempt for: {form_data.username}")
-
-    user = auth_authenticate_user(form_data.username, form_data.password)
-    if not user:
-        logger.warning(f"❌ Failed login attempt for: {form_data.username}")
-        raise HTTPException(
-            status_code=401,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    access_token = create_access_token(
-        data={"sub": user.username, "role": user.role}
-    )
-
-    logger.info(f"✅ Login successful for: {form_data.username}")
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
-@app.post("/change-password")
-async def change_password(
-    request: Request,
-    data: dict = None,
-    current_user: User = Depends(get_current_user)
-):
-    """Change user password"""
-    if data is None:
-        data = await request.json()
-
-    current_password = data.get("current_password")
-    new_password = data.get("new_password")
-
-    logger.info(f"🔑 Password change request for: {current_user.username}")
-
-    if not current_password or not new_password:
-        raise HTTPException(status_code=400, detail="Missing required fields")
-
-    users = load_users()
-    for user in users:
-        if user["username"] == current_user.username:
-            if user["password"] != current_password:
-                logger.warning(
-                    f"❌ Incorrect current password for: {current_user.username}")
-                raise HTTPException(
-                    status_code=401, detail="Current password is incorrect")
-
-            user["password"] = new_password
-            save_users(users)
-            logger.info(
-                f"✅ Password changed successfully for: {current_user.username}")
-            return {"status": "success", "message": "Password changed successfully"}
-
-    raise HTTPException(status_code=404, detail="User not found")
+# Old password endpoints removed - now handled by auth_router
 
 # ========================================
 # SYSTEM ENDPOINTS
@@ -570,6 +525,367 @@ async def chat_auth(question: Question, current_user: User = Depends(get_current
     except Exception as e:
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/educational", response_model=EducationalChatResponse)
+async def educational_chat(
+    request: EducationalChatRequest, 
+    current_user: User = Depends(get_current_user)
+):
+    """Enhanced educational chat with learning features"""
+    start_time = time.time()
+    
+    logger.info(f"🎓 Educational chat from {current_user.username}: {request.content[:50]}...")
+    
+    try:
+        # Get educational agent
+        agent = get_educational_agent()
+        
+        # Prepare learning preferences
+        learning_preferences = {
+            "difficulty_level": request.user_level,
+            "learning_style": request.learning_style,
+            "current_topic": request.current_topic,
+            "learning_objectives": request.learning_objectives
+        }
+        
+        # Process with educational agent
+        result = await agent.chat(
+            message=request.content,
+            user_id=current_user.username,
+            session_id=request.session_id or f"session_{int(time.time())}",
+            learning_preferences=learning_preferences
+        )
+        
+        # Search for relevant videos based on the topic
+        video_suggestions = []
+        try:
+            # Extract main topic from related topics or content
+            search_topic = request.current_topic or (result["related_topics"][0] if result["related_topics"] else "")
+            
+            if search_topic:
+                # Get all video files from materials directory
+                materials_dir = Path("data/materials")
+                video_files = []
+                
+                if materials_dir.exists():
+                    for file_path in materials_dir.rglob("*"):
+                        if file_path.is_file() and any(ext in file_path.suffix.lower() for ext in ['.mp4', '.avi', '.mov', '.webm']):
+                            video_files.append(str(file_path))
+                
+                # Find videos related to each topic
+                for topic in result["related_topics"][:3]:  # Check top 3 related topics
+                    video_result = video_handler.find_video_for_topic(topic, video_files)
+                    if video_result:
+                        video_path, timestamp = video_result
+                        
+                        # Get video metadata
+                        metadata = video_handler.get_video_metadata(video_path)
+                        
+                        video_suggestions.append({
+                            "topic": topic,
+                            "video_path": str(Path(video_path).relative_to(materials_dir)) if materials_dir.exists() else video_path,
+                            "video_title": metadata.title,
+                            "start_timestamp": timestamp,
+                            "duration": metadata.duration,
+                            "difficulty_level": metadata.difficulty_level,
+                            "description": f"Vídeo relacionado ao tópico '{topic}'"
+                        })
+                        
+        except Exception as e:
+            logger.warning(f"⚠️ Error searching for video suggestions: {e}")
+        
+        response_time = time.time() - start_time
+        
+        logger.info(f"✅ Educational response generated in {response_time:.2f}s with {len(video_suggestions)} video suggestions")
+        
+        # Add video suggestions to the response
+        response_data = {
+            "response": result["response"],
+            "sources": result["sources"],
+            "follow_up_questions": result["follow_up_questions"],
+            "learning_suggestions": result["learning_suggestions"],
+            "related_topics": result["related_topics"],
+            "educational_metadata": result["educational_metadata"],
+            "learning_context": result["learning_context"],
+            "response_time": response_time
+        }
+        
+        # Add video suggestions if any found
+        if video_suggestions:
+            response_data["video_suggestions"] = video_suggestions
+            if "video_content" not in response_data["learning_suggestions"]:
+                response_data["learning_suggestions"].append(f"📹 {len(video_suggestions)} vídeo(s) relacionado(s) disponível(eis) para este tópico")
+        
+        return EducationalChatResponse(**response_data)
+        
+    except Exception as e:
+        logger.error(f"❌ Educational chat error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Educational chat error: {str(e)}")
+
+@app.post("/chat/explore-topic")
+async def explore_topic(
+    topic: str,
+    user_level: str = "intermediate",
+    current_user: User = Depends(get_current_user)
+):
+    """Deep exploration of a specific topic"""
+    logger.info(f"🔍 Topic exploration: {topic} for {current_user.username}")
+    
+    try:
+        agent = get_educational_agent()
+        
+        # Generate exploration questions
+        exploration_prompt = f"""
+        Você quer explorar mais profundamente o tópico: {topic}
+        
+        Gere uma resposta estruturada que inclua:
+        1. Conceitos fundamentais relacionados
+        2. Aplicações práticas 
+        3. Variações e progressões
+        4. Considerações especiais
+        5. Pesquisas recentes (se aplicável)
+        
+        Adapte o nível de complexidade para: {user_level}
+        """
+        
+        result = await agent.chat(
+            message=exploration_prompt,
+            user_id=current_user.username,
+            session_id=f"explore_{topic}_{int(time.time())}",
+            learning_preferences={
+                "difficulty_level": user_level,
+                "current_topic": topic
+            }
+        )
+        
+        return {
+            "topic": topic,
+            "exploration": result["response"],
+            "sources": result["sources"],
+            "follow_up_questions": result["follow_up_questions"],
+            "related_topics": result["related_topics"],
+            "learning_suggestions": result["learning_suggestions"]
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Topic exploration error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Topic exploration error: {str(e)}")
+
+@app.get("/chat/learning-path/{topic}")
+async def get_learning_path(
+    topic: str,
+    user_level: str = "intermediate",
+    current_user: User = Depends(get_current_user)
+):
+    """Get suggested learning path for a topic"""
+    logger.info(f"🛤️ Learning path request: {topic} for {current_user.username}")
+    
+    try:
+        agent = get_educational_agent()
+        
+        # This would use enhanced RAG if available
+        learning_path = [
+            {"step": 1, "title": f"Fundamentos de {topic}", "description": "Conceitos básicos e terminologia"},
+            {"step": 2, "title": f"Aplicação prática de {topic}", "description": "Como aplicar na prática"},
+            {"step": 3, "title": f"Progressão em {topic}", "description": "Níveis avançados e variações"},
+            {"step": 4, "title": f"Troubleshooting {topic}", "description": "Solucionando problemas comuns"}
+        ]
+        
+        return {
+            "topic": topic,
+            "user_level": user_level,
+            "learning_path": learning_path,
+            "estimated_time": "2-4 semanas",
+            "prerequisites": [],
+            "resources_available": True
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Learning path error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Learning path error: {str(e)}")
+
+@app.get("/chat/session/{session_id}/context")
+async def get_session_context(
+    session_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get learning context for a chat session"""
+    try:
+        agent = get_educational_agent()
+        context = agent.get_learning_context(current_user.username, session_id)
+        
+        return {
+            "session_id": session_id,
+            "learning_context": context.dict(),
+            "summary": {
+                "topics_covered": len(context.topics_covered),
+                "current_focus": context.current_topic,
+                "difficulty_level": context.difficulty_level,
+                "objectives_count": len(context.learning_objectives)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Session context error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Session context error: {str(e)}")
+
+# ========================================
+# VIDEO ENDPOINTS
+# ========================================
+
+@app.post("/video/embed")
+async def get_video_embed(
+    request: VideoEmbedRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Get video embed data with optional topic-based timestamp"""
+    logger.info(f"🎥 Video embed request from {current_user.username}: {request.video_path}")
+    
+    try:
+        embed_data = video_handler.get_video_embed_data(
+            video_path=request.video_path,
+            topic_query=request.topic_query,
+            drive_id=request.drive_id
+        )
+        
+        return {
+            "status": "success",
+            "embed_data": embed_data
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Video embed error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Video embed error: {str(e)}")
+
+@app.post("/video/search")
+async def search_videos_for_topic(
+    request: VideoSearchRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Search for videos related to a specific topic"""
+    logger.info(f"🔍 Video search request from {current_user.username}: {request.topic_query}")
+    
+    try:
+        # Get all video files from materials directory
+        materials_dir = Path("data/materials")
+        video_files = []
+        
+        if materials_dir.exists():
+            for file_path in materials_dir.rglob("*"):
+                if file_path.is_file() and any(ext in file_path.suffix.lower() for ext in ['.mp4', '.avi', '.mov', '.webm']):
+                    video_files.append(str(file_path))
+        
+        # Find best matching video
+        result = video_handler.find_video_for_topic(request.topic_query, video_files)
+        
+        if result:
+            video_path, timestamp = result
+            
+            # Get embed data for the found video
+            embed_data = video_handler.get_video_embed_data(
+                video_path=video_path,
+                topic_query=request.topic_query
+            )
+            
+            return {
+                "status": "success",
+                "video_found": True,
+                "video_path": video_path,
+                "start_timestamp": timestamp,
+                "embed_data": embed_data
+            }
+        else:
+            return {
+                "status": "success", 
+                "video_found": False,
+                "message": "No video found for the specified topic",
+                "available_videos": len(video_files)
+            }
+        
+    except Exception as e:
+        logger.error(f"❌ Video search error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Video search error: {str(e)}")
+
+@app.get("/video/analyze/{video_id}")
+async def analyze_video_content(
+    video_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Analyze video content and generate timestamps"""
+    logger.info(f"📊 Video analysis request from {current_user.username}: {video_id}")
+    
+    try:
+        # Find video file by ID/name
+        materials_dir = Path("data/materials")
+        video_file = None
+        
+        for file_path in materials_dir.rglob("*"):
+            if file_path.is_file() and (video_id in file_path.name or video_id == file_path.stem):
+                if any(ext in file_path.suffix.lower() for ext in ['.mp4', '.avi', '.mov', '.webm']):
+                    video_file = str(file_path)
+                    break
+        
+        if not video_file:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # Get video metadata with analysis
+        metadata = video_handler.get_video_metadata(video_file)
+        
+        return {
+            "status": "success",
+            "video_file": video_file,
+            "metadata": metadata.dict()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Video analysis error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Video analysis error: {str(e)}")
+
+@app.get("/video/list")
+async def list_available_videos(current_user: User = Depends(get_current_user)):
+    """List all available videos with metadata"""
+    logger.info(f"📹 Video list request from {current_user.username}")
+    
+    try:
+        materials_dir = Path("data/materials")
+        videos = []
+        
+        if materials_dir.exists():
+            for file_path in materials_dir.rglob("*"):
+                if file_path.is_file() and any(ext in file_path.suffix.lower() for ext in ['.mp4', '.avi', '.mov', '.webm']):
+                    try:
+                        metadata = video_handler.get_video_metadata(str(file_path))
+                        videos.append({
+                            "id": file_path.stem,
+                            "path": str(file_path.relative_to(materials_dir)),
+                            "filename": file_path.name,
+                            "title": metadata.title,
+                            "duration": metadata.duration,
+                            "topics": metadata.topics,
+                            "difficulty_level": metadata.difficulty_level,
+                            "timestamp_count": len(metadata.timestamps)
+                        })
+                    except Exception as e:
+                        logger.warning(f"Error processing video {file_path}: {e}")
+                        videos.append({
+                            "id": file_path.stem,
+                            "path": str(file_path.relative_to(materials_dir)),
+                            "filename": file_path.name,
+                            "title": file_path.stem,
+                            "error": str(e)
+                        })
+        
+        return {
+            "status": "success",
+            "videos": videos,
+            "total_count": len(videos)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Video list error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Video list error: {str(e)}")
 
 # ========================================
 # RECURSIVE DRIVE ENDPOINTS

@@ -1,15 +1,23 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
+import json
+import os
+from pathlib import Path
 
 # Security configuration
-SECRET_KEY = "your-secret-key-here"  # Change in production
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 180
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "webhook-secret-key")
+
+# Database file paths
+USERS_DB_FILE = Path(__file__).parent / "users_db.json"
+APPROVED_USERS_FILE = Path(__file__).parent / "approved_users.json"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -26,32 +34,136 @@ class TokenData(BaseModel):
 
 
 class User(BaseModel):
+    id: str
     username: str
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
     role: str
+    disabled: Optional[bool] = False
+    created_at: datetime
+    updated_at: datetime
+    external_id: Optional[str] = None  # ID from external platform
+    approved: bool = True
+    last_login: Optional[datetime] = None
+
+class UserCreate(BaseModel):
+    username: str
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
+    role: str = "student"
+    external_id: Optional[str] = None
+    approved: bool = True
+
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
+    role: Optional[str] = None
     disabled: Optional[bool] = None
+    approved: Optional[bool] = None
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+class PasswordReset(BaseModel):
+    username: str
+    new_password: str
+
+class WebhookUser(BaseModel):
+    external_id: str
+    username: str
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
+    role: str = "student"
+    action: str  # "create", "update", "delete", "approve", "disable"
 
 
-# Mock users database - Corrigido para sincronizar com o frontend
-USERS_DB = {
-    "admin": {
-        "username": "admin",
-        "role": "admin",
-        "hashed_password": pwd_context.hash("adminpass"),
-        "disabled": False
-    },
-    "instrutor": {
-        "username": "instrutor",
-        "role": "instructor",
-        "hashed_password": pwd_context.hash("instrutorpass"),
-        "disabled": False
-    },
-    "aluno": {
-        "username": "aluno",
-        "role": "student",
-        "hashed_password": pwd_context.hash("alunopass"),
-        "disabled": False
-    }
-}
+# Initialize database files
+def initialize_database():
+    """Initialize the user database files if they don't exist"""
+    if not USERS_DB_FILE.exists():
+        default_users = {
+            "admin": {
+                "id": "admin",
+                "username": "admin",
+                "email": "admin@dnadaforca.com",
+                "full_name": "Administrator",
+                "role": "admin",
+                "hashed_password": pwd_context.hash("adminpass"),
+                "disabled": False,
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+                "external_id": None,
+                "approved": True,
+                "last_login": None
+            },
+            "instrutor": {
+                "id": "instrutor",
+                "username": "instrutor",
+                "email": "instrutor@dnadaforca.com",
+                "full_name": "Instrutor Padrão",
+                "role": "instructor",
+                "hashed_password": pwd_context.hash("instrutorpass"),
+                "disabled": False,
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+                "external_id": None,
+                "approved": True,
+                "last_login": None
+            }
+        }
+        save_users_db(default_users)
+    
+    if not APPROVED_USERS_FILE.exists():
+        # Initialize with some approved users list
+        approved_users = [
+            {
+                "external_id": "ext_001",
+                "username": "aluno1",
+                "email": "aluno1@example.com",
+                "full_name": "Aluno Um",
+                "role": "student"
+            },
+            {
+                "external_id": "ext_002", 
+                "username": "aluno2",
+                "email": "aluno2@example.com",
+                "full_name": "Aluno Dois",
+                "role": "student"
+            }
+        ]
+        with open(APPROVED_USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(approved_users, f, indent=2, ensure_ascii=False)
+
+# Database operations
+def load_users_db() -> dict:
+    """Load users from database file"""
+    try:
+        with open(USERS_DB_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def save_users_db(users_db: dict):
+    """Save users to database file"""
+    with open(USERS_DB_FILE, 'w', encoding='utf-8') as f:
+        json.dump(users_db, f, indent=2, ensure_ascii=False)
+
+def load_approved_users() -> List[dict]:
+    """Load approved users list"""
+    try:
+        with open(APPROVED_USERS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+def save_approved_users(approved_users: List[dict]):
+    """Save approved users list"""
+    with open(APPROVED_USERS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(approved_users, f, indent=2, ensure_ascii=False)
+
+# Initialize database on import
+initialize_database()
 
 
 def verify_password(plain_password, hashed_password):
@@ -62,20 +174,206 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 
 
-def get_user(username: str):
-    if username in USERS_DB:
-        user_dict = USERS_DB[username]
+def get_user(username: str) -> Optional[User]:
+    """Get user by username"""
+    users_db = load_users_db()
+    if username in users_db:
+        user_dict = users_db[username]
+        # Convert datetime strings back to datetime objects
+        if isinstance(user_dict.get('created_at'), str):
+            user_dict['created_at'] = datetime.fromisoformat(user_dict['created_at'])
+        if isinstance(user_dict.get('updated_at'), str):
+            user_dict['updated_at'] = datetime.fromisoformat(user_dict['updated_at'])
+        if user_dict.get('last_login') and isinstance(user_dict['last_login'], str):
+            user_dict['last_login'] = datetime.fromisoformat(user_dict['last_login'])
         return User(**user_dict)
     return None
 
+def get_user_by_id(user_id: str) -> Optional[User]:
+    """Get user by ID"""
+    users_db = load_users_db()
+    for user_data in users_db.values():
+        if user_data.get('id') == user_id:
+            if isinstance(user_data.get('created_at'), str):
+                user_data['created_at'] = datetime.fromisoformat(user_data['created_at'])
+            if isinstance(user_data.get('updated_at'), str):
+                user_data['updated_at'] = datetime.fromisoformat(user_data['updated_at'])
+            if user_data.get('last_login') and isinstance(user_data['last_login'], str):
+                user_data['last_login'] = datetime.fromisoformat(user_data['last_login'])
+            return User(**user_data)
+    return None
 
-def authenticate_user(username: str, password: str):
+def get_user_by_external_id(external_id: str) -> Optional[User]:
+    """Get user by external platform ID"""
+    users_db = load_users_db()
+    for user_data in users_db.values():
+        if user_data.get('external_id') == external_id:
+            if isinstance(user_data.get('created_at'), str):
+                user_data['created_at'] = datetime.fromisoformat(user_data['created_at'])
+            if isinstance(user_data.get('updated_at'), str):
+                user_data['updated_at'] = datetime.fromisoformat(user_data['updated_at'])
+            if user_data.get('last_login') and isinstance(user_data['last_login'], str):
+                user_data['last_login'] = datetime.fromisoformat(user_data['last_login'])
+            return User(**user_data)
+    return None
+
+def create_user(user_data: UserCreate, password: str = None) -> User:
+    """Create a new user"""
+    users_db = load_users_db()
+    
+    # Check if username already exists
+    if user_data.username in users_db:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    # Generate a default password if not provided
+    if password is None:
+        password = f"{user_data.username}123"  # Default password pattern
+    
+    now = datetime.utcnow()
+    user_dict = {
+        "id": user_data.username,  # Use username as ID for simplicity
+        "username": user_data.username,
+        "email": user_data.email,
+        "full_name": user_data.full_name,
+        "role": user_data.role,
+        "hashed_password": pwd_context.hash(password),
+        "disabled": False,
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+        "external_id": user_data.external_id,
+        "approved": user_data.approved,
+        "last_login": None
+    }
+    
+    users_db[user_data.username] = user_dict
+    save_users_db(users_db)
+    
+    # Convert back to datetime objects for return
+    user_dict['created_at'] = now
+    user_dict['updated_at'] = now
+    return User(**user_dict)
+
+def update_user(username: str, user_update: UserUpdate) -> Optional[User]:
+    """Update an existing user"""
+    users_db = load_users_db()
+    
+    if username not in users_db:
+        return None
+    
+    user_dict = users_db[username]
+    
+    # Update fields
+    if user_update.email is not None:
+        user_dict['email'] = user_update.email
+    if user_update.full_name is not None:
+        user_dict['full_name'] = user_update.full_name
+    if user_update.role is not None:
+        user_dict['role'] = user_update.role
+    if user_update.disabled is not None:
+        user_dict['disabled'] = user_update.disabled
+    if user_update.approved is not None:
+        user_dict['approved'] = user_update.approved
+    
+    user_dict['updated_at'] = datetime.utcnow().isoformat()
+    
+    users_db[username] = user_dict
+    save_users_db(users_db)
+    
+    return get_user(username)
+
+def delete_user(username: str) -> bool:
+    """Delete a user"""
+    users_db = load_users_db()
+    
+    if username in users_db:
+        del users_db[username]
+        save_users_db(users_db)
+        return True
+    return False
+
+def update_last_login(username: str):
+    """Update user's last login timestamp"""
+    users_db = load_users_db()
+    
+    if username in users_db:
+        users_db[username]['last_login'] = datetime.utcnow().isoformat()
+        save_users_db(users_db)
+
+def is_user_approved(username: str) -> bool:
+    """Check if user is in approved users list"""
+    user = get_user(username)
+    if user:
+        return user.approved and not user.disabled
+    
+    # Check approved users list
+    approved_users = load_approved_users()
+    return any(u.get('username') == username for u in approved_users)
+
+def get_all_users() -> List[User]:
+    """Get all users"""
+    users_db = load_users_db()
+    users = []
+    for user_data in users_db.values():
+        if isinstance(user_data.get('created_at'), str):
+            user_data['created_at'] = datetime.fromisoformat(user_data['created_at'])
+        if isinstance(user_data.get('updated_at'), str):
+            user_data['updated_at'] = datetime.fromisoformat(user_data['updated_at'])
+        if user_data.get('last_login') and isinstance(user_data['last_login'], str):
+            user_data['last_login'] = datetime.fromisoformat(user_data['last_login'])
+        users.append(User(**user_data))
+    return users
+
+
+def authenticate_user(username: str, password: str) -> Optional[User]:
+    """Authenticate user with username and password"""
     user = get_user(username)
     if not user:
-        return False
-    if not verify_password(password, USERS_DB[username]["hashed_password"]):
-        return False
+        return None
+    
+    # Check if user is approved and not disabled
+    if not user.approved or user.disabled:
+        return None
+    
+    users_db = load_users_db()
+    if not verify_password(password, users_db[username]["hashed_password"]):
+        return None
+    
+    # Update last login
+    update_last_login(username)
+    
     return user
+
+def change_password(username: str, current_password: str, new_password: str) -> bool:
+    """Change user password"""
+    users_db = load_users_db()
+    
+    if username not in users_db:
+        return False
+    
+    # Verify current password
+    if not verify_password(current_password, users_db[username]["hashed_password"]):
+        return False
+    
+    # Update password
+    users_db[username]["hashed_password"] = pwd_context.hash(new_password)
+    users_db[username]["updated_at"] = datetime.utcnow().isoformat()
+    save_users_db(users_db)
+    
+    return True
+
+def reset_password(username: str, new_password: str) -> bool:
+    """Reset user password (admin function)"""
+    users_db = load_users_db()
+    
+    if username not in users_db:
+        return False
+    
+    # Update password
+    users_db[username]["hashed_password"] = pwd_context.hash(new_password)
+    users_db[username]["updated_at"] = datetime.utcnow().isoformat()
+    save_users_db(users_db)
+    
+    return True
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
