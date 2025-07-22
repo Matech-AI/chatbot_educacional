@@ -13,11 +13,13 @@ import {
   Target,
   Clock,
   PlayCircle,
-  Video
+  Video,
+  Download
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { SecureVideoPlayer } from '../video/secure-video-player';
 import ReactMarkdown from 'react-markdown';
+import jsPDF from 'jspdf';
 
 interface EducationalSource {
   title: string;
@@ -71,6 +73,23 @@ export const EducationalMessageBubble: React.FC<EducationalMessageBubbleProps> =
   const [showEducationalFeatures, setShowEducationalFeatures] = useState(false);
   const [showVideos, setShowVideos] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<VideoSuggestion | null>(null);
+  const [showExport, setShowExport] = useState(false);
+
+  const handleExportTxt = () => {
+    const blob = new Blob([message.content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'response.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportPdf = () => {
+    const doc = new jsPDF();
+    doc.text(message.content, 10, 10);
+    doc.save('response.pdf');
+  };
 
   const isUser = message.role === 'user';
   const hasEducationalFeatures = message.follow_up_questions?.length || 
@@ -145,6 +164,37 @@ export const EducationalMessageBubble: React.FC<EducationalMessageBubbleProps> =
               </div>
             )}
           </div>
+
+          {/* Export Section */}
+          {!isUser && (
+            <div className="mt-2">
+              <button
+                onClick={() => setShowExport(!showExport)}
+                className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                <Download size={14} />
+                <span>Exportar</span>
+                {showExport ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+              <AnimatePresence>
+                {showExport && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mt-2 space-y-2 overflow-hidden"
+                  >
+                    <Button onClick={handleExportTxt} size="sm" variant="outline">
+                      Exportar como TXT
+                    </Button>
+                    <Button onClick={handleExportPdf} size="sm" variant="outline">
+                      Exportar como PDF
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
 
           {/* Sources Section */}
           {!isUser && message.sources && message.sources.length > 0 && (

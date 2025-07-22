@@ -626,6 +626,38 @@ async def get_session_context(
         logger.error(f"❌ Session context error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Session context error: {str(e)}")
 
+@router.get("/learning-path/{topic}")
+async def get_learning_path(
+    topic: str,
+    user_level: str = "intermediate"
+):
+    """Get suggested learning path for a topic"""
+    logger.info(f"🛤️ Learning path request: {topic}")
+    
+    try:
+        agent = get_educational_agent()
+        
+        # This would use enhanced RAG if available
+        learning_path = [
+            {"step": 1, "title": f"Fundamentos de {topic}", "description": "Conceitos básicos e terminologia"},
+            {"step": 2, "title": f"Aplicação prática de {topic}", "description": "Como aplicar na prática"},
+            {"step": 3, "title": f"Progressão em {topic}", "description": "Níveis avançados e variações"},
+            {"step": 4, "title": f"Troubleshooting {topic}", "description": "Solucionando problemas comuns"}
+        ]
+        
+        return {
+            "topic": topic,
+            "user_level": user_level,
+            "learning_path": learning_path,
+            "estimated_time": "2-4 semanas",
+            "prerequisites": [],
+            "resources_available": True
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Learning path error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Learning path error: {str(e)}")
+
 # Example usage
 if __name__ == "__main__":
     agent = EducationalAgent()

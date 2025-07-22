@@ -44,37 +44,10 @@ const sendToAI = async (message: string): Promise<{ content: string, sources: So
   }
 };
 
-// Initialize with first session if none exists
-const initializeStore = () => {
-  const savedState = JSON.parse(localStorage.getItem('chat-storage') || '{}');
-  const sessions = savedState?.state?.sessions || [];
-  
-  // If no sessions exist, create a default one
-  if (sessions.length === 0) {
-    const firstSession = {
-      id: `${Date.now()}_${Math.random().toString(36).substring(2)}`,
-      title: 'Nova conversa 1',
-      messages: [],
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    
-    return {
-      sessions: [firstSession],
-      activeSessionId: firstSession.id,
-      isProcessing: false
-    };
-  }
-  
-  return {
-    sessions,
-    activeSessionId: savedState?.state?.activeSessionId || (sessions.length > 0 ? sessions[0].id : null),
-    isProcessing: false
-  };
-};
-
 export const useChatStore = create<ChatState>()(persist((set, get) => ({
-  ...initializeStore(),
+  sessions: [],
+  activeSessionId: null,
+  isProcessing: false,
   
   createSession: () => {
     const state = get();
