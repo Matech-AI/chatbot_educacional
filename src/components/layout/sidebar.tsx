@@ -11,6 +11,7 @@ import {
   LogOut,
   BarChart,
   User,
+  Users,
   ChevronRight,
   X,
   Dumbbell,
@@ -59,6 +60,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
       name: "Configurações",
       path: "/settings",
       icon: <Settings size={20} />,
+      roles: ["admin"],
+    },
+    {
+      name: "Gerenciar Usuários",
+      path: "/users",
+      icon: <Users size={20} />,
       roles: ["admin"],
     },
     {

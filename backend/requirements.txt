@@ -30,3 +30,5 @@ python-magic
 supabase
 langchain-google-genai
 google-generativeai
+openpyxl
+docx2txt

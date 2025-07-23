@@ -2,10 +2,18 @@ export type UserRole = 'admin' | 'instructor' | 'student';
 
 export interface User {
   id: string;
-  name: string;
+  username: string;
+  name?: string; // For backward compatibility, maps to full_name
+  full_name?: string;
   email?: string;
   role: UserRole;
   avatarUrl?: string;
+  disabled?: boolean;
+  approved?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  external_id?: string;
+  last_login?: string;
 }
 
 export interface Message {

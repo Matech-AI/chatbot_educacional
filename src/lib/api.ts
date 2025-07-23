@@ -4,14 +4,27 @@ const API_BASE = process.env.NODE_ENV === 'production'
   : 'http://localhost:8000';  // Backend runs on port 8000
 
 // Get auth token from memory (localStorage not supported in Claude artifacts)
-let authToken: string | null = null;
+const AUTH_TOKEN_KEY = 'authToken';
 
 function getAuthToken(): string | null {
-  return authToken;
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch (e) {
+    console.error('Failed to get auth token from localStorage', e);
+    return null;
+  }
 }
 
 function setAuthToken(token: string | null): void {
-  authToken = token;
+  try {
+    if (token) {
+      localStorage.setItem(AUTH_TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+  } catch (e) {
+    console.error('Failed to set auth token in localStorage', e);
+  }
 }
 
 // Create headers with authentication
@@ -46,8 +59,8 @@ export async function apiRequest(
     // Handle authentication errors
     if (response.status === 401) {
       setAuthToken(null);
-      // In Claude artifacts, we can't redirect, so just throw error
-      throw new Error('Authentication required - please login again');
+      const errorData = await response.text();
+      throw new Error(`401 Unauthorized: ${errorData}`);
     }
 
     return response;
@@ -65,8 +78,8 @@ export async function apiRequestJson<T = any>(
   // Add JSON content type for POST/PUT requests
   if (['POST', 'PUT', 'PATCH'].includes(options.method?.toUpperCase() || '')) {
     options.headers = {
-      'Content-Type': 'application/json',
       ...options.headers,
+      'Content-Type': 'application/json',
     };
   }
 
@@ -88,7 +101,7 @@ export const api = {
     formData.append('username', username);
     formData.append('password', password);
     
-    return apiRequest('/token', {
+    return apiRequest('/auth/token', {
       method: 'POST',
       body: formData,
     });
@@ -104,8 +117,87 @@ export const api = {
     setAuthToken(null);
   },
 
+  // Get current user info
+  getCurrentUser: () => apiRequestJson('/auth/me'),
+
+  // Change password
+  changePassword: (currentPassword: string, newPassword: string) => 
+    apiRequestJson('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    }),
+
+  // Reset password (admin only)
+  resetPassword: (username: string, newPassword: string) =>
+    apiRequestJson('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        username,
+        new_password: newPassword,
+      }),
+    }),
+
+  // User management (admin only)
+  users: {
+    list: () => apiRequestJson('/auth/users'),
+    create: (userData: any) => apiRequestJson('/auth/users', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    }),
+    update: (username: string, userData: any) => apiRequestJson(`/auth/users/${username}`, {
+      method: 'PUT', 
+      body: JSON.stringify(userData),
+    }),
+    delete: (username: string) => apiRequestJson(`/auth/users/${username}`, {
+      method: 'DELETE',
+    }),
+  },
+
+  // Approved users management (admin only)
+  approvedUsers: {
+    list: () => apiRequestJson('/auth/approved-users'),
+    add: (userData: any) => apiRequestJson('/auth/approved-users', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    }),
+    remove: (username: string) => apiRequestJson(`/auth/approved-users/${username}`, {
+      method: 'DELETE',
+    }),
+  },
+
   // Health check
   health: () => apiRequestJson('/health'),
+
+  // Enhanced Educational Chat
+  educationalChat: (data: {
+    content: string;
+    user_level?: string;
+    learning_style?: string;
+    session_id?: string;
+    current_topic?: string;
+    learning_objectives?: string[];
+  }) => apiRequestJson('/chat/educational', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  // Topic exploration
+  exploreTopic: (topic: string, userLevel: string = 'intermediate') =>
+    apiRequestJson('/chat/explore-topic', {
+      method: 'POST',
+      body: JSON.stringify({ topic, user_level: userLevel }),
+    }),
+
+  // Learning path
+  getLearningPath: (topic: string, userLevel: string = 'intermediate') =>
+    apiRequestJson(`/chat/learning-path/${encodeURIComponent(topic)}?user_level=${userLevel}`),
+
+  // Session context
+  getSessionContext: (sessionId: string) =>
+    apiRequestJson(`/chat/session/${sessionId}/context`),
 
   // Materials
   materials: {
@@ -268,6 +360,36 @@ export const api = {
 
   // System status
   getStatus: () => apiRequestJson('/status'),
+
+  // Video endpoints
+  video: {
+    // Get video embed data with optional topic-based timestamp
+    getEmbed: (videoPath: string, driveId?: string, topicQuery?: string) => 
+      apiRequestJson('/video/embed', {
+        method: 'POST',
+        body: JSON.stringify({
+          video_path: videoPath,
+          ...(driveId && { drive_id: driveId }),
+          ...(topicQuery && { topic_query: topicQuery })
+        }),
+      }),
+
+    // Search for videos related to a topic
+    search: (topicQuery: string, userLevel: string = 'intermediate') =>
+      apiRequestJson('/video/search', {
+        method: 'POST',
+        body: JSON.stringify({
+          topic_query: topicQuery,
+          user_level: userLevel
+        }),
+      }),
+
+    // Analyze video content and get timestamps
+    analyze: (videoId: string) => apiRequestJson(`/video/analyze/${encodeURIComponent(videoId)}`),
+
+    // List all available videos
+    list: () => apiRequestJson('/video/list'),
+  },
 
   // Debug endpoints
   debug: {

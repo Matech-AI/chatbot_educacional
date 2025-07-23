@@ -26,13 +26,9 @@ from rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
 from chat_agent import graph as chat_agent_graph
 from drive_handler import DriveHandler
 from drive_handler_recursive import RecursiveDriveHandler
-from auth import (
-    create_access_token,
-    get_current_user,
-    authenticate_user as auth_authenticate_user,
-    User,
-    Token
-)
+from auth import get_current_user, User
+from user_management import router as user_management_router
+from educational_agent import router as educational_agent_router
 from drive_handler import DriveHandler
 
 # Configure enhanced logging
@@ -61,6 +57,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(user_management_router)
+app.include_router(educational_agent_router)
+
 # Initialize handlers
 rag_handler = None
 drive_handler = RecursiveDriveHandler()
@@ -71,7 +70,7 @@ download_progress = {}
 active_downloads = {}
 
 # OAuth2 scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
 logger.info("🚀 DNA da Força API v1.4.0 - Complete Recursive Drive Integration")
 
@@ -130,38 +129,6 @@ class SystemStatus(BaseModel):
 class ResetComponent(BaseModel):
     component: str
     confirm: bool = False
-
-# ========================================
-# USER MANAGEMENT
-# ========================================
-
-
-USERS_FILE = "users.json"
-
-
-def load_users():
-    """Load users from JSON file"""
-    if not os.path.exists(USERS_FILE):
-        users = [
-            {"username": "admin", "password": "admin123", "role": "admin"},
-            {"username": "instrutor", "password": "instrutor123", "role": "instructor"},
-            {"username": "aluno", "password": "aluno123", "role": "student"}
-        ]
-        save_users(users)
-        logger.info("👥 Created default users file")
-        return users
-
-    with open(USERS_FILE, "r") as f:
-        users = json.load(f)
-        logger.info(f"👥 Loaded {len(users)} users from file")
-        return users
-
-
-def save_users(users):
-    """Save users to JSON file"""
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=2)
-    logger.info(f"💾 Saved {len(users)} users to file")
 
 # ========================================
 # UTILITY FUNCTIONS
@@ -277,72 +244,6 @@ def format_bytes(bytes_value: int) -> str:
         unit_index += 1
 
     return f"{size:.1f} {units[unit_index]}"
-
-# ========================================
-# AUTHENTICATION ENDPOINTS
-# ========================================
-
-
-@app.post("/token", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """User login endpoint"""
-    logger.info(f"🔐 Login attempt for: {form_data.username}")
-
-    user = auth_authenticate_user(form_data.username, form_data.password)
-    if not user:
-        logger.warning(f"❌ Failed login attempt for: {form_data.username}")
-        raise HTTPException(
-            status_code=401,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    access_token = create_access_token(
-        data={"sub": user.username, "role": user.role}
-    )
-
-    logger.info(f"✅ Login successful for: {form_data.username}")
-    return {"access_token": access_token, "token_type": "bearer"}
-
-
-@app.post("/change-password")
-async def change_password(
-    request: Request,
-    data: Optional[Dict[str, Any]] = None,
-    current_user: User = Depends(get_current_user)
-):
-    """Change user password"""
-    request_data = data
-    if request_data is None:
-        request_data = await request.json()
-
-    if not isinstance(request_data, dict):
-        raise HTTPException(status_code=400, detail="Invalid request body")
-
-    current_password = request_data.get("current_password")
-    new_password = request_data.get("new_password")
-
-    logger.info(f"🔑 Password change request for: {current_user.username}")
-
-    if not current_password or not new_password:
-        raise HTTPException(status_code=400, detail="Missing required fields")
-
-    users = load_users()
-    for user in users:
-        if user["username"] == current_user.username:
-            if user["password"] != current_password:
-                logger.warning(
-                    f"❌ Incorrect current password for: {current_user.username}")
-                raise HTTPException(
-                    status_code=401, detail="Current password is incorrect")
-
-            user["password"] = new_password
-            save_users(users)
-            logger.info(
-                f"✅ Password changed successfully for: {current_user.username}")
-            return {"status": "success", "message": "Password changed successfully"}
-
-    raise HTTPException(status_code=404, detail="User not found")
 
 # ========================================
 # SYSTEM ENDPOINTS

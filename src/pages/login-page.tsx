@@ -33,7 +33,7 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     }
     setIsLoading(true);
     try {
-      const res = await fetch("/api/change-password", {
+      const res = await fetch("/api/auth/change-password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -136,7 +136,7 @@ const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     }
     setIsLoading(true);
     try {
-      const res = await fetch("/api/reset-password", {
+      const res = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, new_password: newPassword }),
