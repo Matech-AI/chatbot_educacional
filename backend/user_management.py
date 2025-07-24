@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends, Request, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Request, BackgroundTasks, status
 from fastapi.security import OAuth2PasswordRequestForm
-from typing import List, Optional
+from typing import List, Optional, Dict
 import hashlib
 import hmac
 import json
 from datetime import datetime, timedelta
+from pydantic import BaseModel
 
 from auth import (
     User, UserCreate, UserUpdate, WebhookUser, PasswordChange, PasswordReset, Token,
@@ -14,8 +15,14 @@ from auth import (
     load_approved_users, save_approved_users, get_user_by_external_id,
     ACCESS_TOKEN_EXPIRE_MINUTES, WEBHOOK_SECRET
 )
+from auth_token_manager import verify_auth_token, mark_token_as_used, clean_expired_tokens
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+
+# Modelo para verificação de token
+class TokenVerification(BaseModel):
+    token: str
+    username: str
 
 @router.post("/token", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -50,6 +57,21 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         "access_token": access_token,
         "token_type": "bearer"
     }
+
+@router.post("/auth/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    """Login endpoint - returns JWT token"""
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token = create_access_token(
+        data={"sub": user.username, "role": user.role}
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/me", response_model=User)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
@@ -97,6 +119,80 @@ async def list_users(current_user: User = Depends(get_current_user)):
     
     return get_all_users()
 
+@router.post("/public/verify-token")
+async def verify_authentication_token(token_data: TokenVerification):
+    """Verifica o token de autenticação enviado por e-mail (rota pública)"""
+    # Verificar token
+    token_info = verify_auth_token(token_data.token)
+    
+    if not token_info:
+        raise HTTPException(status_code=400, detail="Token inválido ou expirado")
+    
+    if token_info["username"] != token_data.username:
+        raise HTTPException(status_code=400, detail="Token não corresponde ao usuário")
+    
+    # Marcar token como usado
+    mark_token_as_used(token_data.token)
+    
+    # Atualizar status do usuário para aprovado
+    user = get_user(token_data.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    user_update = UserUpdate(approved=True)
+    updated_user = update_user(token_data.username, user_update)
+    
+    if not updated_user:
+        raise HTTPException(status_code=500, detail="Erro ao atualizar usuário")
+    
+    return {"message": "Usuário verificado com sucesso", "username": token_data.username}
+
+
+class ResendVerificationEmail(BaseModel):
+    username: str
+
+@router.post("/resend-verification")
+async def resend_verification_email(
+    data: ResendVerificationEmail,
+    current_user: User = Depends(get_current_user)
+):
+    """Reenvia o e-mail de verificação para um usuário (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Verificar se o usuário existe
+    user = get_user(data.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # Verificar se o usuário já está aprovado
+    if user.approved:
+        return {"message": "Usuário já está aprovado"}
+    
+    # Verificar se o usuário tem e-mail
+    if not user.email:
+        raise HTTPException(status_code=400, detail="Usuário não possui e-mail cadastrado")
+    
+    # Importar funções necessárias
+    from email_service import generate_auth_token, send_auth_email, generate_temp_password, send_temp_password_email
+    from auth_token_manager import create_auth_token
+    
+    # Gerar novo token de autenticação
+    auth_token = generate_auth_token()
+    create_auth_token(user.username, auth_token, user.email)
+    
+    # Enviar e-mail de autenticação
+    send_auth_email(user.email, user.username, auth_token)
+    
+    # Gerar nova senha temporária
+    temp_password = generate_temp_password()
+    reset_password(user.username, temp_password)
+    
+    # Enviar e-mail com senha temporária
+    send_temp_password_email(user.email, user.username, temp_password)
+    
+    return {"message": "E-mail de verificação reenviado com sucesso"}
+
 @router.post("/users", response_model=User)
 async def create_new_user(
     user_data: UserCreate,
@@ -105,6 +201,9 @@ async def create_new_user(
     """Create new user (admin only)"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Definir approved como False para forçar verificação por e-mail
+    user_data.approved = False
     
     try:
         user = create_user(user_data)
@@ -150,10 +249,8 @@ async def delete_existing_user(
 
 @router.get("/approved-users")
 async def get_approved_users(current_user: User = Depends(get_current_user)):
-    """Get list of approved users (admin only)"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
-    
     return load_approved_users()
 
 @router.post("/approved-users")

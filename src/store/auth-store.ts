@@ -152,7 +152,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         throw new Error('Invalid token format');
       }
 
-      // Check if token is expired (para JWT real)
+      // Check if token is expired
       const currentTime = Date.now() / 1000;
       if (payload.exp && payload.exp < currentTime) {
         throw new Error('Token expired');
@@ -160,12 +160,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       const user = createUserFromToken(payload);
       
-      console.log('✅ Token validated successfully for user:', user.name);
-      set({ 
-        isAuthenticated: true,
-        user,
-        error: null
-      });
+      // Verify token with backend
+      api.getCurrentUser()
+        .then(() => {
+          console.log('✅ Token validated successfully for user:', user.name);
+          set({ 
+            isAuthenticated: true,
+            user,
+            error: null
+          });
+        })
+        .catch(error => {
+          console.error('❌ Token validation failed on backend:', error);
+          localStorage.removeItem('token');
+          set({ 
+            isAuthenticated: false,
+            user: null,
+            error: 'Sessão expirada. Por favor, faça login novamente.'
+          });
+        });
     } catch (error) {
       console.error('❌ Token validation failed:', error);
       localStorage.removeItem('token');
@@ -186,7 +199,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.detail || 'Credenciais inválidas';
+        // Garantir que o erro seja uma string
+        const errorMessage = typeof errorData.detail === 'object' 
+          ? String(errorData.detail) 
+          : (errorData.detail || 'Credenciais inválidas');
         console.error('❌ Login failed:', errorMessage);
         set({ error: errorMessage });
         return false;
@@ -225,8 +241,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       return true;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Erro de conexão';
-      console.error('❌ Login error:', error);
+      // Garantir que o erro seja uma string
+      let errorMessage;
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object') {
+        errorMessage = String(error);
+      } else {
+        errorMessage = String(error || 'Erro de conexão');
+      }
+      console.error('❌ Login error:', errorMessage);
       set({ 
         error: errorMessage,
         isAuthenticated: false,

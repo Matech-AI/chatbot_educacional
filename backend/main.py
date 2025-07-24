@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Body, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import FileResponse, StreamingResponse
@@ -57,8 +57,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Inclua o router de user_management para expor /auth/users e outros endpoints de autenticação
 app.include_router(user_management_router)
-app.include_router(educational_agent_router)
+# Se necessário, inclua outros routers:
+# app.include_router(educational_agent_router)
 
 # Initialize handlers
 rag_handler = None

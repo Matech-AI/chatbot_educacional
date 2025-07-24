@@ -8,10 +8,12 @@ import { motion } from "framer-motion";
 
 interface ChangePasswordModalProps {
   onClose: () => void;
+  isTemporary?: boolean;
 }
 
 const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
   onClose,
+  isTemporary = false,
 }) => {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -67,7 +69,12 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         >
           ×
         </button>
-        <h2 className="text-lg font-bold mb-4">Alterar senha</h2>
+        <h2 className="text-lg font-bold mb-4">{isTemporary ? 'Alterar senha temporária' : 'Alterar senha'}</h2>
+        {isTemporary && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
+            Você está usando uma senha temporária. Por favor, altere-a para uma senha permanente de sua escolha para maior segurança.
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-3">
           <Input
             type="password"
@@ -90,7 +97,7 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
           />
-          {error && <div className="text-red-600 text-sm">{error}</div>}
+          {error && <div className="text-red-600 text-sm">{typeof error === 'object' ? String(error) : error}</div>}
           {success && (
             <div className="text-green-600 text-sm">
               Senha alterada com sucesso!
@@ -186,7 +193,7 @@ const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
           />
-          {error && <div className="text-red-600 text-sm">{error}</div>}
+          {error && <div className="text-red-600 text-sm">{typeof error === 'object' ? String(error) : error}</div>}
           {success && (
             <div className="text-green-600 text-sm">
               Senha redefinida com sucesso!
@@ -218,6 +225,7 @@ const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
+  const [isTempPassword, setIsTempPassword] = useState(false);
 
   const navigate = useNavigate();
   const { login, error, clearError, isAuthenticated } = useAuthStore();
@@ -247,7 +255,14 @@ const LoginPage: React.FC = () => {
     try {
       const success = await login(username, password);
       if (success) {
-        navigate("/");
+        // Verificar se é uma senha temporária
+        // Isso é uma simplificação. Na prática, o backend deveria informar se a senha é temporária
+        if (password.includes('temp') || password === username + '123') {
+          setIsTempPassword(true);
+          setShowChangePassword(true);
+        } else {
+          navigate("/");
+        }
       }
     } finally {
       setIsLoading(false);
@@ -322,7 +337,7 @@ const LoginPage: React.FC = () => {
                   animate={{ opacity: 1, y: 0 }}
                   className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm"
                 >
-                  {error}
+                  {typeof error === 'object' ? String(error) : error}
                 </motion.div>
               )}
 
@@ -354,7 +369,15 @@ const LoginPage: React.FC = () => {
           </form>
 
           {showChangePassword && (
-            <ChangePasswordModal onClose={() => setShowChangePassword(false)} />
+            <ChangePasswordModal 
+              isTemporary={isTempPassword}
+              onClose={() => {
+                setShowChangePassword(false);
+                if (isTempPassword) {
+                  navigate("/");
+                }
+              }} 
+            />
           )}
           {showResetPassword && (
             <ResetPasswordModal onClose={() => setShowResetPassword(false)} />

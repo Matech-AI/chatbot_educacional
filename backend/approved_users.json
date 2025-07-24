@@ -1,16 +1,9 @@
 [
   {
-    "external_id": "ext_001",
-    "username": "aluno1",
-    "email": "aluno1@example.com",
-    "full_name": "Aluno Um",
-    "role": "student"
-  },
-  {
-    "external_id": "ext_002",
-    "username": "aluno2",
-    "email": "aluno2@example.com",
-    "full_name": "Aluno Dois",
-    "role": "student"
+    "username": "matheus",
+    "email": "matheusbnas@gmail.com",
+    "full_name": "",
+    "role": "student",
+    "external_id": "123"
   }
 ]

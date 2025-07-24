@@ -25,6 +25,14 @@ const LoginPage = lazy(() =>
   )
 );
 
+const AuthVerificationPage = lazy(() =>
+  import("./pages/auth-verification-page").catch(() =>
+    import("./pages/auth-verification-page").then((m) => ({
+      default: m.AuthVerificationPage || m.default,
+    }))
+  )
+);
+
 const HomePage = lazy(() =>
   import("./pages/home-page").catch(() =>
     import("./pages/home-page").then((m) => ({
@@ -95,7 +103,7 @@ const ErrorFallback: React.FC<{ error?: string; onRetry?: () => void }> = ({
       <h1 className="text-xl font-semibold text-gray-900 mb-2">
         Ops! Algo deu errado
       </h1>
-      <p className="text-gray-600 mb-4">{error}</p>
+      <p className="text-gray-600 mb-4">{typeof error === 'object' ? String(error) : error}</p>
       <div className="space-y-2">
         {onRetry && (
           <button
@@ -141,9 +149,27 @@ class ErrorBoundary extends React.Component<
 
   render() {
     if (this.state.hasError) {
+      // Garantir que a mensagem de erro seja uma string
+      let errorMessage;
+      if (this.state.error) {
+        try {
+          if (typeof this.state.error.message === 'object') {
+            // Usar String() em vez de JSON.stringify para evitar erros de estrutura circular
+            errorMessage = String(this.state.error.message);
+          } else {
+            errorMessage = this.state.error.message || "Erro interno do componente";
+          }
+        } catch (e) {
+          errorMessage = "Erro ao processar mensagem de erro";
+          console.error("Erro ao processar mensagem de erro:", e);
+        }
+      } else {
+        errorMessage = "Erro interno do componente";
+      }
+      
       return (
         <ErrorFallback
-          error={this.state.error?.message || "Erro interno do componente"}
+          error={errorMessage}
           onRetry={() => this.setState({ hasError: false, error: undefined })}
         />
       );
@@ -274,6 +300,17 @@ function App() {
                 fallback={<LoadingSpinner message="Carregando login..." />}
               >
                 <LoginPage />
+              </Suspense>
+            }
+          />
+
+          <Route
+            path="/verify-account"
+            element={
+              <Suspense
+                fallback={<LoadingSpinner message="Carregando verificação..." />}
+              >
+                <AuthVerificationPage />
               </Suspense>
             }
           />

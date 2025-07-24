@@ -48,10 +48,16 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || isLoading}
         {...props}
       >
-        {isLoading ? (
+        {isLoading && (
           <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" />
-        ) : null}
-        {children}
+        )}
+        {React.Children.map(children, (child) => {
+          if (typeof child === 'object' && child !== null && !React.isValidElement(child)) {
+            const stringValue = String(child);
+            return stringValue === '[object Object]' ? '' : stringValue;
+          }
+          return child;
+        })}
       </button>
     );
   }

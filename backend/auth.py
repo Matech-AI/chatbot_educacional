@@ -20,8 +20,7 @@ USERS_DB_FILE = Path(__file__).parent / "users_db.json"
 APPROVED_USERS_FILE = Path(__file__).parent / "approved_users.json"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 class Token(BaseModel):
     access_token: str
@@ -217,7 +216,7 @@ def get_user_by_external_id(external_id: str) -> Optional[User]:
             return User(**user_data)
     return None
 
-def create_user(user_data: UserCreate, password: str = None) -> User:
+def create_user(user_data: UserCreate, password: str = None, send_email: bool = True) -> User:
     """Create a new user"""
     users_db = load_users_db()
     
@@ -225,9 +224,13 @@ def create_user(user_data: UserCreate, password: str = None) -> User:
     if user_data.username in users_db:
         raise HTTPException(status_code=400, detail="Username already exists")
     
-    # Generate a default password if not provided
+    # Import here to avoid circular imports
+    from email_service import generate_temp_password, send_temp_password_email, generate_auth_token, send_auth_email
+    from auth_token_manager import create_auth_token
+    
+    # Generate a temporary password if not provided
     if password is None:
-        password = f"{user_data.username}123"  # Default password pattern
+        password = generate_temp_password()
     
     now = datetime.utcnow()
     user_dict = {
@@ -241,12 +244,24 @@ def create_user(user_data: UserCreate, password: str = None) -> User:
         "created_at": now.isoformat(),
         "updated_at": now.isoformat(),
         "external_id": user_data.external_id,
-        "approved": user_data.approved,
+        "approved": False,  # Inicialmente não aprovado até confirmação por e-mail
         "last_login": None
     }
     
     users_db[user_data.username] = user_dict
     save_users_db(users_db)
+    
+    # Enviar e-mail de autenticação e senha temporária se o e-mail estiver disponível
+    if send_email and user_data.email:
+        # Gerar token de autenticação
+        auth_token = generate_auth_token()
+        create_auth_token(user_data.username, auth_token, user_data.email)
+        
+        # Enviar e-mail de autenticação
+        send_auth_email(user_data.email, user_data.username, auth_token)
+        
+        # Enviar e-mail com senha temporária
+        send_temp_password_email(user_data.email, user_data.username, password)
     
     # Convert back to datetime objects for return
     user_dict['created_at'] = now

@@ -25,11 +25,14 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Profiles table
+DROP TABLE IF EXISTS profiles CASCADE;
 CREATE TABLE IF NOT EXISTS profiles (
   id uuid PRIMARY KEY REFERENCES auth.users ON DELETE CASCADE,
   full_name text NOT NULL,
+  email text NOT NULL UNIQUE,
   role text NOT NULL CHECK (role IN ('admin', 'instructor', 'student')),
   avatar_url text,
+  is_active boolean NOT NULL DEFAULT true,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -37,14 +40,17 @@ CREATE TABLE IF NOT EXISTS profiles (
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
 -- Materials table
+DROP TABLE IF EXISTS materials CASCADE;
 CREATE TABLE IF NOT EXISTS materials (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   title text NOT NULL,
   description text,
-  type text NOT NULL,
+  type text NOT NULL CHECK (type IN ('text', 'video', 'data', 'image', 'document', 'research_paper')),
   path text NOT NULL,
+  original_filename text,
   size bigint NOT NULL,
   tags text[] DEFAULT '{}',
+  status text NOT NULL DEFAULT 'pending', -- pending, processed, error
   uploaded_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
@@ -82,11 +88,13 @@ CREATE TABLE IF NOT EXISTS assistant_templates (
 
 ALTER TABLE assistant_templates ENABLE ROW LEVEL SECURITY;
 
--- Chat Sessions
+-- Chat Sessions table
+DROP TABLE IF EXISTS chat_sessions CASCADE;
 CREATE TABLE IF NOT EXISTS chat_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   title text NOT NULL,
   user_id uuid REFERENCES profiles(id) ON DELETE CASCADE,
+  assistant_id uuid REFERENCES assistant_configs(id) ON DELETE SET NULL,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );

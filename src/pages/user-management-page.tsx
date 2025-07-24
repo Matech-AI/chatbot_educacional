@@ -55,8 +55,18 @@ const UserManagementPage: React.FC = () => {
       const usersData = await api.users.list();
       setUsers(usersData);
     } catch (err) {
-      setError('Erro ao carregar usuários');
       console.error('Error loading users:', err);
+      // Check if it's an authentication error
+      if (err instanceof Error && err.message.includes('401 Unauthorized')) {
+        setError('Erro de autenticação. Por favor, faça login novamente.');
+        // Redirect to login after a short delay
+        setTimeout(() => {
+          useAuthStore.getState().logout();
+          window.location.href = '/login';
+        }, 2000);
+      } else {
+        setError('Erro ao carregar usuários');
+      }
     } finally {
       setLoading(false);
     }
@@ -64,11 +74,24 @@ const UserManagementPage: React.FC = () => {
 
   const loadApprovedUsers = async () => {
     try {
+      setLoading(true);
       const approvedData = await api.approvedUsers.list();
       setApprovedUsers(approvedData);
     } catch (err) {
-      setError('Erro ao carregar usuários aprovados');
       console.error('Error loading approved users:', err);
+      // Check if it's an authentication error
+      if (err instanceof Error && err.message.includes('401 Unauthorized')) {
+        setError('Erro de autenticação. Por favor, faça login novamente.');
+        // Redirect to login after a short delay
+        setTimeout(() => {
+          useAuthStore.getState().logout();
+          window.location.href = '/login';
+        }, 2000);
+      } else {
+        setError('Erro ao carregar usuários aprovados');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 

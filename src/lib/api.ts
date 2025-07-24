@@ -4,7 +4,7 @@ const API_BASE = process.env.NODE_ENV === 'production'
   : 'http://localhost:8000';  // Backend runs on port 8000
 
 // Get auth token from memory (localStorage not supported in Claude artifacts)
-const AUTH_TOKEN_KEY = 'authToken';
+const AUTH_TOKEN_KEY = 'token';
 
 function getAuthToken(): string | null {
   try {
@@ -36,6 +36,11 @@ function createHeaders(additionalHeaders: Record<string, string> = {}): HeadersI
   const token = getAuthToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  // Ensure Content-Type is set for JSON requests if not already specified
+  if (!headers['Content-Type'] && !headers['content-type']) {
+    headers['Content-Type'] = 'application/json';
   }
 
   return headers;
@@ -83,26 +88,35 @@ export async function apiRequestJson<T = any>(
     };
   }
 
-  const response = await apiRequest(endpoint, options);
-  
-  if (!response.ok) {
-    const errorData = await response.text();
-    throw new Error(`HTTP ${response.status}: ${errorData}`);
-  }
+  try {
+    const response = await apiRequest(endpoint, options);
+    
+    if (!response.ok) {
+      const errorData = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorData}`);
+    }
 
-  return response.json();
+    return response.json();
+  } catch (error) {
+    console.error(`API request failed: ${endpoint}`, error);
+    throw error;
+  }
 }
 
 // Specific API functions
 export const api = {
   // Authentication
   login: (username: string, password: string) => {
-    const formData = new FormData();
+    // Use URLSearchParams para enviar dados no formato de formulário
+    const formData = new URLSearchParams();
     formData.append('username', username);
     formData.append('password', password);
     
     return apiRequest('/auth/token', {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
       body: formData,
     });
   },
