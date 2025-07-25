@@ -55,7 +55,7 @@ async function uploadMaterialAPI(file: File, description?: string, tags?: string
     }
     
     if (tags && tags.length > 0) {
-      formData.append('tags', JSON.stringify(tags));
+      formData.append('tags', tags.join(','));
     }
     
     const response = await fetch('/api/materials/upload', {

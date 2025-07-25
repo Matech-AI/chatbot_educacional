@@ -1725,7 +1725,7 @@ async def upload_material(
         raise HTTPException(status_code=400, detail="File has no name")
 
     allowed_extensions = {'.pdf', '.docx', '.txt',
-                          '.mp4', '.avi', '.mov', '.pptx', '.webm'}
+                          '.mp4', '.avi', '.mov', '.pptx', '.webm', '.xlsx'}
     file_ext = Path(file.filename).suffix.lower()
 
     if file_ext not in allowed_extensions:

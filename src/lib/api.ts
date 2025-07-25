@@ -212,7 +212,7 @@ export const api = {
       }
       
       if (tags && tags.length > 0) {
-        formData.append('tags', JSON.stringify(tags));
+        formData.append('tags', tags.join(','));
       }
 
       return apiRequest('/materials/upload', {
