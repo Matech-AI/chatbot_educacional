@@ -1,10 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { useAuthStore } from '../store/auth-store';
-import { api } from '../lib/api';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { User, UserPlus, Edit, Trash2, Shield, ShieldOff, RefreshCw } from 'lucide-react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from "react";
+import { useAuthStore } from "../store/auth-store";
+import { api } from "../lib/api";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import {
+  User,
+  UserPlus,
+  Edit,
+  Trash2,
+  Shield,
+  ShieldOff,
+  RefreshCw,
+} from "lucide-react";
+import { motion } from "framer-motion";
 
 interface UserData {
   id: string;
@@ -36,14 +44,16 @@ const UserManagementPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [showAddApproved, setShowAddApproved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'users' | 'approved'>('users');
+  const [activeTab, setActiveTab] = useState<"users" | "approved">("users");
 
   // Check if user is admin
-  if (!user || user.role !== 'admin') {
+  if (!user || user.role !== "admin") {
     return (
       <div className="p-6">
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
-          <p>Acesso negado. Apenas administradores podem acessar esta página.</p>
+          <p>
+            Acesso negado. Apenas administradores podem acessar esta página.
+          </p>
         </div>
       </div>
     );
@@ -55,17 +65,17 @@ const UserManagementPage: React.FC = () => {
       const usersData = await api.users.list();
       setUsers(usersData);
     } catch (err) {
-      console.error('Error loading users:', err);
+      console.error("Error loading users:", err);
       // Check if it's an authentication error
-      if (err instanceof Error && err.message.includes('401 Unauthorized')) {
-        setError('Erro de autenticação. Por favor, faça login novamente.');
+      if (err instanceof Error && err.message.includes("401 Unauthorized")) {
+        setError("Erro de autenticação. Por favor, faça login novamente.");
         // Redirect to login after a short delay
         setTimeout(() => {
           useAuthStore.getState().logout();
-          window.location.href = '/login';
+          window.location.href = "/login";
         }, 2000);
       } else {
-        setError('Erro ao carregar usuários');
+        setError("Erro ao carregar usuários");
       }
     } finally {
       setLoading(false);
@@ -78,17 +88,17 @@ const UserManagementPage: React.FC = () => {
       const approvedData = await api.approvedUsers.list();
       setApprovedUsers(approvedData);
     } catch (err) {
-      console.error('Error loading approved users:', err);
+      console.error("Error loading approved users:", err);
       // Check if it's an authentication error
-      if (err instanceof Error && err.message.includes('401 Unauthorized')) {
-        setError('Erro de autenticação. Por favor, faça login novamente.');
+      if (err instanceof Error && err.message.includes("401 Unauthorized")) {
+        setError("Erro de autenticação. Por favor, faça login novamente.");
         // Redirect to login after a short delay
         setTimeout(() => {
           useAuthStore.getState().logout();
-          window.location.href = '/login';
+          window.location.href = "/login";
         }, 2000);
       } else {
-        setError('Erro ao carregar usuários aprovados');
+        setError("Erro ao carregar usuários aprovados");
       }
     } finally {
       setLoading(false);
@@ -109,18 +119,21 @@ const UserManagementPage: React.FC = () => {
       await api.users.delete(username);
       await loadUsers();
     } catch (err) {
-      setError('Erro ao excluir usuário');
-      console.error('Error deleting user:', err);
+      setError("Erro ao excluir usuário");
+      console.error("Error deleting user:", err);
     }
   };
 
-  const handleToggleUserStatus = async (username: string, disabled: boolean) => {
+  const handleToggleUserStatus = async (
+    username: string,
+    disabled: boolean
+  ) => {
     try {
       await api.users.update(username, { disabled: !disabled });
       await loadUsers();
     } catch (err) {
-      setError('Erro ao atualizar status do usuário');
-      console.error('Error updating user status:', err);
+      setError("Erro ao atualizar status do usuário");
+      console.error("Error updating user status:", err);
     }
   };
 
@@ -129,38 +142,42 @@ const UserManagementPage: React.FC = () => {
       await api.users.update(username, { approved: !approved });
       await loadUsers();
     } catch (err) {
-      setError('Erro ao atualizar aprovação do usuário');
-      console.error('Error updating user approval:', err);
+      setError("Erro ao atualizar aprovação do usuário");
+      console.error("Error updating user approval:", err);
     }
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('pt-BR');
+    return new Date(dateString).toLocaleString("pt-BR");
   };
 
   const getRoleLabel = (role: string) => {
     const roles = {
-      admin: 'Administrador',
-      instructor: 'Instrutor',
-      student: 'Aluno',
+      admin: "Administrador",
+      instructor: "Instrutor",
+      student: "Aluno",
     };
     return roles[role as keyof typeof roles] || role;
   };
 
   const getRoleBadgeColor = (role: string) => {
     const colors = {
-      admin: 'bg-red-100 text-red-800',
-      instructor: 'bg-blue-100 text-blue-800',
-      student: 'bg-green-100 text-green-800',
+      admin: "bg-red-100 text-red-800",
+      instructor: "bg-blue-100 text-blue-800",
+      student: "bg-green-100 text-green-800",
     };
-    return colors[role as keyof typeof colors] || 'bg-gray-100 text-gray-800';
+    return colors[role as keyof typeof colors] || "bg-gray-100 text-gray-800";
   };
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Gerenciamento de Usuários</h1>
-        <p className="text-gray-600">Gerencie usuários, aprovações e sincronização com plataforma externa</p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          Gerenciamento de Usuários
+        </h1>
+        <p className="text-gray-600">
+          Gerencie usuários, aprovações e sincronização com plataforma externa
+        </p>
       </div>
 
       {error && (
@@ -184,22 +201,22 @@ const UserManagementPage: React.FC = () => {
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8">
             <button
-              onClick={() => setActiveTab('users')}
+              onClick={() => setActiveTab("users")}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'users'
-                  ? 'border-red-500 text-red-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                activeTab === "users"
+                  ? "border-red-500 text-red-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
               <User className="w-4 h-4 inline-block mr-2" />
               Usuários Cadastrados ({users.length})
             </button>
             <button
-              onClick={() => setActiveTab('approved')}
+              onClick={() => setActiveTab("approved")}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'approved'
-                  ? 'border-red-500 text-red-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                activeTab === "approved"
+                  ? "border-red-500 text-red-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
               <Shield className="w-4 h-4 inline-block mr-2" />
@@ -218,11 +235,8 @@ const UserManagementPage: React.FC = () => {
           <UserPlus className="w-4 h-4 mr-2" />
           Criar Usuário
         </Button>
-        
-        <Button
-          onClick={() => setShowAddApproved(true)}
-          variant="outline"
-        >
+
+        <Button onClick={() => setShowAddApproved(true)} variant="outline">
           <Shield className="w-4 h-4 mr-2" />
           Adicionar à Lista de Aprovados
         </Button>
@@ -240,7 +254,7 @@ const UserManagementPage: React.FC = () => {
       </div>
 
       {/* Users Tab */}
-      {activeTab === 'users' && (
+      {activeTab === "users" && (
         <div className="bg-white shadow rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -269,13 +283,19 @@ const UserManagementPage: React.FC = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                    <td
+                      colSpan={6}
+                      className="px-6 py-4 text-center text-gray-500"
+                    >
                       Carregando usuários...
                     </td>
                   </tr>
                 ) : users.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                    <td
+                      colSpan={6}
+                      className="px-6 py-4 text-center text-gray-500"
+                    >
                       Nenhum usuário encontrado
                     </td>
                   </tr>
@@ -288,7 +308,7 @@ const UserManagementPage: React.FC = () => {
                             {userData.username}
                           </div>
                           <div className="text-sm text-gray-500">
-                            {userData.email || 'Sem email'}
+                            {userData.email || "Sem email"}
                           </div>
                           {userData.full_name && (
                             <div className="text-sm text-gray-500">
@@ -298,26 +318,40 @@ const UserManagementPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleBadgeColor(userData.role)}`}>
+                        <span
+                          className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleBadgeColor(
+                            userData.role
+                          )}`}
+                        >
                           {getRoleLabel(userData.role)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex flex-col space-y-1">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            userData.disabled ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-                          }`}>
-                            {userData.disabled ? 'Inativo' : 'Ativo'}
+                          <span
+                            className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              userData.disabled
+                                ? "bg-red-100 text-red-800"
+                                : "bg-green-100 text-green-800"
+                            }`}
+                          >
+                            {userData.disabled ? "Inativo" : "Ativo"}
                           </span>
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            userData.approved ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {userData.approved ? 'Aprovado' : 'Pendente'}
+                          <span
+                            className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              userData.approved
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-yellow-100 text-yellow-800"
+                            }`}
+                          >
+                            {userData.approved ? "Aprovado" : "Pendente"}
                           </span>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {userData.last_login ? formatDate(userData.last_login) : 'Nunca'}
+                        {userData.last_login
+                          ? formatDate(userData.last_login)
+                          : "Nunca"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {formatDate(userData.created_at)}
@@ -325,30 +359,42 @@ const UserManagementPage: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
                           <button
-                            onClick={() => handleToggleUserStatus(userData.username, userData.disabled)}
+                            onClick={() =>
+                              handleToggleUserStatus(
+                                userData.username,
+                                userData.disabled
+                              )
+                            }
                             className={`text-xs px-2 py-1 rounded ${
                               userData.disabled
-                                ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                                ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
                             }`}
                           >
-                            {userData.disabled ? 'Ativar' : 'Desativar'}
+                            {userData.disabled ? "Ativar" : "Desativar"}
                           </button>
-                          
+
                           <button
-                            onClick={() => handleToggleApproval(userData.username, userData.approved)}
+                            onClick={() =>
+                              handleToggleApproval(
+                                userData.username,
+                                userData.approved
+                              )
+                            }
                             className={`text-xs px-2 py-1 rounded ${
                               userData.approved
-                                ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-                                : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                ? "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
+                                : "bg-blue-100 text-blue-700 hover:bg-blue-200"
                             }`}
                           >
-                            {userData.approved ? 'Reprovar' : 'Aprovar'}
+                            {userData.approved ? "Reprovar" : "Aprovar"}
                           </button>
 
                           {userData.username !== user?.username && (
                             <button
-                              onClick={() => handleDeleteUser(userData.username)}
+                              onClick={() =>
+                                handleDeleteUser(userData.username)
+                              }
                               className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -366,7 +412,7 @@ const UserManagementPage: React.FC = () => {
       )}
 
       {/* Approved Users Tab */}
-      {activeTab === 'approved' && (
+      {activeTab === "approved" && (
         <div className="bg-white shadow rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -389,7 +435,10 @@ const UserManagementPage: React.FC = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {approvedUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
+                    <td
+                      colSpan={4}
+                      className="px-6 py-4 text-center text-gray-500"
+                    >
                       Nenhum usuário na lista de aprovados
                     </td>
                   </tr>
@@ -402,7 +451,7 @@ const UserManagementPage: React.FC = () => {
                             {approvedUser.username}
                           </div>
                           <div className="text-sm text-gray-500">
-                            {approvedUser.email || 'Sem email'}
+                            {approvedUser.email || "Sem email"}
                           </div>
                           {approvedUser.full_name && (
                             <div className="text-sm text-gray-500">
@@ -412,22 +461,32 @@ const UserManagementPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleBadgeColor(approvedUser.role)}`}>
+                        <span
+                          className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleBadgeColor(
+                            approvedUser.role
+                          )}`}
+                        >
                           {getRoleLabel(approvedUser.role)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {approvedUser.external_id || 'N/A'}
+                        {approvedUser.external_id || "N/A"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
                           onClick={async () => {
-                            if (confirm(`Remover ${approvedUser.username} da lista de aprovados?`)) {
+                            if (
+                              confirm(
+                                `Remover ${approvedUser.username} da lista de aprovados?`
+                              )
+                            ) {
                               try {
-                                await api.approvedUsers.remove(approvedUser.username);
+                                await api.approvedUsers.remove(
+                                  approvedUser.username
+                                );
                                 await loadApprovedUsers();
                               } catch (err) {
-                                setError('Erro ao remover usuário da lista');
+                                setError("Erro ao remover usuário da lista");
                               }
                             }
                           }}
@@ -476,14 +535,18 @@ const CreateUserModal: React.FC<{
   onSuccess: () => void;
 }> = ({ onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
-    username: '',
-    email: '',
-    full_name: '',
-    role: 'student',
-    external_id: '',
+    username: "",
+    email: "",
+    full_name: "",
+    role: "student",
+    external_id: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createdUser, setCreatedUser] = useState<{
+    user: any;
+    password: string | null;
+  }>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -491,11 +554,15 @@ const CreateUserModal: React.FC<{
     setError(null);
 
     try {
-      await api.users.create(formData);
-      onSuccess();
+      const response = await api.users.create(formData);
+      setCreatedUser({
+        user: response.user,
+        password: response.generated_password,
+      });
+      // Não fechamos o modal imediatamente para mostrar a senha
     } catch (err) {
-      setError('Erro ao criar usuário');
-      console.error('Error creating user:', err);
+      setError("Erro ao criar usuário");
+      console.error("Error creating user:", err);
     } finally {
       setLoading(false);
     }
@@ -505,57 +572,94 @@ const CreateUserModal: React.FC<{
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
         <h3 className="text-lg font-bold mb-4">Criar Novo Usuário</h3>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            placeholder="Nome de usuário"
-            value={formData.username}
-            onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-            required
-          />
-          
-          <Input
-            type="email"
-            placeholder="Email (opcional)"
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-          />
-          
-          <Input
-            placeholder="Nome completo (opcional)"
-            value={formData.full_name}
-            onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-          />
-          
-          <select
-            value={formData.role}
-            onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
-          >
-            <option value="student">Aluno</option>
-            <option value="instructor">Instrutor</option>
-            <option value="admin">Administrador</option>
-          </select>
-          
-          <Input
-            placeholder="ID externo (opcional)"
-            value={formData.external_id}
-            onChange={(e) => setFormData({ ...formData, external_id: e.target.value })}
-          />
 
-          {error && (
-            <div className="text-red-600 text-sm">{error}</div>
-          )}
-
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" isLoading={loading}>
-              Criar Usuário
-            </Button>
+        {createdUser ? (
+          <div className="space-y-4">
+            <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+              <p className="font-bold">Usuário criado com sucesso!</p>
+              <p>
+                Nome de usuário:{" "}
+                <span className="font-mono">{createdUser.user.username}</span>
+              </p>
+              {createdUser.password && (
+                <div>
+                  <p className="mt-2 font-bold">Senha gerada:</p>
+                  <div className="bg-gray-100 p-2 rounded font-mono text-center text-lg mt-1 border border-gray-300">
+                    {createdUser.password}
+                  </div>
+                  <p className="text-xs mt-1 text-gray-600">
+                    Guarde esta senha em um local seguro. Ela não será mostrada
+                    novamente.
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" onClick={onSuccess} className="w-full">
+                Fechar
+              </Button>
+            </div>
           </div>
-        </form>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Input
+              placeholder="Nome de usuário"
+              value={formData.username}
+              onChange={(e) =>
+                setFormData({ ...formData, username: e.target.value })
+              }
+              required
+            />
+
+            <Input
+              type="email"
+              placeholder="Email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              required
+            />
+
+            <Input
+              placeholder="Nome completo (opcional)"
+              value={formData.full_name}
+              onChange={(e) =>
+                setFormData({ ...formData, full_name: e.target.value })
+              }
+            />
+
+            <select
+              value={formData.role}
+              onChange={(e) =>
+                setFormData({ ...formData, role: e.target.value })
+              }
+              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            >
+              <option value="student">Aluno</option>
+              <option value="instructor">Instrutor</option>
+              <option value="admin">Administrador</option>
+            </select>
+
+            <Input
+              placeholder="ID externo"
+              value={formData.external_id}
+              onChange={(e) =>
+                setFormData({ ...formData, external_id: e.target.value })
+              }
+              required
+            />
+
+            {error && <div className="text-red-600 text-sm">{error}</div>}
+
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button type="submit" isLoading={loading}>
+                Adicionar
+              </Button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -567,11 +671,11 @@ const AddApprovedUserModal: React.FC<{
   onSuccess: () => void;
 }> = ({ onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
-    username: '',
-    email: '',
-    full_name: '',
-    role: 'student',
-    external_id: '',
+    username: "",
+    email: "",
+    full_name: "",
+    role: "student",
+    external_id: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -585,8 +689,8 @@ const AddApprovedUserModal: React.FC<{
       await api.approvedUsers.add(formData);
       onSuccess();
     } catch (err) {
-      setError('Erro ao adicionar usuário à lista de aprovados');
-      console.error('Error adding approved user:', err);
+      setError("Erro ao adicionar usuário à lista de aprovados");
+      console.error("Error adding approved user:", err);
     } finally {
       setLoading(false);
     }
@@ -595,29 +699,36 @@ const AddApprovedUserModal: React.FC<{
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
-        <h3 className="text-lg font-bold mb-4">Adicionar à Lista de Aprovados</h3>
-        
+        <h3 className="text-lg font-bold mb-4">
+          Adicionar à Lista de Aprovados
+        </h3>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
             placeholder="Nome de usuário"
             value={formData.username}
-            onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, username: e.target.value })
+            }
             required
           />
-          
+
           <Input
             type="email"
-            placeholder="Email (opcional)"
+            placeholder="Email"
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            required
           />
-          
+
           <Input
             placeholder="Nome completo (opcional)"
             value={formData.full_name}
-            onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, full_name: e.target.value })
+            }
           />
-          
+
           <select
             value={formData.role}
             onChange={(e) => setFormData({ ...formData, role: e.target.value })}
@@ -627,17 +738,17 @@ const AddApprovedUserModal: React.FC<{
             <option value="instructor">Instrutor</option>
             <option value="admin">Administrador</option>
           </select>
-          
+
           <Input
             placeholder="ID externo"
             value={formData.external_id}
-            onChange={(e) => setFormData({ ...formData, external_id: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, external_id: e.target.value })
+            }
             required
           />
 
-          {error && (
-            <div className="text-red-600 text-sm">{error}</div>
-          )}
+          {error && <div className="text-red-600 text-sm">{error}</div>}
 
           <div className="flex gap-2">
             <Button type="button" variant="outline" onClick={onClose}>

@@ -26,7 +26,7 @@ from rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
 from chat_agent import graph as chat_agent_graph
 from drive_handler import DriveHandler
 from drive_handler_recursive import RecursiveDriveHandler
-from auth import get_current_user, User
+from auth import get_current_user, User, router as auth_router
 from user_management import router as user_management_router
 from educational_agent import router as educational_agent_router
 from drive_handler import DriveHandler
@@ -49,9 +49,10 @@ app = FastAPI(
 )
 
 # Configure CORS
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

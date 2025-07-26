@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/auth-store";
 import { Button } from "../ui/button";
@@ -25,6 +25,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const { user, logout } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Efeito para redirecionar usuários que tentam acessar páginas não autorizadas
+  useEffect(() => {
+    if (user) {
+      const currentPath = location.pathname;
+      
+      // Definir rotas permitidas por perfil
+      const allowedPaths = {
+        student: ['/', '/chat'],
+        instructor: ['/', '/chat', '/materials', '/assistant'],
+        admin: ['/', '/chat', '/materials', '/assistant', '/settings', '/users', '/debug']
+      };
+      
+      const userAllowedPaths = allowedPaths[user.role as keyof typeof allowedPaths] || [];
+      
+      // Se o caminho atual não estiver na lista de permitidos para o perfil do usuário
+      if (!userAllowedPaths.some(path => currentPath === path || currentPath.startsWith(path + '/'))) {
+        // Redirecionar para a página inicial
+        navigate('/');
+      }
+    }
+  }, [location.pathname, user, navigate]);
 
   const handleLogout = () => {
     logout();

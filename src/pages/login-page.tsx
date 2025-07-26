@@ -21,6 +21,8 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [accountActivated, setAccountActivated] = useState(false);
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +53,17 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         setError(data.detail || "Erro ao alterar senha.");
       } else {
         setSuccess(true);
-        setTimeout(() => onClose(), 1500);
+        
+        // Se for senha temporária, indicar que a conta foi ativada
+        if (isTemporary) {
+          setAccountActivated(true);
+          setTimeout(() => {
+            onClose();
+            navigate("/"); // Redirecionar para a página inicial
+          }, 2000);
+        } else {
+          setTimeout(() => onClose(), 1500);
+        }
       }
     } catch (err) {
       setError("Erro de conexão com o servidor.");
@@ -72,7 +84,7 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         <h2 className="text-lg font-bold mb-4">{isTemporary ? 'Alterar senha temporária' : 'Alterar senha'}</h2>
         {isTemporary && (
           <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
-            Você está usando uma senha temporária. Por favor, altere-a para uma senha permanente de sua escolha para maior segurança.
+            Você está usando uma senha temporária. Por favor, altere-a para uma senha permanente de sua escolha para maior segurança e ativar sua conta.
           </div>
         )}
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -101,6 +113,7 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
           {success && (
             <div className="text-green-600 text-sm">
               Senha alterada com sucesso!
+              {accountActivated && " Sua conta foi ativada."}
             </div>
           )}
           <div className="flex gap-2 mt-2">
@@ -253,11 +266,10 @@ const LoginPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const success = await login(username, password);
-      if (success) {
-        // Verificar se é uma senha temporária
-        // Isso é uma simplificação. Na prática, o backend deveria informar se a senha é temporária
-        if (password.includes('temp') || password === username + '123') {
+      const result = await login(username, password);
+      if (result.success) {
+        // Usar a informação de senha temporária da API
+        if (result.is_temporary_password) {
           setIsTempPassword(true);
           setShowChangePassword(true);
         } else {

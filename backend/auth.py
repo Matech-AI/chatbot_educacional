@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional, List
-from fastapi import Depends, HTTPException, status
+# Adicione esta linha no início do arquivo, junto com os outros imports
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -8,6 +9,9 @@ from pydantic import BaseModel, EmailStr
 import json
 import os
 from pathlib import Path
+
+# Adicione esta linha para definir o router
+router = APIRouter(prefix="/auth", tags=["authentication"])
 
 # Security configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here-change-in-production")
@@ -25,6 +29,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 class Token(BaseModel):
     access_token: str
     token_type: str
+    is_temporary_password: bool = False
 
 
 class TokenData(BaseModel):
@@ -44,14 +49,16 @@ class User(BaseModel):
     external_id: Optional[str] = None  # ID from external platform
     approved: bool = True
     last_login: Optional[datetime] = None
+    is_temporary_password: bool = False  # Adicionar este campo
 
 class UserCreate(BaseModel):
     username: str
-    email: Optional[EmailStr] = None
+    email: EmailStr  # Alterado de Optional[EmailStr] para EmailStr (obrigatório)
     full_name: Optional[str] = None
     role: str = "student"
     external_id: Optional[str] = None
     approved: bool = True
+    generate_password: bool = True  # Novo campo para indicar se deve gerar senha aleatória
 
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
@@ -216,8 +223,8 @@ def get_user_by_external_id(external_id: str) -> Optional[User]:
             return User(**user_data)
     return None
 
-def create_user(user_data: UserCreate, password: str = None, send_email: bool = True) -> User:
-    """Create a new user"""
+def create_user(user_data: UserCreate, password: str = None, send_email: bool = True) -> tuple[User, str]:
+    """Create a new user and return the user and generated password"""
     users_db = load_users_db()
     
     # Check if username already exists
@@ -228,11 +235,18 @@ def create_user(user_data: UserCreate, password: str = None, send_email: bool = 
     from email_service import generate_temp_password, send_temp_password_email, generate_auth_token, send_auth_email
     from auth_token_manager import create_auth_token
     
-    # Generate a temporary password if not provided
-    if password is None:
-        password = generate_temp_password()
+    # Generate a temporary password if not provided and generate_password is True
+    generated_password = None
+    if password is None and user_data.generate_password:
+        generated_password = generate_temp_password()
+        password = generated_password
+    elif password is None:
+        password = "changeme"  # Default password if not generating random one
+    else:
+        generated_password = password  # Store the provided password
     
     now = datetime.utcnow()
+    # Na função create_user
     user_dict = {
         "id": user_data.username,  # Use username as ID for simplicity
         "username": user_data.username,
@@ -245,14 +259,15 @@ def create_user(user_data: UserCreate, password: str = None, send_email: bool = 
         "updated_at": now.isoformat(),
         "external_id": user_data.external_id,
         "approved": False,  # Inicialmente não aprovado até confirmação por e-mail
-        "last_login": None
+        "last_login": None,
+        "is_temporary_password": user_data.generate_password or password == "changeme"  # Marcar como senha temporária
     }
     
     users_db[user_data.username] = user_dict
     save_users_db(users_db)
     
-    # Enviar e-mail de autenticação e senha temporária se o e-mail estiver disponível
-    if send_email and user_data.email:
+    # Enviar e-mail de autenticação e senha temporária
+    if send_email:
         # Gerar token de autenticação
         auth_token = generate_auth_token()
         create_auth_token(user_data.username, auth_token, user_data.email)
@@ -266,7 +281,7 @@ def create_user(user_data: UserCreate, password: str = None, send_email: bool = 
     # Convert back to datetime objects for return
     user_dict['created_at'] = now
     user_dict['updated_at'] = now
-    return User(**user_dict)
+    return User(**user_dict), generated_password
 
 def update_user(username: str, user_update: UserUpdate) -> Optional[User]:
     """Update an existing user"""
@@ -372,6 +387,13 @@ def change_password(username: str, current_password: str, new_password: str) -> 
     # Update password
     users_db[username]["hashed_password"] = pwd_context.hash(new_password)
     users_db[username]["updated_at"] = datetime.utcnow().isoformat()
+    users_db[username]["is_temporary_password"] = False  # Marcar como senha permanente
+    
+    # Se o usuário estava usando senha temporária, aprová-lo automaticamente
+    if users_db[username].get("is_temporary_password", False) and not users_db[username]["approved"]:
+        users_db[username]["approved"] = True
+        print(f"✅ Usuário {username} aprovado automaticamente após alteração de senha temporária")
+    
     save_users_db(users_db)
     
     return True
@@ -420,3 +442,58 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     if user is None:
         raise credentials_exception
     return user
+
+
+@router.post("/public/verify-token")
+async def verify_auth_token(token_data: dict):
+    """Verify authentication token and create user account"""
+    from auth_token_manager import verify_auth_token, mark_token_as_used
+    from email_service import generate_temp_password, send_temp_password_email
+    
+    token = token_data.get("token")
+    username = token_data.get("username")
+    
+    if not token or not username:
+        raise HTTPException(status_code=400, detail="Invalid token data")
+    
+    # Verificar token
+    token_info = verify_auth_token(token)
+    if not token_info or token_info.get("username") != username:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    
+    # Marcar token como usado
+    mark_token_as_used(token)
+    
+    # Verificar se o usuário já existe
+    existing_user = get_user(username)
+    if existing_user:
+        # Atualizar status de aprovação
+        user_update = UserUpdate(approved=True, disabled=False)
+        update_user(username, user_update)
+    else:
+        # Buscar dados do usuário na lista de aprovados
+        approved_users = load_approved_users()
+        user_data = next((u for u in approved_users if u.get('username') == username), None)
+        
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found in approved list")
+        
+        # Criar usuário com senha temporária
+        temp_password = generate_temp_password()
+        user_create = UserCreate(
+            username=username,
+            email=user_data.get('email'),
+            full_name=user_data.get('full_name'),
+            role=user_data.get('role', 'student'),
+            external_id=user_data.get('external_id'),
+            approved=True,
+            generate_password=False  # Não gerar nova senha, usaremos a que criamos
+        )
+        
+        # Criar usuário sem enviar email (enviaremos manualmente)
+        create_user(user_create, temp_password, send_email=False)
+        
+        # Enviar email com senha temporária
+        send_temp_password_email(user_data.get('email'), username, temp_password)
+    
+    return {"message": "Account verified successfully. A temporary password has been sent to your email."}

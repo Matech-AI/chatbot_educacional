@@ -1,5 +1,5 @@
 import React, { useEffect, useState, Suspense, lazy } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 // ========================================
 // IMPORTS ESSENCIAIS (carregados imediatamente)
@@ -182,14 +182,26 @@ class ErrorBoundary extends React.Component<
 // ========================================
 // PROTECTED ROUTE
 // ========================================
-const ProtectedRoute: React.FC<{
+// Componente base que não usa hooks do router
+const ProtectedRouteBase: React.FC<{
   children: React.ReactNode;
   allowedRoles?: string[];
-}> = ({ children, allowedRoles }) => {
+  currentPath?: string;
+}> = ({ children, allowedRoles, currentPath }) => {
   const { isAuthenticated, user } = useAuthStore();
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Verificação adicional para estudantes
+  if (user && user.role === 'student' && currentPath) {
+    const allowedStudentPaths = ['/', '/chat'];
+    
+    // Se o caminho atual não estiver na lista de permitidos para estudantes
+    if (!allowedStudentPaths.some(path => currentPath === path || currentPath.startsWith(path + '/'))) {
+      return <Navigate to="/" replace />;
+    }
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
@@ -201,6 +213,21 @@ const ProtectedRoute: React.FC<{
       <ErrorBoundary>{children}</ErrorBoundary>
     </Suspense>
   );
+};
+
+// Wrapper que usa o hook useLocation e passa o valor para o componente base
+const ProtectedRoute: React.FC<{
+  children: React.ReactNode;
+  allowedRoles?: string[];
+}> = (props) => {
+  // Este hook só será chamado quando o componente for renderizado dentro do Router
+  try {
+    const location = useLocation();
+    return <ProtectedRouteBase {...props} currentPath={location.pathname} />;
+  } catch (error) {
+    // Fallback para quando o hook não pode ser usado (durante renderização inicial)
+    return <ProtectedRouteBase {...props} />;
+  }
 };
 
 // ========================================

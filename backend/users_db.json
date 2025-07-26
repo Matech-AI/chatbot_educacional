@@ -11,7 +11,8 @@
     "updated_at": "2025-07-18T19:55:25.053994",
     "external_id": null,
     "approved": true,
-    "last_login": "2025-07-25T20:00:59.392638"
+    "last_login": "2025-07-26T22:33:42.802612",
+    "is_temporary_password": false
   },
   "instrutor": {
     "id": "instrutor",
@@ -25,20 +26,22 @@
     "updated_at": "2025-07-18T19:55:25.624302",
     "external_id": null,
     "approved": true,
-    "last_login": "2025-07-24T02:47:50.635499"
+    "last_login": "2025-07-24T02:47:50.635499",
+    "is_temporary_password": false
   },
-  "Matheus": {
-    "id": "Matheus",
-    "username": "Matheus",
-    "email": "matheusbnas@gmail.com",
+  "matheus": {
+    "id": "matheus",
+    "username": "matheus",
+    "email": "contato@matechai.com",
     "full_name": "",
     "role": "student",
-    "hashed_password": "$2b$12$uav9iFAaUkO/EYopzaHAVOuzdrBkspeQKq2ylSSCMfBemQ7wWqJ6e",
+    "hashed_password": "$2b$12$tFJEXL6xv.ABBGKQNwiqmewE3A3cbnOaU2qXzQHm7XA8xCeSrrYhe",
     "disabled": false,
-    "created_at": "2025-07-24T01:55:59.935663",
-    "updated_at": "2025-07-24T02:05:46.051101",
-    "external_id": "",
-    "approved": true,
-    "last_login": null
+    "created_at": "2025-07-26T22:15:35.633870",
+    "updated_at": "2025-07-26T22:15:35.633870",
+    "external_id": "123",
+    "approved": false,
+    "last_login": "2025-07-26T22:51:05.060330",
+    "is_temporary_password": true
   }
 }

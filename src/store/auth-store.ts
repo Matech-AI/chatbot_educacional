@@ -195,21 +195,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       console.log('🔐 Attempting login for:', username);
       set({ error: null });
       
-      const response = await api.login(username, password);
+      const result = await api.login(username, password);
       
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        // Garantir que o erro seja uma string
-        const errorMessage = typeof errorData.detail === 'object' 
-          ? String(errorData.detail) 
-          : (errorData.detail || 'Credenciais inválidas');
-        console.error('❌ Login failed:', errorMessage);
-        set({ error: errorMessage });
+      if (!result.success) {
+        console.error('❌ Login failed: Credenciais inválidas');
+        set({ error: 'Credenciais inválidas' });
         return false;
       }
       
-      const data = await response.json();
-      const token = data.access_token;
+      // Obter o token do localStorage (já foi salvo pela função api.login)
+      const token = localStorage.getItem('token');
       
       if (!token) {
         console.error('❌ No token received from server');
@@ -218,9 +213,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       console.log('📥 Token received:', token.substring(0, 20) + '...');
-      
-      // Save token to localStorage
-      localStorage.setItem('token', token);
       
       // Decode token and create user
       const payload = decodeToken(token);
@@ -239,7 +231,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error: null
       });
       
-      return true;
+      return result; // Retorna o objeto completo para que login-page.tsx possa acessar is_temporary_password
     } catch (error) {
       // Garantir que o erro seja uma string
       let errorMessage;
@@ -256,7 +248,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: false,
         user: null
       });
-      return false;
+      return { success: false };
     }
   },
   

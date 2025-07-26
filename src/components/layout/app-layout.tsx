@@ -5,6 +5,7 @@ import { useAuthStore } from "../../store/auth-store";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu } from "lucide-react";
 import { Button } from "../ui/button";
+import TemporaryPasswordCheck from "./temporary-password-check";
 
 const AppLayout: React.FC = () => {
   const { user } = useAuthStore();
@@ -46,6 +47,9 @@ const AppLayout: React.FC = () => {
 
   return (
     <div className="h-screen w-full bg-gray-50 text-gray-900 overflow-hidden flex">
+      {/* Verificação de senha temporária */}
+      <TemporaryPasswordCheck />
+      
       {/* Mobile toggle button */}
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <Button

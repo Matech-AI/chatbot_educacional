@@ -13,7 +13,7 @@ load_dotenv()
 # Configurações de e-mail
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
-EMAIL_USER = os.getenv("EMAIL_USER", "")
+EMAIL_USER = os.getenv("EMAIL_USERNAME", "")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", EMAIL_USER)
 
@@ -47,7 +47,8 @@ def generate_auth_token(length=32):
 def send_email(to_email, subject, html_content):
     """Envia um e-mail usando SMTP"""
     if not EMAIL_CONFIGURED:
-        print("⚠️ Configurações de e-mail não definidas. E-mail não enviado.")
+        print(f"⚠️ Configurações de e-mail não definidas. E-mail não enviado.")
+        print(f"⚠️ EMAIL_HOST: {EMAIL_HOST}, EMAIL_PORT: {EMAIL_PORT}, EMAIL_USER: {EMAIL_USER}, EMAIL_PASSWORD: {'*' * len(EMAIL_PASSWORD) if EMAIL_PASSWORD else 'vazio'}")
         return False
     
     try:
@@ -60,12 +61,17 @@ def send_email(to_email, subject, html_content):
         # Adicionar conteúdo HTML
         msg.attach(MIMEText(html_content, 'html'))
         
+        print(f"🔄 Tentando conectar ao servidor SMTP: {EMAIL_HOST}:{EMAIL_PORT}")
         # Conectar ao servidor SMTP
         server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT)
+        server.set_debuglevel(1)  # Ativar depuração
+        print(f"🔄 Iniciando TLS")
         server.starttls()
+        print(f"🔄 Tentando login com usuário: {EMAIL_USER}")
         server.login(EMAIL_USER, EMAIL_PASSWORD)
         
         # Enviar e-mail
+        print(f"🔄 Enviando e-mail para: {to_email}")
         server.send_message(msg)
         server.quit()
         
@@ -73,6 +79,7 @@ def send_email(to_email, subject, html_content):
         return True
     except Exception as e:
         print(f"❌ Erro ao enviar e-mail: {str(e)}")
+        print(f"❌ Detalhes do erro: {type(e).__name__}")
         return False
 
 def send_auth_email(user_email, username, auth_token, base_url="http://localhost:3000"):
@@ -91,8 +98,9 @@ def send_auth_email(user_email, username, auth_token, base_url="http://localhost
             .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
             .header {{ background-color: #4a5568; color: white; padding: 10px 20px; text-align: center; }}
             .content {{ padding: 20px; background-color: #f8f9fa; }}
-            .button {{ display: inline-block; background-color: #4a5568; color: white; padding: 10px 20px; 
-                      text-decoration: none; border-radius: 4px; margin-top: 20px; }}
+            .button {{ display: inline-block; background-color: #e53e3e; color: white; padding: 12px 24px; 
+                      text-decoration: none; border-radius: 4px; margin-top: 20px; font-weight: bold; }}
+            .info-box {{ background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 15px; margin: 20px 0; }}
             .footer {{ text-align: center; margin-top: 20px; font-size: 12px; color: #666; }}
         </style>
     </head>
@@ -110,6 +118,15 @@ def send_auth_email(user_email, username, auth_token, base_url="http://localhost
                 </p>
                 <p>Ou copie e cole o seguinte link no seu navegador:</p>
                 <p>{auth_url}</p>
+                <div class="info-box">
+                    <p><strong>Informações importantes:</strong></p>
+                    <p>Se você foi cadastrado como <strong>aluno</strong>, após confirmar seu cadastro:</p>
+                    <ul>
+                        <p>1. Você receberá uma senha temporária por email</p>
+                        <p>2. Você terá acesso apenas ao chatbot educacional</p>
+                        <p>3. Na primeira vez que fizer login, você será direcionado para criar uma nova senha</p>
+                    </ul>
+                </div>
                 <p>Este link expirará em 24 horas.</p>
                 <p>Se você não solicitou este cadastro, por favor ignore este e-mail.</p>
             </div>
@@ -125,7 +142,7 @@ def send_auth_email(user_email, username, auth_token, base_url="http://localhost
 
 def send_temp_password_email(user_email, username, temp_password):
     """Envia e-mail com senha temporária"""
-    subject = "Sua Senha Temporária - Sistema Educacional"
+    subject = "Senha Temporária - Sistema Educacional"
     
     # Conteúdo HTML do e-mail
     html_content = f"""
@@ -136,27 +153,45 @@ def send_temp_password_email(user_email, username, temp_password):
             .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
             .header {{ background-color: #4a5568; color: white; padding: 10px 20px; text-align: center; }}
             .content {{ padding: 20px; background-color: #f8f9fa; }}
-            .password-box {{ background-color: #e2e8f0; padding: 10px; border-radius: 4px; 
-                           font-family: monospace; margin: 20px 0; text-align: center; }}
+            .password-box {{ background-color: #f3f4f6; border: 1px solid #d1d5db; padding: 15px; 
+                           text-align: center; font-size: 18px; font-family: monospace; margin: 20px 0; }}
+            .info-box {{ background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 15px; margin: 20px 0; }}
+            .warning {{ background-color: #fffaf0; border-left: 4px solid #ed8936; padding: 15px; margin: 20px 0; }}
             .footer {{ text-align: center; margin-top: 20px; font-size: 12px; color: #666; }}
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
-                <h2>Sua Senha Temporária</h2>
+                <h2>Senha Temporária</h2>
             </div>
             <div class="content">
-                <p>Olá {username},</p>
-                <p>Sua conta foi criada no Sistema Educacional. Aqui está sua senha temporária:</p>
+                <p>Olá <strong>{username}</strong>,</p>
+                <p>Sua senha temporária para acesso ao Sistema Educacional foi gerada com sucesso.</p>
+                
                 <div class="password-box">
-                    <strong>{temp_password}</strong>
+                    {temp_password}
                 </div>
-                <p>Por favor, faça login e altere sua senha o mais rápido possível.</p>
-                <p>Esta senha expirará em 24 horas.</p>
+                
+                <div class="warning">
+                    <p><strong>Importante:</strong> Esta é uma senha temporária. Ao fazer login, você será solicitado a alterá-la 
+                    para uma senha permanente de sua escolha. Alterar esta senha também ativará sua conta automaticamente.</p>
+                </div>
+                
+                <div class="info-box">
+                    <p><strong>Instruções:</strong></p>
+                    <ol>
+                        <li>Acesse o sistema usando seu nome de usuário e a senha temporária acima</li>
+                        <li>Você será solicitado a criar uma nova senha</li>
+                        <li>Após alterar sua senha, sua conta será ativada automaticamente</li>
+                    </ol>
+                </div>
+                
+                <p>Por razões de segurança, esta senha expirará em 24 horas.</p>
             </div>
             <div class="footer">
                 <p>Este é um e-mail automático, por favor não responda.</p>
+                <p>Sistema Educacional - DNA da Força</p>
             </div>
         </div>
     </body>

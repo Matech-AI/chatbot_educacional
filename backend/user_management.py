@@ -13,7 +13,8 @@ from auth import (
     create_user, update_user, delete_user, get_all_users, get_user,
     change_password, reset_password, is_user_approved,
     load_approved_users, save_approved_users, get_user_by_external_id,
-    ACCESS_TOKEN_EXPIRE_MINUTES, WEBHOOK_SECRET
+    ACCESS_TOKEN_EXPIRE_MINUTES, WEBHOOK_SECRET, load_users_db, save_users_db,
+    verify_password, update_last_login  # Adicionando estas duas funções
 )
 from auth_token_manager import verify_auth_token, mark_token_as_used, clean_expired_tokens
 
@@ -25,8 +26,8 @@ class TokenVerification(BaseModel):
     username: str
 
 @router.post("/token", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """Login endpoint - returns JWT token"""
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    """Login endpoint to get access token"""
     # Check user status before attempting to authenticate
     user_db = get_user(form_data.username)
     if not user_db:
@@ -36,42 +37,39 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    # Verificar se o usuário está usando senha temporária
+    users_db = load_users_db()
+    is_temp_password = users_db[form_data.username].get("is_temporary_password", False)
+    
+    # Se o usuário não está aprovado, mas está usando senha temporária, permitir o login
+    if not user_db.approved and not is_temp_password:
+        raise HTTPException(status_code=403, detail="Sua conta ainda não foi aprovada.")
+    
     if user_db.disabled:
         raise HTTPException(status_code=403, detail="Sua conta está desativada.")
     
-    if not user_db.approved:
-        raise HTTPException(status_code=403, detail="Sua conta ainda não foi aprovada.")
-
     # Now, authenticate the password
-    user = authenticate_user(form_data.username, form_data.password)
-    if not user:
+    if not verify_password(form_data.password, users_db[form_data.username]["hashed_password"]):
         raise HTTPException(status_code=401, detail="Usuário ou senha incorretos")
-
+    
+    # Atualizar último login
+    update_last_login(form_data.username)
+    
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username, "role": user.role},
+        data={
+            "sub": user_db.username, 
+            "role": user_db.role,
+            "is_temp_password": is_temp_password  # Incluir informação na JWT
+        },
         expires_delta=access_token_expires
     )
     
     return {
         "access_token": access_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "is_temporary_password": is_temp_password  # Incluir na resposta
     }
-
-@router.post("/auth/token", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    """Login endpoint - returns JWT token"""
-    user = authenticate_user(form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token = create_access_token(
-        data={"sub": user.username, "role": user.role}
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/me", response_model=User)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
@@ -193,7 +191,12 @@ async def resend_verification_email(
     
     return {"message": "E-mail de verificação reenviado com sucesso"}
 
-@router.post("/users", response_model=User)
+# Modelo para resposta de criação de usuário com senha
+class UserWithPassword(BaseModel):
+    user: User
+    generated_password: Optional[str] = None
+
+@router.post("/users", response_model=UserWithPassword)
 async def create_new_user(
     user_data: UserCreate,
     current_user: User = Depends(get_current_user)
@@ -206,8 +209,8 @@ async def create_new_user(
     user_data.approved = False
     
     try:
-        user = create_user(user_data)
-        return user
+        user, generated_password = create_user(user_data)
+        return {"user": user, "generated_password": generated_password}
     except HTTPException:
         raise
     except Exception as e:
@@ -262,16 +265,31 @@ async def add_approved_user(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     
+    # Verificar se o email foi fornecido
+    if not user_data.get('email'):
+        raise HTTPException(status_code=400, detail="Email is required")
+    
     approved_users = load_approved_users()
     
     # Check if user already exists in approved list
     if any(u.get('username') == user_data.get('username') for u in approved_users):
         raise HTTPException(status_code=400, detail="User already in approved list")
     
+    # Importar funções de email
+    from email_service import generate_auth_token, send_auth_email
+    from auth_token_manager import create_auth_token
+    
+    # Gerar token de autenticação
+    auth_token = generate_auth_token()
+    create_auth_token(user_data.get('username'), auth_token, user_data.get('email'))
+    
+    # Enviar email de autenticação
+    send_auth_email(user_data.get('email'), user_data.get('username'), auth_token)
+    
     approved_users.append(user_data)
     save_approved_users(approved_users)
     
-    return {"message": "User added to approved list"}
+    return {"message": "User added to approved list and authentication email sent"}
 
 @router.delete("/approved-users/{username}")
 async def remove_approved_user(

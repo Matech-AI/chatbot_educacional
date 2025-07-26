@@ -1,7 +1,7 @@
 // API utility functions - FIXED VERSION
 const API_BASE = process.env.NODE_ENV === 'production' 
   ? 'https://your-backend-domain.com' 
-  : 'http://localhost:8000';  // Backend runs on port 8000
+  : '/api';  // Usar /api para que o proxy do Vite funcione
 
 // Get auth token from memory (localStorage not supported in Claude artifacts)
 const AUTH_TOKEN_KEY = 'token';
@@ -106,19 +106,28 @@ export async function apiRequestJson<T = any>(
 // Specific API functions
 export const api = {
   // Authentication
-  login: (username: string, password: string) => {
-    // Use URLSearchParams para enviar dados no formato de formulário
-    const formData = new URLSearchParams();
-    formData.append('username', username);
-    formData.append('password', password);
-    
-    return apiRequest('/auth/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: formData,
-    });
+  // No objeto api
+  login: async (username: string, password: string) => {
+  // Use URLSearchParams para enviar dados no formato de formulário
+  const formData = new URLSearchParams();
+  formData.append('username', username);
+  formData.append('password', password);
+  
+  const response = await apiRequest('/auth/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: formData,
+  });
+  
+  if (response.ok) {
+    const data = await response.json();
+    setAuthToken(data.access_token);
+    return { success: true, is_temporary_password: data.is_temporary_password };
+  }
+  
+  return { success: false };
   },
 
   // Set token after login
