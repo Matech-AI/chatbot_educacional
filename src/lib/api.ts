@@ -197,6 +197,7 @@ export const api = {
     delete: (username: string) => apiRequestJson(`/auth/users/${username}`, {
       method: 'DELETE',
     }),
+    getPassword: (username: string) => apiRequestJson(`/auth/users/${username}/password`),
   },
 
   // Approved users management (admin only)

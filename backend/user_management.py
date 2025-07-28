@@ -463,3 +463,55 @@ async def handle_user_disable(webhook_user: WebhookUser):
         print(f"Disabled user: {existing_user.username}")
     except Exception as e:
         print(f"Error disabling user {existing_user.username}: {e}")
+
+@router.get("/users/{username}/password")
+async def get_user_password(
+    username: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get user password info (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Verificar se o usuário existe
+    user = get_user(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Retornar informação sobre a senha
+    return {
+        "password": "As senhas são armazenadas com hash criptográfico e não podem ser recuperadas. "
+                  "Use a opção de redefinir senha se necessário.",
+        "is_temporary_password": user.is_temporary_password
+    }
+    
+    # Gerar uma nova senha temporária
+    from email_service import generate_temp_password
+    temp_password = generate_temp_password()
+    
+    # Atualizar a senha do usuário
+    success = reset_password(username, temp_password)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {"password": temp_password}
+
+@router.post("/restore-default-passwords")
+async def restore_default_passwords(
+    current_user: User = Depends(get_current_user)
+):
+    """Restore default passwords for admin and instructor (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Restaurar senha do admin
+    admin_success = reset_password("admin", "adminpass")
+    
+    # Restaurar senha do instrutor
+    instructor_success = reset_password("instrutor", "instrutorpass")
+    
+    if not admin_success or not instructor_success:
+        raise HTTPException(status_code=500, detail="Failed to restore default passwords")
+    
+    return {"message": "Senhas padrão restauradas com sucesso"}

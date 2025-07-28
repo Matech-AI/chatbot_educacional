@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from email_service import generate_auth_token, send_password_reset_email, send_temp_password_email, generate_temp_password, send_auth_email
 from auth_token_manager import create_auth_token, verify_auth_token, mark_token_as_used, clean_expired_tokens
+from external_id_manager import get_next_external_id, mark_external_id_as_deleted, reorganize_external_ids
 
 # Adicione esta linha para definir o router
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -225,6 +226,7 @@ def get_user_by_external_id(external_id: str) -> Optional[User]:
             return User(**user_data)
     return None
 
+# Modifique a função create_user para usar o ID externo automático
 def create_user(user_data: UserCreate, password: str = None, send_email: bool = True) -> tuple[User, str]:
     """Create a new user and return the user and generated password"""
     users_db = load_users_db()
@@ -246,6 +248,10 @@ def create_user(user_data: UserCreate, password: str = None, send_email: bool = 
         password = "changeme"  # Default password if not generating random one
     else:
         generated_password = password  # Store the provided password
+    
+    # Gerar ID externo automático se não for fornecido
+    if not user_data.external_id:
+        user_data.external_id = get_next_external_id()
     
     now = datetime.utcnow()
     # Na função create_user
@@ -284,6 +290,26 @@ def create_user(user_data: UserCreate, password: str = None, send_email: bool = 
     user_dict['created_at'] = now
     user_dict['updated_at'] = now
     return User(**user_dict), generated_password
+
+# Modifique a função delete_user para marcar o ID externo como deletado
+def delete_user(username: str) -> bool:
+    """Delete a user"""
+    users_db = load_users_db()
+    
+    if username in users_db:
+        # Marcar o ID externo como deletado para reutilização
+        external_id = users_db[username].get('external_id')
+        if external_id:
+            mark_external_id_as_deleted(external_id)
+        
+        del users_db[username]
+        
+        # Reorganizar os IDs externos
+        users_db = reorganize_external_ids(users_db)
+        
+        save_users_db(users_db)
+        return True
+    return False
 
 def update_user(username: str, user_update: UserUpdate) -> Optional[User]:
     """Update an existing user"""

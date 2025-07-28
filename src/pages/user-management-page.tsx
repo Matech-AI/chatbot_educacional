@@ -148,7 +148,14 @@ const UserManagementPage: React.FC = () => {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString("pt-BR");
+    // Criar um objeto Date a partir da string ISO
+    const date = new Date(dateString);
+    
+    // Ajustar para o fuso horário de São Paulo (GMT-3)
+    // Isso é necessário porque o timestamp está em UTC
+    return date.toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo"
+    });
   };
 
   const getRoleLabel = (role: string) => {
@@ -247,6 +254,9 @@ const UserManagementPage: React.FC = () => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ID Numérico
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Usuário
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -270,7 +280,7 @@ const UserManagementPage: React.FC = () => {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-6 py-4 text-center text-gray-500"
                     >
                       Carregando usuários...
@@ -279,7 +289,7 @@ const UserManagementPage: React.FC = () => {
                 ) : users.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-6 py-4 text-center text-gray-500"
                     >
                       Nenhum usuário encontrado
@@ -288,6 +298,9 @@ const UserManagementPage: React.FC = () => {
                 ) : (
                   users.map((userData) => (
                     <tr key={userData.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {userData.external_id || "N/A"}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
@@ -432,7 +445,6 @@ const CreateUserModal: React.FC<{
     email: "",
     full_name: "",
     role: "student",
-    external_id: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -534,15 +546,6 @@ const CreateUserModal: React.FC<{
               <option value="admin">Administrador</option>
             </select>
 
-            <Input
-              placeholder="ID externo"
-              value={formData.external_id}
-              onChange={(e) =>
-                setFormData({ ...formData, external_id: e.target.value })
-              }
-              required
-            />
-
             {error && <div className="text-red-600 text-sm">{error}</div>}
 
             <div className="flex gap-2">
@@ -570,7 +573,6 @@ const AddApprovedUserModal: React.FC<{
     email: "",
     full_name: "",
     role: "student",
-    external_id: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -636,14 +638,7 @@ const AddApprovedUserModal: React.FC<{
             <option value="admin">Administrador</option>
           </select>
 
-          <Input
-            placeholder="ID externo"
-            value={formData.external_id}
-            onChange={(e) =>
-              setFormData({ ...formData, external_id: e.target.value })
-            }
-            required
-          />
+          {/* Campo ID externo removido */}
 
           {error && <div className="text-red-600 text-sm">{error}</div>}
 
