@@ -9,6 +9,8 @@ from pydantic import BaseModel, EmailStr
 import json
 import os
 from pathlib import Path
+from email_service import generate_auth_token, send_password_reset_email, send_temp_password_email, generate_temp_password, send_auth_email
+from auth_token_manager import create_auth_token, verify_auth_token, mark_token_as_used, clean_expired_tokens
 
 # Adicione esta linha para definir o router
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -387,10 +389,13 @@ def change_password(username: str, current_password: str, new_password: str) -> 
     # Update password
     users_db[username]["hashed_password"] = pwd_context.hash(new_password)
     users_db[username]["updated_at"] = datetime.utcnow().isoformat()
-    users_db[username]["is_temporary_password"] = False  # Marcar como senha permanente
     
-    # Se o usuário estava usando senha temporária, aprová-lo automaticamente
-    if users_db[username].get("is_temporary_password", False) and not users_db[username]["approved"]:
+    # Marcar como senha permanente
+    was_temporary = users_db[username].get("is_temporary_password", False)
+    users_db[username]["is_temporary_password"] = False
+    
+    # Aprovar automaticamente o usuário se estiver alterando a senha temporária
+    if was_temporary:
         users_db[username]["approved"] = True
         print(f"✅ Usuário {username} aprovado automaticamente após alteração de senha temporária")
     
@@ -398,7 +403,7 @@ def change_password(username: str, current_password: str, new_password: str) -> 
     
     return True
 
-def reset_password(username: str, new_password: str) -> bool:
+def reset_password(username: str, new_password: str, approve_user: bool = False) -> bool:
     """Reset user password (admin function)"""
     users_db = load_users_db()
     
@@ -408,6 +413,11 @@ def reset_password(username: str, new_password: str) -> bool:
     # Update password
     users_db[username]["hashed_password"] = pwd_context.hash(new_password)
     users_db[username]["updated_at"] = datetime.utcnow().isoformat()
+    
+    # Aprovar usuário se solicitado
+    if approve_user:
+        users_db[username]["approved"] = True
+    
     save_users_db(users_db)
     
     return True
@@ -497,3 +507,81 @@ async def verify_auth_token(token_data: dict):
         send_temp_password_email(user_data.get('email'), username, temp_password)
     
     return {"message": "Account verified successfully. A temporary password has been sent to your email."}
+
+class PasswordResetRequest(BaseModel):
+    username: str
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    username: str
+    new_password: str
+
+@router.post("/public/request-password-reset")
+async def request_password_reset(request_data: PasswordResetRequest):
+    """Request password reset (public route)"""
+    from email_service import generate_auth_token
+    from auth_token_manager import create_auth_token
+    from email_service import send_password_reset_email
+    
+    username = request_data.username
+    
+    # Verificar se o usuário existe
+    user = get_user(username)
+    if not user:
+        # Por segurança, não informamos se o usuário existe ou não
+        return {"message": "Se o usuário existir, um email de redefinição de senha será enviado."}
+    
+    # Verificar se o usuário tem email
+    if not user.email:
+        # Por segurança, não informamos o motivo real
+        return {"message": "Se o usuário existir, um email de redefinição de senha será enviado."}
+    
+    # Verificar se o usuário está aprovado
+    if not user.approved or user.disabled:
+        # Por segurança, não informamos o motivo real
+        return {"message": "Se o usuário existir, um email de redefinição de senha será enviado."}
+    
+    # Gerar token de reset de senha
+    reset_token = generate_auth_token()
+    create_auth_token(username, reset_token, user.email)
+    
+    # Enviar email com link para reset de senha
+    send_password_reset_email(user.email, username, reset_token)
+    
+    return {"message": "Se o usuário existir, um email de redefinição de senha será enviado."}
+
+@router.post("/public/confirm-password-reset")
+async def confirm_password_reset(reset_data: PasswordResetConfirm):
+    """Confirm password reset with token (public route)"""
+    from auth_token_manager import verify_auth_token, mark_token_as_used
+    
+    token = reset_data.token
+    username = reset_data.username
+    new_password = reset_data.new_password
+    
+    # Verificar token
+    token_info = verify_auth_token(token)
+    if not token_info or token_info.get("username") != username:
+        raise HTTPException(status_code=400, detail="Token inválido ou expirado")
+    
+    # Verificar se o usuário existe
+    user = get_user(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # Marcar token como usado
+    mark_token_as_used(token)
+    
+    # Redefinir a senha
+    success = reset_password(username, new_password)
+    if not success:
+        raise HTTPException(status_code=500, detail="Erro ao redefinir senha")
+    
+    # Atualizar o status da senha temporária para false e aprovar o usuário
+    users_db = load_users_db()
+    if username in users_db:
+        users_db[username]["is_temporary_password"] = False
+        users_db[username]["approved"] = True  # Aprovar automaticamente o usuário
+        save_users_db(users_db)
+    
+    return {"message": "Senha redefinida com sucesso"}

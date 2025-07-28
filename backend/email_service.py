@@ -7,7 +7,7 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Carregar variáveis de ambiente
+# Após carregar as variáveis de ambiente
 load_dotenv()
 
 # Configurações de e-mail
@@ -80,6 +80,9 @@ def send_email(to_email, subject, html_content):
     except Exception as e:
         print(f"❌ Erro ao enviar e-mail: {str(e)}")
         print(f"❌ Detalhes do erro: {type(e).__name__}")
+        # Adicionar mais detalhes sobre o erro
+        import traceback
+        print(f"❌ Traceback completo: {traceback.format_exc()}")
         return False
 
 def send_auth_email(user_email, username, auth_token, base_url="http://localhost:3000"):
@@ -188,6 +191,58 @@ def send_temp_password_email(user_email, username, temp_password):
                 </div>
                 
                 <p>Por razões de segurança, esta senha expirará em 24 horas.</p>
+            </div>
+            <div class="footer">
+                <p>Este é um e-mail automático, por favor não responda.</p>
+                <p>Sistema Educacional - DNA da Força</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    return send_email(user_email, subject, html_content)
+
+def send_password_reset_email(user_email, username, reset_token, base_url="http://localhost:3000"):
+    """Envia e-mail com link para reset de senha"""
+    subject = "Redefinição de Senha - Sistema Educacional"
+    
+    # URL de reset de senha
+    reset_url = f"{base_url}/reset-password?token={reset_token}&username={username}"
+    
+    # Conteúdo HTML do e-mail
+    html_content = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+            .header {{ background-color: #4a5568; color: white; padding: 10px 20px; text-align: center; }}
+            .content {{ padding: 20px; background-color: #f8f9fa; }}
+            .button {{ display: inline-block; background-color: #e53e3e; color: white; padding: 12px 24px; 
+                      text-decoration: none; border-radius: 4px; margin-top: 20px; font-weight: bold; }}
+            .info-box {{ background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 15px; margin: 20px 0; }}
+            .footer {{ text-align: center; margin-top: 20px; font-size: 12px; color: #666; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h2>Redefinição de Senha</h2>
+            </div>
+            <div class="content">
+                <p>Olá <strong>{username}</strong>,</p>
+                <p>Recebemos uma solicitação para redefinir sua senha no Sistema Educacional.</p>
+                <p style="text-align: center;">
+                    <a href="{reset_url}" class="button">Redefinir Senha</a>
+                </p>
+                <p>Ou copie e cole o seguinte link no seu navegador:</p>
+                <p>{reset_url}</p>
+                <div class="info-box">
+                    <p><strong>Informações importantes:</strong></p>
+                    <p>Este link expirará em 24 horas.</p>
+                    <p>Se você não solicitou esta redefinição de senha, por favor ignore este e-mail.</p>
+                </div>
             </div>
             <div class="footer">
                 <p>Este é um e-mail automático, por favor não responda.</p>

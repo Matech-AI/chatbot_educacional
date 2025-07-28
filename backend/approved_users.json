@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "username": "matheus",
+    "email": "matheus@toogoodlabs.com",
+    "full_name": "",
+    "role": "student",
+    "external_id": "1"
+  }
+]

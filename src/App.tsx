@@ -1,5 +1,11 @@
 import React, { useEffect, useState, Suspense, lazy } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 
 // ========================================
 // IMPORTS ESSENCIAIS (carregados imediatamente)
@@ -73,6 +79,14 @@ const AssistantPage = lazy(() =>
   )
 );
 
+const ResetPasswordPage = lazy(() =>
+  import("./pages/reset-password-page").catch(() =>
+    import("./pages/reset-password-page").then((m) => ({
+      default: m.ResetPasswordPage || m.default,
+    }))
+  )
+);
+
 // ========================================
 // COMPONENTE DE LOADING
 // ========================================
@@ -103,7 +117,9 @@ const ErrorFallback: React.FC<{ error?: string; onRetry?: () => void }> = ({
       <h1 className="text-xl font-semibold text-gray-900 mb-2">
         Ops! Algo deu errado
       </h1>
-      <p className="text-gray-600 mb-4">{typeof error === 'object' ? String(error) : error}</p>
+      <p className="text-gray-600 mb-4">
+        {typeof error === "object" ? String(error) : error}
+      </p>
       <div className="space-y-2">
         {onRetry && (
           <button
@@ -153,11 +169,12 @@ class ErrorBoundary extends React.Component<
       let errorMessage;
       if (this.state.error) {
         try {
-          if (typeof this.state.error.message === 'object') {
+          if (typeof this.state.error.message === "object") {
             // Usar String() em vez de JSON.stringify para evitar erros de estrutura circular
             errorMessage = String(this.state.error.message);
           } else {
-            errorMessage = this.state.error.message || "Erro interno do componente";
+            errorMessage =
+              this.state.error.message || "Erro interno do componente";
           }
         } catch (e) {
           errorMessage = "Erro ao processar mensagem de erro";
@@ -166,7 +183,7 @@ class ErrorBoundary extends React.Component<
       } else {
         errorMessage = "Erro interno do componente";
       }
-      
+
       return (
         <ErrorFallback
           error={errorMessage}
@@ -195,11 +212,15 @@ const ProtectedRouteBase: React.FC<{
   }
 
   // Verificação adicional para estudantes
-  if (user && user.role === 'student' && currentPath) {
-    const allowedStudentPaths = ['/', '/chat'];
-    
+  if (user && user.role === "student" && currentPath) {
+    const allowedStudentPaths = ["/", "/chat"];
+
     // Se o caminho atual não estiver na lista de permitidos para estudantes
-    if (!allowedStudentPaths.some(path => currentPath === path || currentPath.startsWith(path + '/'))) {
+    if (
+      !allowedStudentPaths.some(
+        (path) => currentPath === path || currentPath.startsWith(path + "/")
+      )
+    ) {
       return <Navigate to="/" replace />;
     }
   }
@@ -335,9 +356,24 @@ function App() {
             path="/verify-account"
             element={
               <Suspense
-                fallback={<LoadingSpinner message="Carregando verificação..." />}
+                fallback={
+                  <LoadingSpinner message="Carregando verificação..." />
+                }
               >
                 <AuthVerificationPage />
+              </Suspense>
+            }
+          />
+
+          <Route
+            path="/reset-password"
+            element={
+              <Suspense
+                fallback={
+                  <LoadingSpinner message="Carregando redefinição de senha..." />
+                }
+              >
+                <ResetPasswordPage />
               </Suspense>
             }
           />
@@ -378,7 +414,9 @@ function App() {
               path="chat/classic"
               element={
                 <Suspense
-                  fallback={<LoadingSpinner message="Carregando chat clássico..." />}
+                  fallback={
+                    <LoadingSpinner message="Carregando chat clássico..." />
+                  }
                 >
                   <ChatPage />
                 </Suspense>

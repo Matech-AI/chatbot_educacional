@@ -137,8 +137,6 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
 const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [username, setUsername] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -146,27 +144,23 @@ const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!username || !newPassword || !confirmPassword) {
-      setError("Preencha todos os campos.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError("A nova senha e a confirmação não coincidem.");
+    if (!username) {
+      setError("Preencha o nome de usuário.");
       return;
     }
     setIsLoading(true);
     try {
-      const res = await fetch("/api/auth/reset-password", {
+      const res = await fetch("/api/auth/public/request-password-reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, new_password: newPassword }),
+        body: JSON.stringify({ username }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data.detail || "Erro ao redefinir senha.");
+        setError(data.detail || "Erro ao solicitar redefinição de senha.");
       } else {
         setSuccess(true);
-        setTimeout(() => onClose(), 1500);
+        setTimeout(() => onClose(), 3000);
       }
     } catch (err) {
       setError("Erro de conexão com o servidor.");
@@ -184,32 +178,22 @@ const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         >
           ×
         </button>
-        <h2 className="text-lg font-bold mb-4">Redefinir senha</h2>
+        <h2 className="text-lg font-bold mb-4">Esqueci minha senha</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-800">
+            Digite seu nome de usuário abaixo. Se a conta existir, enviaremos um email com instruções para redefinir sua senha.
+          </div>
           <Input
-            placeholder="Usuário"
+            type="text"
+            placeholder="Nome de usuário"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
           />
-          <Input
-            type="password"
-            placeholder="Nova senha"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            required
-          />
-          <Input
-            type="password"
-            placeholder="Confirmar nova senha"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-          />
-          {error && <div className="text-red-600 text-sm">{typeof error === 'object' ? String(error) : error}</div>}
+          {error && <div className="text-red-600 text-sm">{error}</div>}
           {success && (
             <div className="text-green-600 text-sm">
-              Senha redefinida com sucesso!
+              Se o usuário existir, um email com instruções para redefinir sua senha foi enviado.
             </div>
           )}
           <div className="flex gap-2 mt-2">
@@ -222,7 +206,7 @@ const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               Cancelar
             </Button>
             <Button type="submit" isLoading={isLoading}>
-              Redefinir senha
+              Enviar
             </Button>
           </div>
         </form>
@@ -353,14 +337,7 @@ const LoginPage: React.FC = () => {
                 </motion.div>
               )}
 
-              <div className="flex justify-between mt-2">
-                <button
-                  type="button"
-                  className="text-xs text-blue-600 hover:underline"
-                  onClick={() => setShowChangePassword(true)}
-                >
-                  Alterar senha
-                </button>
+              <div className="flex justify-end mt-2">
                 <button
                   type="button"
                   className="text-xs text-blue-600 hover:underline"

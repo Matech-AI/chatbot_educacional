@@ -202,25 +202,14 @@ const UserManagementPage: React.FC = () => {
           <nav className="-mb-px flex space-x-8">
             <button
               onClick={() => setActiveTab("users")}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === "users"
                   ? "border-red-500 text-red-600"
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
               <User className="w-4 h-4 inline-block mr-2" />
-              Usuários Cadastrados ({users.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("approved")}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === "approved"
-                  ? "border-red-500 text-red-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              <Shield className="w-4 h-4 inline-block mr-2" />
-              Lista de Aprovados ({approvedUsers.length})
+              Usuários ({users.length})
             </button>
           </nav>
         </div>
@@ -236,15 +225,12 @@ const UserManagementPage: React.FC = () => {
           Criar Usuário
         </Button>
 
-        <Button onClick={() => setShowAddApproved(true)} variant="outline">
-          <Shield className="w-4 h-4 mr-2" />
-          Adicionar à Lista de Aprovados
-        </Button>
+        {/* Removendo o botão de adicionar à lista de aprovados */}
 
         <Button
           onClick={() => {
             loadUsers();
-            loadApprovedUsers();
+            // Removendo a chamada para loadApprovedUsers
           }}
           variant="outline"
         >
@@ -411,99 +397,6 @@ const UserManagementPage: React.FC = () => {
         </div>
       )}
 
-      {/* Approved Users Tab */}
-      {activeTab === "approved" && (
-        <div className="bg-white shadow rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Usuário
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Role
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ID Externo
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {approvedUsers.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="px-6 py-4 text-center text-gray-500"
-                    >
-                      Nenhum usuário na lista de aprovados
-                    </td>
-                  </tr>
-                ) : (
-                  approvedUsers.map((approvedUser, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {approvedUser.username}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {approvedUser.email || "Sem email"}
-                          </div>
-                          {approvedUser.full_name && (
-                            <div className="text-sm text-gray-500">
-                              {approvedUser.full_name}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleBadgeColor(
-                            approvedUser.role
-                          )}`}
-                        >
-                          {getRoleLabel(approvedUser.role)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {approvedUser.external_id || "N/A"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={async () => {
-                            if (
-                              confirm(
-                                `Remover ${approvedUser.username} da lista de aprovados?`
-                              )
-                            ) {
-                              try {
-                                await api.approvedUsers.remove(
-                                  approvedUser.username
-                                );
-                                await loadApprovedUsers();
-                              } catch (err) {
-                                setError("Erro ao remover usuário da lista");
-                              }
-                            }
-                          }}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {/* Create User Modal */}
       {showCreateUser && (
         <CreateUserModal
@@ -515,7 +408,7 @@ const UserManagementPage: React.FC = () => {
         />
       )}
 
-      {/* Add Approved User Modal */}
+      {/* Removendo completamente o modal de Add Approved User */}
       {showAddApproved && (
         <AddApprovedUserModal
           onClose={() => setShowAddApproved(false)}
@@ -615,7 +508,9 @@ const CreateUserModal: React.FC<{
               type="email"
               placeholder="Email"
               value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, email: e.target.value })
+              }
               required
             />
 
@@ -717,7 +612,9 @@ const AddApprovedUserModal: React.FC<{
             type="email"
             placeholder="Email"
             value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, email: e.target.value })
+            }
             required
           />
 

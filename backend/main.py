@@ -60,6 +60,8 @@ app.add_middleware(
 
 # Inclua o router de user_management para expor /auth/users e outros endpoints de autenticação
 app.include_router(user_management_router)
+# Inclua o router de autenticação para endpoints públicos como redefinição de senha
+app.include_router(auth_router)
 # Se necessário, inclua outros routers:
 app.include_router(educational_agent_router)
 

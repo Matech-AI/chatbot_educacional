@@ -117,33 +117,33 @@ async def list_users(current_user: User = Depends(get_current_user)):
     
     return get_all_users()
 
-@router.post("/public/verify-token")
-async def verify_authentication_token(token_data: TokenVerification):
-    """Verifica o token de autenticação enviado por e-mail (rota pública)"""
-    # Verificar token
-    token_info = verify_auth_token(token_data.token)
+# @router.post("/public/verify-token")
+# async def verify_authentication_token(token_data: TokenVerification):
+#     """Verifica o token de autenticação enviado por e-mail (rota pública)"""
+#     # Verificar token
+#     token_info = verify_auth_token(token_data.token)
     
-    if not token_info:
-        raise HTTPException(status_code=400, detail="Token inválido ou expirado")
+#     if not token_info:
+#         raise HTTPException(status_code=400, detail="Token inválido ou expirado")
     
-    if token_info["username"] != token_data.username:
-        raise HTTPException(status_code=400, detail="Token não corresponde ao usuário")
+#     if token_info["username"] != token_data.username:
+#         raise HTTPException(status_code=400, detail="Token não corresponde ao usuário")
     
-    # Marcar token como usado
-    mark_token_as_used(token_data.token)
+#     # Marcar token como usado
+#     mark_token_as_used(token_data.token)
     
-    # Atualizar status do usuário para aprovado
-    user = get_user(token_data.username)
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+#     # Atualizar status do usuário para aprovado
+#     user = get_user(token_data.username)
+#     if not user:
+#         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
-    user_update = UserUpdate(approved=True)
-    updated_user = update_user(token_data.username, user_update)
+#     user_update = UserUpdate(approved=True)
+#     updated_user = update_user(token_data.username, user_update)
     
-    if not updated_user:
-        raise HTTPException(status_code=500, detail="Erro ao atualizar usuário")
+#     if not updated_user:
+#         raise HTTPException(status_code=500, detail="Erro ao atualizar usuário")
     
-    return {"message": "Usuário verificado com sucesso", "username": token_data.username}
+#     return {"message": "Usuário verificado com sucesso", "username": token_data.username}
 
 
 class ResendVerificationEmail(BaseModel):

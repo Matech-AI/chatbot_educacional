@@ -162,6 +162,26 @@ export const api = {
         new_password: newPassword,
       }),
     }),
+    
+  // Reset password (public)
+  requestPasswordReset: (username: string) => 
+    apiRequestJson('/auth/public/request-password-reset', { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        username, 
+      }), 
+    }), 
+
+  // Confirm password reset (public)
+  confirmPasswordReset: (token: string, username: string, newPassword: string) => 
+    apiRequestJson('/auth/public/confirm-password-reset', { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        token, 
+        username, 
+        new_password: newPassword, 
+      }), 
+    }),
 
   // User management (admin only)
   users: {
