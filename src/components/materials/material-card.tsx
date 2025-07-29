@@ -21,9 +21,8 @@ const PDFIcon: React.FC<{ className?: string }> = ({
     <path d="M8.267 14.68c-.184 0-.308.018-.372.036v1.178c.076.018.171.023.302.023.479 0 .774-.242.774-.651 0-.366-.254-.586-.704-.586zm3.487.012c-.2 0-.33.018-.407.036v2.61c.077.018.201.018.313.018.817.006 1.349-.444 1.349-1.396.006-.83-.479-1.268-1.255-1.268z" />
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
     <path d="M14 2v6h6" />
-    <path d="M7.5 13.5h.375c.621 0 1.125.504 1.125 1.125s-.504 1.125-1.125 1.125H7.5v1.5H6v-4.5h1.5v.75z" />
-    <path d="M12.5 13.5H14c.828 0 1.5.672 1.5 1.5v1c0 .828-.672 1.5-1.5 1.5h-1.5v-4z" />
-    <path d="M17 13.5h1.5v1H17v1h1.5v1H17v.75h-1.5v-4.5H17v.75z" />
+    <path d="M10.5 17h-1l-.5-2h-2l-.5 2h-1l2-6h1l2 6zm-2.5-3.5h1.5l-.75-2.25L8.5 13.5z" />
+    <path d="M15.5 17h-1l-1.5-2.25L11.5 17h-1l2-3-2-3h1l1.5 2.25L14.5 11h1l-2 3 2 3z" />
   </svg>
 );
 
@@ -189,19 +188,20 @@ export const MaterialCard: React.FC<MaterialCardProps> = ({
   // ========================================
   // HANDLERS
   // ========================================
-  const handleView = () => {
-    const url = material.path || `/api/materials/${material.id}`;
-    window.open(url, "_blank");
-  };
+  // Removido o handleView que não é mais necessário
 
   const handleDownload = () => {
-    const link = document.createElement("a");
-    link.href = material.path || `/api/materials/${material.id}`;
-    link.download = material.title;
-    link.target = "_blank";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // Para download, adicionamos o parâmetro download=true
+    let url;
+    if (material.path) {
+      // Se já tiver um caminho completo, adicionar o parâmetro download
+      url = `${material.path}?download=true`;
+    } else {
+      // Caso contrário, construir a URL com o ID e o parâmetro download
+      url = `/api/materials/${material.id}?download=true`;
+    }
+
+    window.open(url, "_blank");
   };
 
   const handleEdit = () => {
@@ -285,18 +285,8 @@ export const MaterialCard: React.FC<MaterialCardProps> = ({
       {/* Footer */}
       <div className="border-t border-gray-200 px-4 py-3 bg-gray-50 group-hover:bg-gray-100 transition-colors duration-200">
         <div className="flex items-center justify-between">
-          {/* Ação principal */}
-          <Button
-            size="sm"
-            onClick={handleView}
-            className="flex items-center gap-2 text-xs hover:scale-105 transition-transform duration-200"
-          >
-            <ExternalLinkIcon />
-            <span>Visualizar</span>
-          </Button>
-
-          {/* Ações secundárias */}
-          <div className="flex items-center gap-1">
+          {/* Ações */}
+          <div className="flex items-center gap-1 ml-auto">
             <button
               onClick={handleDownload}
               className="p-2 rounded-md hover:bg-white hover:shadow-sm transition-all duration-200 text-gray-600 hover:text-blue-600"

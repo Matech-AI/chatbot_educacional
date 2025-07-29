@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Request, BackgroundTasks, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import FileResponse, StreamingResponse
@@ -27,6 +27,7 @@ from chat_agent import graph as chat_agent_graph
 from drive_handler import DriveHandler
 from drive_handler_recursive import RecursiveDriveHandler
 from auth import get_current_user, User, router as auth_router
+from auth import get_optional_current_user
 from user_management import router as user_management_router
 from educational_agent import router as educational_agent_router
 from drive_handler import DriveHandler
@@ -169,12 +170,21 @@ def get_file_type(filename: str) -> str:
 def format_file_info(file_path: Path, uploaded_by: str = "system") -> dict:
     """Format file information for API response"""
     stat = file_path.stat()
+    materials_dir = Path("data/materials")
+    
+    # Obter caminho relativo à pasta materials
+    try:
+        relative_path = file_path.relative_to(materials_dir)
+        file_id = str(relative_path).replace("\\", "/")
+    except ValueError:
+        file_id = file_path.name
+    
     return {
-        "id": file_path.name,
+        "id": file_id,
         "title": file_path.stem.replace('_', ' ').title(),
         "description": f"Material: {file_path.name}",
         "type": get_file_type(file_path.name),
-        "path": f"/api/materials/{file_path.name}",
+        "path": f"/api/materials/{file_id}",
         "size": stat.st_size,
         "uploadedAt": datetime.fromtimestamp(stat.st_mtime).isoformat(),
         "uploadedBy": uploaded_by,
@@ -1784,29 +1794,90 @@ async def upload_material(
         raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
 
 
-@app.get("/materials/{filename}")
-async def download_material(filename: str, current_user: User = Depends(get_current_user)):
-    """Download a material file"""
-    # Handle nested file paths
-    file_path = Path("data/materials") / filename
+@app.get("/materials/{filename:path}")
+async def download_material(filename: str, download: bool = False, current_user: Optional[User] = Depends(get_optional_current_user)):
+    """Download a material file with optional authentication"""
+    # Verificar se o arquivo deve ser protegido
+    requires_auth = should_require_auth(filename)
+    
+    # Se o arquivo requer autenticação e o usuário não está autenticado, negar acesso
+    if requires_auth and current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Normalizar o caminho do arquivo
+    normalized_filename = filename.replace("/", os.path.sep)
+    file_path = Path("data/materials") / normalized_filename
 
     if not file_path.exists() or not file_path.is_file():
         # Try to find file recursively
         materials_dir = Path("data/materials")
-        found_files = list(materials_dir.rglob(filename))
+        found_files = list(materials_dir.rglob(Path(normalized_filename).name))
 
         if found_files:
             file_path = found_files[0]
         else:
             raise HTTPException(status_code=404, detail="File not found")
-
-    logger.info(f"📥 File download by {current_user.username}: {filename}")
-
+    
+    # Registrar o download (opcional)
+    logger.info(f"📥 File access: {file_path.name} by {current_user.username if current_user else 'anonymous'}")
+    
+    # Determinar o tipo MIME com base na extensão do arquivo
+    content_type, _ = mimetypes.guess_type(str(file_path))
+    
+    # Se não conseguir determinar o tipo MIME, usar um padrão baseado na extensão
+    if not content_type:
+        if file_path.name.lower().endswith('.pdf'):
+            content_type = 'application/pdf'
+        elif file_path.name.lower().endswith('.txt'):
+            content_type = 'text/plain'
+        elif file_path.name.lower().endswith('.docx'):
+            content_type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        else:
+            # Para outros tipos, forçar o download
+            content_type = 'application/octet-stream'
+    
+    # Usar o parâmetro download da URL para determinar se deve forçar o download
+    force_download = download
+    
     return FileResponse(
         path=str(file_path),
-        filename=filename,
-        media_type='application/octet-stream'
+        filename=Path(normalized_filename).name,
+        media_type=content_type,
+        # Se force_download for True, adicionar o cabeçalho Content-Disposition
+        headers={'Content-Disposition': f'attachment; filename="{Path(normalized_filename).name}"'} if force_download else None
     )
+
+
+def should_require_auth(filename: str) -> bool:
+    """Determina se um arquivo requer autenticação com base em regras específicas"""
+    # Exemplo: arquivos com 'public' no nome não requerem autenticação
+    if 'public' in filename.lower():
+        return False
+        
+    # Exemplo: certos tipos de arquivo não requerem autenticação
+    if filename.lower().endswith(('.pdf', '.txt')):
+        return False
+        
+    # Por padrão, outros arquivos requerem autenticação
+    return True
+
+
+def should_require_auth(filename: str) -> bool:
+    """Determina se um arquivo requer autenticação com base em regras específicas"""
+    # Exemplo: arquivos com 'public' no nome não requerem autenticação
+    if 'public' in filename.lower():
+        return False
+        
+    # Exemplo: certos tipos de arquivo não requerem autenticação
+    if filename.lower().endswith(('.pdf', '.txt')):
+        return False
+        
+    # Por padrão, outros arquivos requerem autenticação
+    return True
 
 
 @app.delete("/materials/{filename}")
@@ -1835,6 +1906,70 @@ async def delete_material(filename: str, current_user: User = Depends(get_curren
     except Exception as e:
         logger.error(f"❌ Delete error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Delete error: {str(e)}")
+
+
+@app.put("/materials/{filename}/metadata")
+async def update_material_metadata(
+    filename: str,
+    description: str = Form(""),
+    tags: str = Form(""),
+    current_user: User = Depends(get_current_user)
+):
+    """Update material metadata"""
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    logger.info(f"✏️ Metadata update by {current_user.username}: {filename}")
+
+    # Handle nested file paths
+    file_path = Path("data/materials") / filename
+
+    if not file_path.exists() or not file_path.is_file():
+        # Try to find file recursively
+        materials_dir = Path("data/materials")
+        found_files = list(materials_dir.rglob(filename))
+
+        if found_files:
+            file_path = found_files[0]
+        else:
+            raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        # Atualizar metadados no banco de dados ou em algum arquivo de metadados
+        # Aqui você precisaria implementar a lógica para armazenar os metadados
+        # Por exemplo, você poderia ter um arquivo JSON com os metadados de todos os materiais
+        
+        # Exemplo simplificado (você precisaria adaptar isso ao seu sistema de armazenamento de metadados):
+        metadata_file = Path("data/materials_metadata.json")
+        
+        if metadata_file.exists():
+            with open(metadata_file, "r") as f:
+                metadata = json.load(f)
+        else:
+            metadata = {}
+        
+        # Atualizar metadados do arquivo
+        if filename not in metadata:
+            metadata[filename] = {}
+        
+        metadata[filename]["description"] = description
+        
+        if tags:
+            try:
+                tags_list = json.loads(tags)
+                metadata[filename]["tags"] = tags_list
+            except:
+                metadata[filename]["tags"] = []
+        
+        # Salvar metadados atualizados
+        with open(metadata_file, "w") as f:
+            json.dump(metadata, f)
+        
+        logger.info(f"✅ Metadata updated for {filename}")
+        return {"status": "success", "message": f"Metadata updated for {filename}"}
+    except Exception as e:
+        logger.error(f"❌ Update error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Update error: {str(e)}")
 
 # ========================================
 # DEBUG ENDPOINTS

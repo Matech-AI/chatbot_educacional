@@ -99,6 +99,39 @@ async function deleteMaterialAPI(id: string): Promise<boolean> {
   }
 }
 
+// Adicionar esta função de API
+async function updateMaterialAPI(id: string, description?: string, tags?: string[]): Promise<boolean> {
+  try {
+    const formData = new FormData();
+    
+    if (description) {
+      formData.append('description', description);
+    }
+    
+    if (tags && tags.length > 0) {
+      formData.append('tags', JSON.stringify(tags));
+    }
+    
+    const response = await fetch(`/api/materials/${id}/metadata`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      },
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      console.error('Failed to update material:', response.status);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error updating material:', error);
+    return false;
+  }
+}
+
 export const useMaterialsStore = create<MaterialsState>((set, get) => ({
   materials: [],
   isLoading: false,
@@ -163,7 +196,38 @@ export const useMaterialsStore = create<MaterialsState>((set, get) => ({
       return false;
     }
   },
+
+  // Adicionar esta função ao store
+  updateMaterial: async (id, description, tags) => {
+    set({ isProcessing: true });
+    try {
+      console.log('✏️ Updating material:', id);
+      const success = await updateMaterialAPI(id, description, tags);
+      if (success) {
+        console.log('✅ Update successful, refreshing materials...');
+        // Refresh materials list after successful update
+        await get().fetchMaterials();
+      }
+      set({ isProcessing: false });
+      return success;
+    } catch (error) {
+      console.error('❌ Error in updateMaterial:', error);
+      set({ isProcessing: false });
+      return false;
+    }
+  },
 }));
+
+// Atualizar a interface MaterialsState
+interface MaterialsState {
+  materials: Material[];
+  isLoading: boolean;
+  isProcessing: boolean;
+  fetchMaterials: () => Promise<void>;
+  uploadMaterial: (file: File, description?: string, tags?: string[]) => Promise<boolean>;
+  deleteMaterial: (id: string) => Promise<boolean>;
+  updateMaterial: (id: string, description?: string, tags?: string[]) => Promise<boolean>;
+}
 
 // Hook personalizado para evitar re-renders desnecessários
 export const useMaterialsActions = () => {

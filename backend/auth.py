@@ -12,6 +12,8 @@ from pathlib import Path
 from email_service import generate_auth_token, send_password_reset_email, send_temp_password_email, generate_temp_password, send_auth_email
 from auth_token_manager import create_auth_token, verify_auth_token, mark_token_as_used, clean_expired_tokens
 from external_id_manager import get_next_external_id, mark_external_id_as_deleted, reorganize_external_ids
+from typing import Optional
+from fastapi import Request
 
 # Adicione esta linha para definir o router
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -611,3 +613,32 @@ async def confirm_password_reset(reset_data: PasswordResetConfirm):
         save_users_db(users_db)
     
     return {"message": "Senha redefinida com sucesso"}
+
+# Adicionar após a definição do oauth2_scheme existente
+class OAuth2PasswordBearerOptional(OAuth2PasswordBearer):
+    async def __call__(self, request: Request) -> Optional[str]:
+        try:
+            return await super().__call__(request)
+        except HTTPException:
+            return None
+
+oauth2_scheme_optional = OAuth2PasswordBearerOptional(tokenUrl="/auth/token")
+
+# Adicionar após a função get_current_user (linha 490)
+
+async def get_optional_current_user(token: str = Depends(oauth2_scheme_optional)):
+    """Similar ao get_current_user, mas não falha se o token não for fornecido"""
+    if token is None:
+        return None
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+        token_data = TokenData(username=username)
+    except JWTError:
+        return None
+    
+    user = get_user(username=token_data.username)
+    return user

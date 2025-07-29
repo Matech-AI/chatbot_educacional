@@ -34,16 +34,18 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
     fetchMaterials,
     uploadMaterial,
     deleteMaterial,
+    updateMaterial,
   } = useMaterialsStore();
   const { user } = useAuthStore();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<
-    "materials" | "upload" | "sync" | "recursive" | "stats"
+    "materials" | "upload" | "sync" | "recursive" | "stats" | "edit" // Adicionar "edit"
   >("materials");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [folderStructure, setFolderStructure] = useState<any>(null);
   const [driveStats, setDriveStats] = useState<any>(null);
+  const [editingMaterial, setEditingMaterial] = useState<Material | null>(null); // Adicionar esta linha
 
   // Can manage materials if admin or instructor
   const canManage = user?.role === "admin" || user?.role === "instructor";
@@ -106,8 +108,22 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
   };
 
   const handleEdit = (material: Material) => {
-    // TODO: Implement edit functionality
-    console.log("Edit material:", material);
+    setEditingMaterial(material);
+    setActiveTab("edit");
+  };
+
+  const handleUpdate = async (
+    id: string,
+    description: string,
+    tags: string[]
+  ) => {
+    const success = await updateMaterial(id, description, tags);
+    if (success) {
+      setActiveTab("materials");
+      setEditingMaterial(null);
+      loadDriveStats(); // Refresh stats
+    }
+    return success;
   };
 
   const handleSync = () => {
@@ -581,6 +597,23 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
                 Atualizar Estatísticas
               </Button>
             </div>
+          </motion.div>
+        )}
+        
+        {/* Adicionar esta seção para a aba de edição */}
+        {activeTab === "edit" && editingMaterial && (
+          <motion.div
+            key="edit"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+          >
+            <UploadForm 
+              onUpload={handleUpload} 
+              onUpdate={(id, description, tags) => handleUpdate(id, description, tags)}
+              isLoading={isProcessing} 
+              material={editingMaterial}
+            />
           </motion.div>
         )}
       </AnimatePresence>
