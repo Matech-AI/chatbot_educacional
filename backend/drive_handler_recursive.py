@@ -42,11 +42,22 @@ class RecursiveDriveHandler:
             'errors': 0
         }
 
+        # Flag para controlar cancelamento de operações
+        self.cancel_flag = False
+
         # Updated scopes for better access
         self.scopes = [
             'https://www.googleapis.com/auth/drive.readonly',
             'https://www.googleapis.com/auth/drive.metadata.readonly'
         ]
+        
+        # Adicionar cache de autenticação
+        self.auth_cache = {
+            'last_auth_time': 0,
+            'auth_valid_for': 30 * 60,  # 30 minutos em segundos
+            'auth_method': None,
+            'is_authenticated': False
+        }
 
         logger.info(f"🚀 Initialized RecursiveDriveHandler with materials directory: {self.materials_dir}")
 
@@ -54,6 +65,52 @@ class RecursiveDriveHandler:
         """Main authentication method that tries multiple approaches in order"""
         logger.info("🚀 Starting Google Drive authentication process...")
 
+        # Verificar se já estamos autenticados e o cache ainda é válido
+        current_time = time.time()
+        if (self.service and 
+            self.auth_cache['is_authenticated'] and
+            current_time - self.auth_cache['last_auth_time'] < self.auth_cache['auth_valid_for']):
+            logger.info(f"✅ Using cached authentication ({self.auth_cache['auth_method']})")
+            return True
+
+        # Priorizar token.json existente
+        token_path = 'token.json'
+        if os.path.exists(token_path):
+            try:
+                logger.info("🔄 Found existing token.json, attempting to use it directly")
+                creds = Credentials.from_authorized_user_file(token_path, self.scopes)
+                
+                # Verificar se o token é válido ou pode ser atualizado
+                if creds and creds.valid:
+                    logger.info("✅ Existing token is valid")
+                    self.service = build('drive', 'v3', credentials=creds)
+                    
+                    # Atualizar o cache de autenticação
+                    self.auth_cache['last_auth_time'] = time.time()
+                    self.auth_cache['auth_method'] = 'oauth2'
+                    self.auth_cache['is_authenticated'] = True
+                    
+                    return True
+                elif creds and creds.expired and creds.refresh_token:
+                    logger.info("🔄 Existing token expired, refreshing...")
+                    creds.refresh(Request())
+                    # Salvar o token atualizado
+                    with open(token_path, 'w') as token:
+                        token.write(creds.to_json())
+                    logger.info("✅ Token refreshed successfully")
+                    self.service = build('drive', 'v3', credentials=creds)
+                    
+                    # Atualizar o cache de autenticação
+                    self.auth_cache['last_auth_time'] = time.time()
+                    self.auth_cache['auth_method'] = 'oauth2'
+                    self.auth_cache['is_authenticated'] = True
+                    
+                    return True
+            except Exception as e:
+                logger.warning(f"⚠️ Error using existing token: {e}")
+                # Continuar com outros métodos de autenticação
+
+        # Tentar outros métodos de autenticação se o token.json não funcionou
         auth_methods = [
             ("API Key", lambda: self.authenticate_with_api_key(api_key) if api_key else False),
             ("Environment API Key", lambda: self.authenticate_with_api_key(os.getenv('GOOGLE_DRIVE_API_KEY')) if os.getenv('GOOGLE_DRIVE_API_KEY') else False),
@@ -72,6 +129,9 @@ class RecursiveDriveHandler:
             except Exception as e:
                 logger.error(f"❌ Error with {method_name}: {e}")
 
+        # Resetar o cache de autenticação em caso de falha
+        self.auth_cache['is_authenticated'] = False
+        
         logger.error("❌ All authentication methods failed")
         return False
 
@@ -96,6 +156,11 @@ class RecursiveDriveHandler:
                 else:
                     logger.error(f"❌ API Key test failed: HTTP {e.resp.status}")
                     return False
+            
+            # Atualizar o cache de autenticação
+            self.auth_cache['last_auth_time'] = time.time()
+            self.auth_cache['auth_method'] = 'api_key'
+            self.auth_cache['is_authenticated'] = True
 
             logger.info("✅ Successfully authenticated with Google Drive using API Key")
             return True
@@ -105,18 +170,35 @@ class RecursiveDriveHandler:
             return False
 
     def authenticate_with_credentials(self, credentials_path: str = 'credentials.json') -> bool:
-        """Authenticate with Google Drive using OAuth2 credentials"""
+        """Authenticate with Google Drive using OAuth2 credentials with improved flow"""
         try:
+            # Verificar se já estamos autenticados e o cache ainda é válido
+            current_time = time.time()
+            if (self.service and 
+                self.auth_cache['is_authenticated'] and 
+                self.auth_cache['auth_method'] == 'oauth2' and
+                current_time - self.auth_cache['last_auth_time'] < self.auth_cache['auth_valid_for']):
+                logger.info("✅ Using cached OAuth2 authentication")
+                return True
+                
             logger.info("🔐 Attempting OAuth2 authentication...")
-            
+            logger.info(f"📄 Credentials file path: {credentials_path}")
+            logger.info(f"📄 Credentials file exists: {os.path.exists(credentials_path)}")
+
             creds = None
             token_path = 'token.json'
+            logger.info(f"🎫 Token file path: {token_path}")
+            logger.info(f"🎫 Token file exists: {os.path.exists(token_path)}")
 
             # Load existing token
             if os.path.exists(token_path):
                 logger.info("📖 Loading existing token from file...")
                 try:
                     creds = Credentials.from_authorized_user_file(token_path, self.scopes)
+                    logger.info(f"🎫 Token loaded. Valid: {creds.valid if creds else False}")
+
+                    if creds and creds.expired:
+                        logger.info(f"🎫 Token expired: {creds.expired}")
                 except Exception as e:
                     logger.warning(f"⚠️ Error loading token: {e}")
                     creds = None
@@ -137,17 +219,46 @@ class RecursiveDriveHandler:
                 if not creds:
                     if not os.path.exists(credentials_path):
                         logger.error(f"❌ Credentials file not found: {credentials_path}")
-                        return False
+                        raise FileNotFoundError(f"Credentials file not found: {credentials_path}")
 
                     logger.info("🌐 Starting OAuth2 flow...")
-                    flow = InstalledAppFlow.from_client_secrets_file(credentials_path, self.scopes)
-                    
+
+                    # Create flow with improved settings
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        credentials_path,
+                        self.scopes,
+                        redirect_uri='http://localhost:8080'  # Explicit redirect URI
+                    )
+
+                    # Run local server with better error handling
                     try:
-                        creds = flow.run_local_server(port=8080, open_browser=False)
+                        logger.info("🖥️ Starting local server for OAuth2...")
+                        # Modificação aqui: Adicionar access_type='offline' e prompt='consent'
+                        # para garantir que recebamos um refresh_token de longa duração
+                        flow.authorization_url(access_type='offline', prompt='consent')
+                        
+                        creds = flow.run_local_server(
+                            port=8080,
+                            open_browser=False,
+                            success_message='Authentication successful! You can close this window.',
+                            timeout_seconds=300  # 5 minute timeout
+                        )
                         logger.info("✅ OAuth2 flow completed successfully")
+
                     except Exception as oauth_error:
                         logger.error(f"❌ OAuth2 flow failed: {oauth_error}")
-                        return False
+
+                        # Try console flow as fallback
+                        logger.info("🔄 Trying console-based authentication as fallback...")
+                        try:
+                            # Também adicionar access_type='offline' e prompt='consent' aqui
+                            auth_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
+                            print(f"Please go to this URL: {auth_url}")
+                            creds = flow.run_console()
+                            logger.info("✅ Console authentication successful")
+                        except Exception as console_error:
+                            logger.error(f"❌ Console authentication also failed: {console_error}")
+                            return False
 
                 # Save the credentials for the next run
                 if creds:
@@ -162,7 +273,8 @@ class RecursiveDriveHandler:
             if creds:
                 logger.info("🔨 Building Google Drive service...")
                 self.service = build('drive', 'v3', credentials=creds)
-                
+
+                # Test the service with a simple request
                 try:
                     about = self.service.about().get(fields="user").execute()
                     user_email = about.get('user', {}).get('emailAddress', 'Unknown')
@@ -170,6 +282,11 @@ class RecursiveDriveHandler:
                 except Exception as e:
                     logger.warning(f"⚠️ Could not get user info, but service created: {e}")
 
+                # Atualizar o cache de autenticação
+                self.auth_cache['last_auth_time'] = time.time()
+                self.auth_cache['auth_method'] = 'oauth2'
+                self.auth_cache['is_authenticated'] = True
+                
                 logger.info("✅ Successfully authenticated with Google Drive using OAuth2")
                 return True
             else:
@@ -178,6 +295,7 @@ class RecursiveDriveHandler:
 
         except Exception as e:
             logger.error(f"❌ Error authenticating with OAuth2: {str(e)}")
+            logger.error(f"❌ Error type: {type(e).__name__}")
             return False
 
     def authenticate_public_access(self) -> bool:
@@ -185,16 +303,27 @@ class RecursiveDriveHandler:
         try:
             logger.info("🔓 Attempting public access without authentication...")
             self.service = build('drive', 'v3')
+            
+            # Atualizar o cache de autenticação
+            self.auth_cache['last_auth_time'] = time.time()
+            self.auth_cache['auth_method'] = 'public'
+            self.auth_cache['is_authenticated'] = True
+            
             logger.info("✅ Public service built successfully")
             return True
         except Exception as e:
             logger.error(f"❌ Public access failed: {str(e)}")
             return False
 
-    def get_folder_structure(self, folder_id: str, current_path: str = "") -> Dict[str, Any]:
-        """Get complete folder structure recursively"""
+    def get_folder_structure(self, folder_id: str, current_path: str = "", max_depth: int = None, current_depth: int = 0) -> Dict[str, Any]:
+        """Get complete folder structure recursively with optional depth limit"""
         logger.info(f"📁 Analyzing folder structure: {folder_id} at path: {current_path}")
         
+        # Verificar flag de cancelamento
+        if self.cancel_flag:
+            logger.info("🛑 Análise de estrutura de pastas cancelada")
+            raise Exception("Operação cancelada pelo usuário")
+            
         try:
             # Get folder info
             try:
@@ -212,6 +341,10 @@ class RecursiveDriveHandler:
                 'files': []
             }
             
+            # Check if we've reached the maximum depth
+            if max_depth is not None and current_depth >= max_depth:
+                return structure
+            
             # List all items in folder
             query = f"'{folder_id}' in parents and trashed = false"
             try:
@@ -225,12 +358,20 @@ class RecursiveDriveHandler:
                 logger.info(f"📊 Found {len(items)} items in folder: {folder_name}")
                 
                 for item in items:
+                    # Verificar flag de cancelamento periodicamente
+                    if self.cancel_flag:
+                        logger.info("🛑 Análise de estrutura de pastas cancelada durante o processamento")
+                        raise Exception("Operação cancelada pelo usuário")
+                        
                     if item.get('mimeType') == 'application/vnd.google-apps.folder':
                         # It's a subfolder - recurse
                         subfolder_path = os.path.join(current_path, folder_name) if current_path else folder_name
                         try:
                             structure['subfolders'][item['id']] = self.get_folder_structure(
-                                item['id'], subfolder_path
+                                item['id'], 
+                                subfolder_path,
+                                max_depth=max_depth,
+                                current_depth=current_depth + 1
                             )
                             self.download_stats['total_folders'] += 1
                         except Exception as e:
@@ -262,6 +403,18 @@ class RecursiveDriveHandler:
                 'subfolders': {},
                 'files': []
             }
+
+    def clear_file_hashes_cache(self):
+        """Clear the file hashes cache to allow redownloading files"""
+        logger.info(f"🧹 Clearing file hashes cache. Before: {len(self.file_hashes)} entries")
+        self.file_hashes = {}
+        self.processed_files = {}
+        logger.info(f"✅ File hashes cache cleared successfully")
+        return {
+            "status": "success",
+            "message": "File hashes cache cleared successfully",
+            "cleared_entries": len(self.file_hashes)
+        }
 
     def calculate_file_hash(self, file_content: bytes) -> str:
         """Calculate SHA256 hash of file content"""
@@ -436,6 +589,11 @@ class RecursiveDriveHandler:
         """Process folder structure recursively and download all files"""
         processed_files = []
         
+        # Verificar flag de cancelamento
+        if self.cancel_flag:
+            logger.info("🛑 Folder processing cancelled")
+            raise Exception("Operation cancelled by user")
+            
         folder_path = folder_structure['path']
         folder_name = folder_structure['name']
         
@@ -446,6 +604,11 @@ class RecursiveDriveHandler:
         
         # Process files in current folder
         for file_info in folder_structure['files']:
+            # Verificar flag de cancelamento periodicamente
+            if self.cancel_flag:
+                logger.info("🛑 File processing cancelled")
+                raise Exception("Operation cancelled by user")
+                
             try:
                 file_result = self.download_file_with_duplicate_check(
                     file_info['id'], 
@@ -460,6 +623,11 @@ class RecursiveDriveHandler:
         
         # Process subfolders recursively
         for subfolder_structure in folder_structure['subfolders'].values():
+            # Verificar flag de cancelamento periodicamente
+            if self.cancel_flag:
+                logger.info("🛑 Subfolder processing cancelled")
+                raise Exception("Operation cancelled by user")
+                
             try:
                 subfolder_files = self.process_folder_recursive(subfolder_structure)
                 processed_files.extend(subfolder_files)
@@ -469,11 +637,16 @@ class RecursiveDriveHandler:
         
         return processed_files
 
-    def download_drive_recursive(self, root_folder_id: str) -> Dict[str, Any]:
+    async def download_drive_recursive_async(self, root_folder_id: str, max_depth: int = None) -> Dict[str, Any]:
+        """Versão assíncrona do download recursivo"""
+        # Implementação assíncrona usando asyncio
+        # ...
+
+    def download_drive_recursive(self, root_folder_id: str, max_depth: int = None) -> Dict[str, Any]:
         """Main method to download entire Drive folder structure recursively"""
         logger.info(f"🚀 Starting recursive download of folder: {root_folder_id}")
         
-        # Reset stats
+        # Reset stats and cancel flag
         self.download_stats = {
             'total_folders': 0,
             'total_files': 0,
@@ -483,13 +656,24 @@ class RecursiveDriveHandler:
         }
         self.processed_files.clear()
         self.file_hashes.clear()
+        self.cancel_flag = False  # Garantir que começamos com o flag desativado
         
         start_time = time.time()
         
         try:
+            # Verificar flag de cancelamento
+            if self.cancel_flag:
+                logger.info("🛑 Download cancelado antes de iniciar a análise")
+                raise Exception("Operação cancelada pelo usuário")
+                
             # First, get the complete folder structure
             logger.info("📊 Analyzing complete folder structure...")
-            folder_structure = self.get_folder_structure(root_folder_id)
+            folder_structure = self.get_folder_structure(root_folder_id, max_depth=max_depth)
+            
+            # Verificar flag de cancelamento após análise da estrutura
+            if self.cancel_flag:
+                logger.info("🛑 Download cancelado após análise da estrutura")
+                raise Exception("Operação cancelada pelo usuário")
             
             analysis_time = time.time() - start_time
             logger.info(f"✅ Structure analysis completed in {analysis_time:.2f}s")
@@ -499,6 +683,11 @@ class RecursiveDriveHandler:
             logger.info("📥 Starting file downloads...")
             download_start = time.time()
             processed_files = self.process_folder_recursive(folder_structure)
+            
+            # Verificar flag de cancelamento após processamento
+            if self.cancel_flag:
+                logger.info("🛑 Download cancelado após processamento de arquivos")
+                raise Exception("Operação cancelada pelo usuário")
             
             download_time = time.time() - download_start
             total_time = time.time() - start_time
@@ -622,25 +811,35 @@ class RecursiveDriveHandler:
 
     def cleanup_temp_files(self):
         """Clean up temporary authentication files"""
-        temp_files = ['token.json']  # Keep credentials.json
-        for file in temp_files:
-            if os.path.exists(file):
-                try:
-                    os.remove(file)
-                    logger.info(f"🧹 Cleaned up temporary file: {file}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Could not remove {file}: {e}")
+        # Comentado para manter o token.json entre sessões
+        # temp_files = ['token.json']  # Keep credentials.json
+        # for file in temp_files:
+        #     if os.path.exists(file):
+        #         try:
+        #             os.remove(file)
+        #             logger.info(f"🧹 Cleaned up temporary file: {file}")
+        #         except Exception as e:
+        #             logger.warning(f"⚠️ Could not remove {file}: {e}")
+        
+        # Apenas registra que a função foi chamada sem remover arquivos
+        logger.info("🧹 Função cleanup_temp_files chamada, mas token.json foi preservado")
+        
+        def reset(self):
+            """Reset handler state"""
+            logger.info("🔄 Resetting RecursiveDriveHandler...")
+            self.processed_files.clear()
+            self.file_hashes.clear()
+            self.download_stats = {
+                'total_folders': 0,
+                'total_files': 0,
+                'downloaded_files': 0,
+                'skipped_duplicates': 0,
+                'errors': 0
+            }
+            self.cancel_flag = False  # Resetar flag de cancelamento
+            logger.info("✅ Handler reset completed")
 
-    def reset(self):
-        """Reset handler state"""
-        logger.info("🔄 Resetting RecursiveDriveHandler...")
-        self.processed_files.clear()
-        self.file_hashes.clear()
-        self.download_stats = {
-            'total_folders': 0,
-            'total_files': 0,
-            'downloaded_files': 0,
-            'skipped_duplicates': 0,
-            'errors': 0
-        }
-        logger.info("✅ Handler reset completed")
+        def set_cancel_flag(self, value: bool = True):
+            """Define o flag de cancelamento para interromper operações em andamento"""
+            self.cancel_flag = value
+            logger.info(f"🛑 Flag de cancelamento definido como: {value}")

@@ -3,21 +3,20 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import {
-  Cloud,
   AlertCircle,
   CheckCircle,
   Info,
-  RefreshCw,
   Download,
   Eye,
   FolderTree,
   Zap,
   BarChart3,
-  Clock,
-  Files,
-  HardDrive,
+  X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+
+// Importar as funções de API no topo do arquivo
+import { apiRequest, apiRequestJson } from "../../lib/api";
 
 interface RecursiveDriveSyncProps {
   onSync: () => void;
@@ -55,23 +54,37 @@ interface FolderStructure {
   files: any[];
 }
 
+// Adicionar no início do componente RecursiveDriveSync
 export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
   onSync,
   isLoading,
 }) => {
+  // Carregar valores do localStorage se disponíveis
   const [folderInput, setFolderInput] = useState(
-    "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
+    localStorage.getItem("lastDriveFolderId") || "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
   );
-  const [apiKey, setApiKey] = useState("");
-  const [maxDepth, setMaxDepth] = useState<number>(10);
+  const [apiKey, setApiKey] = useState(
+    localStorage.getItem("lastDriveApiKey") || ""
+  );
+  const [maxDepth, setMaxDepth] = useState<number>(
+    parseInt(localStorage.getItem("lastDriveMaxDepth") || "10")
+  );
   const [isRecursive, setIsRecursive] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
-  const [syncResult, setSyncResult] = useState<RecursiveSyncResult | null>(null);
-  const [folderStructure, setFolderStructure] = useState<FolderStructure | null>(null);
+  const [syncResult, setSyncResult] = useState<RecursiveSyncResult | null>(
+    null
+  );
+  const [folderStructure, setFolderStructure] =
+    useState<FolderStructure | null>(null);
+  const [currentDownloadId, setCurrentDownloadId] = useState<string | null>(
+    null
+  );
+  const [progressInterval, setProgressInterval] =
+    useState<NodeJS.Timeout | null>(null);
 
   const extractFolderIdFromUrl = (url: string): string | null => {
     try {
@@ -125,33 +138,39 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
 
       if (!folderId || !validateDriveFolderId(folderId)) {
         setError("ID da pasta inválido");
+        setIsAnalyzing(false);
         return;
       }
 
-      const response = await fetch("/api/recursive-drive-analysis", {
+      // Salvar valores no localStorage
+      localStorage.setItem("lastDriveFolderId", folderId);
+      if (apiKey) localStorage.setItem("lastDriveApiKey", apiKey);
+      localStorage.setItem("lastDriveMaxDepth", maxDepth.toString());
+      localStorage.setItem("lastDriveAuthSuccess", "true");
+
+      // Definir uma mensagem de status inicial
+      setSuccess("🔍 Analisando estrutura de pastas...");
+
+      // Substituir a chamada fetch direta por apiRequestJson
+      const result = await apiRequestJson("/recursive-drive-analysis", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
         body: JSON.stringify({
+          folder_id: folderId,
           root_folder_id: folderId,
           api_key: apiKey || undefined,
           max_depth: maxDepth,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      // Verificar se a análise ainda está em andamento (não foi cancelada)
+      if (isAnalyzing) {
+        setAnalysisResult(result);
+        setFolderStructure(result.folder_structure);
+
+        setSuccess(
+          `✅ Análise concluída! ${result.statistics.total_folders} pastas e ${result.statistics.total_files} arquivos encontrados`
+        );
       }
-
-      const result = await response.json();
-      setAnalysisResult(result);
-      setFolderStructure(result.folder_structure);
-
-      setSuccess(
-        `✅ Análise concluída! ${result.statistics.total_folders} pastas e ${result.statistics.total_files} arquivos encontrados`
-      );
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Erro desconhecido";
@@ -167,54 +186,173 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
       setError(null);
       setSuccess(null);
       setIsProcessing(true);
-      setSyncResult(null);
 
+      // Adicionar esta lógica para extrair o ID da pasta
       const folderId =
         extractFolderIdFromUrl(folderInput.trim()) || folderInput.trim();
 
       if (!folderId || !validateDriveFolderId(folderId)) {
         setError("ID da pasta inválido");
+        setIsProcessing(false);
         return;
       }
 
       console.log("Iniciando sincronização recursiva:", folderId);
 
-      const response = await fetch("/api/recursive-drive-sync", {
+      // Substituir a chamada fetch direta pela função da API
+      const result = await apiRequestJson("/drive/sync-recursive", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
         body: JSON.stringify({
-          root_folder_id: folderId,
+          folder_id: folderId,
           api_key: apiKey || undefined,
           max_depth: maxDepth,
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `HTTP ${response.status}`);
+      // Verificar se o download foi iniciado com sucesso
+      if (result.status === "started" && result.download_id) {
+        // Armazenar o ID do download atual
+        const downloadId = result.download_id;
+        setCurrentDownloadId(downloadId);
+
+        let isCompleted = false;
+        let progressResult = null;
+
+        // Definir uma mensagem de status inicial
+        setSuccess(
+          "⏳ Download iniciado em segundo plano. Monitorando progresso..."
+        );
+
+        // Monitorar o progresso a cada 2 segundos
+        const interval = setInterval(async () => {
+          try {
+            // Usar a API para obter o progresso
+            const progress = await apiRequestJson(
+              `/drive/download-progress?download_id=${downloadId}`
+            );
+
+            // Atualizar a mensagem de status com o progresso atual
+            if (progress.status === "analyzing") {
+              setSuccess("🔍 Analisando estrutura de pastas...");
+            } else if (progress.status === "processing") {
+              setSuccess(
+                `📥 Baixando arquivos: ${progress.downloaded_files || 0} de ${
+                  progress.total_files || "?"
+                }`
+              );
+            } else if (progress.status === "completed" && progress.result) {
+              // Download concluído, limpar o intervalo
+              clearInterval(interval);
+              setProgressInterval(null);
+              isCompleted = true;
+              progressResult = progress.result;
+
+              // Limpar o ID do download atual
+              setCurrentDownloadId(null);
+
+              // Atualizar o estado com o resultado final
+              setSyncResult(progressResult);
+
+              // Exibir mensagem de sucesso
+              setSuccess(
+                `🎉 Sincronização recursiva concluída! ${progressResult.statistics.downloaded_files} arquivos baixados, ${progressResult.statistics.skipped_duplicates} duplicatas evitadas`
+              );
+
+              // Refresh materials list
+              setTimeout(() => {
+                onSync();
+              }, 2000);
+
+              // Finalizar o processamento
+              setIsProcessing(false);
+            } else if (progress.status === "error") {
+              // Erro no download, limpar o intervalo
+              clearInterval(interval);
+              setProgressInterval(null);
+              setCurrentDownloadId(null);
+              throw new Error(
+                progress.error || "Erro desconhecido no download"
+              );
+            } else if (progress.status === "cancelled") {
+              // Download cancelado, limpar o intervalo
+              clearInterval(interval);
+              setProgressInterval(null);
+              setCurrentDownloadId(null);
+              setIsProcessing(false);
+              setSuccess("❌ Download cancelado");
+            }
+          } catch (err) {
+            clearInterval(interval);
+            setProgressInterval(null);
+            setCurrentDownloadId(null);
+            throw err;
+          }
+        }, 2000);
+
+        // Armazenar o intervalo para poder cancelá-lo posteriormente
+        setProgressInterval(interval);
+
+        // Definir um timeout para evitar que o intervalo continue indefinidamente
+        setTimeout(() => {
+          if (!isCompleted) {
+            clearInterval(interval);
+            setProgressInterval(null);
+            setCurrentDownloadId(null);
+            setIsProcessing(false);
+          }
+        }, 30 * 60 * 1000); // 30 minutos de timeout
+      } else {
+        // Se não recebemos um download_id, algo deu errado
+        throw new Error("Não foi possível iniciar o download recursivo");
       }
-
-      const result: RecursiveSyncResult = await response.json();
-      setSyncResult(result);
-
-      setSuccess(
-        `🎉 Sincronização recursiva concluída! ${result.statistics.downloaded_files} arquivos baixados, ${result.statistics.skipped_duplicates} duplicatas evitadas`
-      );
-
-      // Refresh materials list
-      setTimeout(() => {
-        onSync();
-      }, 2000);
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Erro desconhecido";
       setError(`Erro na sincronização: ${errorMessage}`);
       console.error("Erro na sincronização:", err);
-    } finally {
       setIsProcessing(false);
+      setCurrentDownloadId(null);
+    }
+  };
+
+  const handleCancelSync = async () => {
+    try {
+      // Se estiver analisando, apenas interrompe a análise
+      if (isAnalyzing) {
+        setIsAnalyzing(false);
+        setSuccess("❌ Análise cancelada pelo usuário");
+        return;
+      }
+
+      // Caso contrário, procede com o cancelamento do download
+      if (!currentDownloadId) {
+        setError("Não há download em andamento para cancelar");
+        return;
+      }
+
+      // Limpar o intervalo de progresso
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        setProgressInterval(null);
+      }
+
+      // Chamar a API para cancelar o download
+      await apiRequestJson("/drive/cancel-download", {
+        method: "POST",
+        body: JSON.stringify({
+          download_id: currentDownloadId,
+        }),
+      });
+
+      // Atualizar o estado
+      setCurrentDownloadId(null);
+      setIsProcessing(false);
+      setSuccess("❌ Download cancelado pelo usuário");
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Erro desconhecido";
+      setError(`Erro ao cancelar: ${errorMessage}`);
+      console.error("Erro ao cancelar:", err);
     }
   };
 
@@ -227,9 +365,12 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
     setFolderInput(e.target.value);
   };
 
-  const renderFolderStructure = (structure: FolderStructure, level: number = 0) => {
+  const renderFolderStructure = (
+    structure: FolderStructure,
+    level: number = 0
+  ) => {
     const indent = level * 20;
-    
+
     return (
       <div key={structure.id} style={{ marginLeft: `${indent}px` }}>
         <div className="flex items-center gap-2 py-1">
@@ -239,7 +380,6 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
             ({structure.files.length} arquivos)
           </span>
         </div>
-        
         {Object.values(structure.subfolders).map((subfolder) =>
           renderFolderStructure(subfolder, level + 1)
         )}
@@ -326,7 +466,7 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
                 <BarChart3 size={18} />
                 Resultado da Análise
               </h3>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-700">
@@ -350,7 +490,9 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
 
               {folderStructure && (
                 <div className="mt-4">
-                  <h4 className="font-medium text-gray-800 mb-2">Estrutura de Pastas:</h4>
+                  <h4 className="font-medium text-gray-800 mb-2">
+                    Estrutura de Pastas:
+                  </h4>
                   <div className="max-h-40 overflow-y-auto bg-white rounded border p-3">
                     {renderFolderStructure(folderStructure)}
                   </div>
@@ -373,7 +515,7 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
                 <CheckCircle size={18} />
                 Resultado da Sincronização
               </h3>
-              
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                 <div className="text-center">
                   <div className="text-xl font-bold text-green-700">
@@ -402,9 +544,16 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
               </div>
 
               <div className="text-sm text-gray-600 space-y-1">
-                <div>⏱️ Análise: {formatTime(syncResult.timing.analysis_time)}</div>
-                <div>📥 Download: {formatTime(syncResult.timing.download_time)}</div>
-                <div>💾 Total processado: {syncResult.processed_files.length} arquivos</div>
+                <div>
+                  ⏱️ Análise: {formatTime(syncResult.timing.analysis_time)}
+                </div>
+                <div>
+                  📥 Download: {formatTime(syncResult.timing.download_time)}
+                </div>
+                <div>
+                  💾 Total processado: {syncResult.processed_files.length}{" "}
+                  arquivos
+                </div>
               </div>
             </motion.div>
           )}
@@ -419,7 +568,10 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
               exit={{ opacity: 0, y: -10 }}
               className="bg-red-50 border border-red-200 rounded-md p-3 flex items-start gap-2"
             >
-              <AlertCircle size={16} className="text-red-600 mt-0.5 flex-shrink-0" />
+              <AlertCircle
+                size={16}
+                className="text-red-600 mt-0.5 flex-shrink-0"
+              />
               <div>
                 <p className="text-sm text-red-600 font-medium">Erro</p>
                 <p className="text-sm text-red-500 mt-1">{error}</p>
@@ -437,7 +589,10 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
               exit={{ opacity: 0, y: -10 }}
               className="bg-green-50 border border-green-200 rounded-md p-3 flex items-start gap-2"
             >
-              <CheckCircle size={16} className="text-green-600 mt-0.5 flex-shrink-0" />
+              <CheckCircle
+                size={16}
+                className="text-green-600 mt-0.5 flex-shrink-0"
+              />
               <div>
                 <p className="text-sm text-green-600 font-medium">Sucesso</p>
                 <p className="text-sm text-green-600 mt-1">{success}</p>
@@ -450,7 +605,9 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
         <div className="flex gap-3">
           <Button
             onClick={analyzeFolder}
-            disabled={!folderInput.trim() || isLoading || isProcessing || isAnalyzing}
+            disabled={
+              !folderInput.trim() || isLoading || isProcessing || isAnalyzing
+            }
             isLoading={isAnalyzing}
             variant="outline"
             className="flex-1 flex items-center justify-center gap-2"
@@ -461,7 +618,9 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
 
           <Button
             onClick={handleRecursiveSync}
-            disabled={!folderInput.trim() || isLoading || isProcessing || isAnalyzing}
+            disabled={
+              !folderInput.trim() || isLoading || isProcessing || isAnalyzing
+            }
             isLoading={isProcessing}
             className="flex-1 flex items-center justify-center gap-2"
           >
@@ -473,6 +632,16 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
                 ? "Sincronizar Recursivamente"
                 : "Sincronizar Pasta"}
             </span>
+          </Button>
+
+          <Button
+            onClick={handleCancelSync}
+            variant="destructive"
+            className="flex-1 flex items-center justify-center gap-2"
+            disabled={!isProcessing && !isAnalyzing}
+          >
+            <X size={18} />
+            <span>Cancelar</span>
           </Button>
         </div>
 
@@ -494,7 +663,9 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
 
         {/* Usage Instructions */}
         <div className="text-xs text-gray-500 space-y-2 bg-blue-50 rounded-lg p-3">
-          <p><strong>Como usar:</strong></p>
+          <p>
+            <strong>Como usar:</strong>
+          </p>
           <ol className="list-decimal list-inside space-y-1 ml-2">
             <li>Cole o ID ou URL da pasta raiz do Google Drive</li>
             <li>Configure a API Key se necessário (para pastas privadas)</li>
@@ -502,8 +673,9 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
             <li>Execute "Sincronizar Recursivamente" para baixar tudo</li>
           </ol>
           <p className="mt-2">
-            <strong>⚠️ Atenção:</strong> O download recursivo pode levar tempo considerável
-            dependendo do tamanho da estrutura. Use a análise prévia para estimar.
+            <strong>⚠️ Atenção:</strong> O download recursivo pode levar tempo
+            considerável dependendo do tamanho da estrutura. Use a análise
+            prévia para estimar.
           </p>
         </div>
       </div>

@@ -200,6 +200,16 @@ export const MaintenancePanel: React.FC<MaintenancePanelProps> = ({
       confirmMessage: "Isso resetará o sistema de chat. Continuar?",
       dangerous: true,
     },
+    {
+      id: "clear-drive-cache",
+      title: "Limpar Cache do Drive",
+      description: "Limpa o cache de hashes para permitir baixar arquivos novamente",
+      icon: <RefreshCw size={20} />,
+      color: "bg-indigo-500",
+      endpoint: "/maintenance/clear-drive-cache",
+      confirmMessage: "Deseja limpar o cache de hashes do Google Drive?",
+      recommended: false,
+    },
   ];
 
   return (

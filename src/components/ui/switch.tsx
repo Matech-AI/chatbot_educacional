@@ -1,13 +1,22 @@
 import * as React from 'react';
 import { cn } from '../../lib/utils';
 
-export interface SwitchProps extends React.InputHTMLAttributes<HTMLInputElement> {
+export interface SwitchProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
   label?: string;
   description?: string;
+  onCheckedChange?: (checked: boolean) => void;
 }
 
 const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
-  ({ className, label, description, ...props }, ref) => {
+  ({ className, label, description, onCheckedChange, ...props }, ref) => {
+    // Mapear onCheckedChange para onChange
+    const handleChange = React.useCallback(
+      (event: React.ChangeEvent<HTMLInputElement>) => {
+        onCheckedChange?.(event.target.checked);
+      },
+      [onCheckedChange]
+    );
+
     return (
       <label className="flex items-start gap-3 cursor-pointer">
         <div className="relative inline-flex items-center">
@@ -15,6 +24,7 @@ const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
             type="checkbox"
             className="sr-only peer"
             ref={ref}
+            onChange={handleChange}
             {...props}
           />
           <div

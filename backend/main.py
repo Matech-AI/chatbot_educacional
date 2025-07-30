@@ -30,7 +30,9 @@ from auth import get_current_user, User, router as auth_router
 from auth import get_optional_current_user
 from user_management import router as user_management_router
 from educational_agent import router as educational_agent_router
-from drive_handler import DriveHandler
+import threading
+import asyncio
+from contextlib import asynccontextmanager
 
 # Configure enhanced logging
 logging.basicConfig(
@@ -68,12 +70,27 @@ app.include_router(educational_agent_router)
 
 # Initialize handlers
 rag_handler = None
+
+# User-specific handlers with thread locks
+user_drive_handlers = {}
+user_handler_locks = {}
+
+# Global handler for shared operations
 drive_handler = RecursiveDriveHandler()
 simple_drive_handler = DriveHandler()
+
+# Global lock for user handler creation
+user_handler_creation_lock = threading.Lock()
 
 # Global state for download tracking
 download_progress = {}
 active_downloads = {}
+
+# Global lock for download progress updates
+download_progress_lock = threading.Lock()
+
+# User authentication status cache
+user_auth_status = {}  # Armazenar status de autenticação por usuário
 
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
@@ -110,6 +127,8 @@ class DriveSync(BaseModel):
     folder_id: str
     api_key: Optional[str] = None
     download_files: bool = True
+    root_folder_id: Optional[str] = None
+    max_depth: Optional[int] = None
 
 
 class DriveTest(BaseModel):
@@ -563,6 +582,50 @@ async def chat_agent_stream(request: ChatRequest, current_user: User = Depends(g
 # ========================================
 
 
+@asynccontextmanager
+async def get_user_drive_handler(username: str, api_key: str = None):
+    """Get or create a user-specific drive handler with proper locking and auth caching"""
+    # Use a global lock when creating user locks to avoid race conditions
+    with user_handler_creation_lock:
+        # Create lock for this user if it doesn't exist
+        if username not in user_handler_locks:
+            user_handler_locks[username] = threading.Lock()
+    
+    # Acquire the lock for this user
+    with user_handler_locks[username]:
+        # Create handler if it doesn't exist
+        if username not in user_drive_handlers:
+            user_drive_handlers[username] = RecursiveDriveHandler()
+            logger.info(f"Created new drive handler for user: {username}")
+            
+        # Get the user's handler
+        handler = user_drive_handlers[username]
+        
+        # Verificar se já autenticamos com sucesso anteriormente
+        auth_needed = True
+        if username in user_auth_status and user_auth_status[username]['authenticated']:
+            # Verificar se o token ainda é válido (verificação a cada 30 minutos)
+            last_check = user_auth_status[username]['last_check']
+            if time.time() - last_check < 1800:  # 30 minutos
+                auth_needed = False
+                logger.info(f"Reusing cached authentication for user: {username}")
+        
+        # Authenticate if needed
+        if auth_needed and api_key:
+            auth_success = handler.authenticate(api_key=api_key)
+            # Armazenar status de autenticação
+            user_auth_status[username] = {
+                'authenticated': auth_success,
+                'last_check': time.time()
+            }
+        
+        try:
+            # Yield the handler for use in the calling function
+            yield handler
+        finally:
+            # Any cleanup if needed
+            pass
+
 @app.post("/drive/sync-recursive")
 async def sync_drive_recursive(
     data: RecursiveSync,
@@ -577,74 +640,248 @@ async def sync_drive_recursive(
     logger.info(f"📁 Folder ID: {data.folder_id}")
 
     try:
-        # Authenticate with Drive
-        auth_success = drive_handler.authenticate(api_key=data.api_key or "")
-        if not auth_success:
-            raise HTTPException(
-                status_code=400, detail="Could not authenticate with Google Drive")
+        # Get user-specific drive handler
+        async with get_user_drive_handler(current_user.username, data.api_key) as user_handler:
+            # Verify authentication
+            if not user_handler.service:
+                raise HTTPException(
+                    status_code=400, detail="Could not authenticate with Google Drive")
 
-        # Start background download
-        download_id = f"download_{int(time.time())}"
-        download_progress[download_id] = {
-            "status": "starting",
-            "progress": 0,
-            "total_files": 0,
-            "downloaded_files": 0,
-            "current_file": "",
-            "started_at": datetime.now().isoformat(),
-            "folder_id": data.folder_id
-        }
+            # Start background download
+            download_id = f"download_{current_user.username}_{int(time.time())}"
+            
+            # Update download progress with thread safety
+            with download_progress_lock:
+                download_progress[download_id] = {
+                    "status": "starting",
+                    "progress": 0,
+                    "total_files": 0,
+                    "downloaded_files": 0,
+                    "current_file": "",
+                    "started_at": datetime.now().isoformat(),
+                    "folder_id": data.folder_id,
+                    "user": current_user.username
+                }
+                active_downloads[download_id] = True
 
-        def run_recursive_download():
-            try:
-                download_progress[download_id]["status"] = "analyzing"
-                result = drive_handler.download_drive_recursive(data.folder_id)
+            # Create an isolated copy of the handler for the background task
+            # to avoid concurrency issues with the user's main handler
+            task_handler = RecursiveDriveHandler()
+            task_handler.authenticate(api_key=data.api_key or "")
 
-                if result["status"] == "success":
-                    download_progress[download_id].update({
-                        "status": "processing",
-                        "progress": 95, # Still processing
-                        "total_files": result["statistics"]["total_files"],
-                        "downloaded_files": result["statistics"]["downloaded_files"],
-                    })
+            async def run_recursive_download():
+                try:
+                    # Update status with thread safety
+                    with download_progress_lock:
+                        download_progress[download_id]["status"] = "analyzing"
+                    
+                    # Run the download operation
+                    result = task_handler.download_drive_recursive(data.folder_id)
 
-                    # Re-index materials in RAG handler
-                    if rag_handler:
-                        logger.info("🧠 Re-indexing materials in RAG handler...")
-                        rag_handler.process_and_initialize("data/materials")
-                        logger.info("✅ Re-indexing complete.")
+                    if result["status"] == "success":
+                        # Update progress with thread safety
+                        with download_progress_lock:
+                            download_progress[download_id].update({
+                                "status": "processing",
+                                "progress": 95, # Still processing
+                                "total_files": result["statistics"]["total_files"],
+                                "downloaded_files": result["statistics"]["downloaded_files"],
+                            })
 
-                    download_progress[download_id].update({
-                        "status": "completed",
-                        "progress": 100,
-                        "completed_at": datetime.now().isoformat(),
-                        "result": result
-                    })
-                else:
-                    download_progress[download_id].update({
-                        "status": "error",
-                        "error": result.get("error", "Unknown error"),
-                        "completed_at": datetime.now().isoformat()
-                    })
-            except Exception as e:
-                download_progress[download_id].update({
-                    "status": "error",
-                    "error": str(e),
-                    "completed_at": datetime.now().isoformat()
-                })
+                        # Re-index materials in RAG handler
+                        if rag_handler:
+                            logger.info("🧠 Re-indexing materials in RAG handler...")
+                            rag_handler.process_and_initialize("data/materials")
+                            logger.info("✅ Re-indexing complete.")
 
-        background_tasks.add_task(run_recursive_download)
-        active_downloads[download_id] = True
+                        # Final update with thread safety
+                        with download_progress_lock:
+                            download_progress[download_id].update({
+                                "status": "completed",
+                                "progress": 100,
+                                "completed_at": datetime.now().isoformat(),
+                                "result": result
+                            })
+                    else:
+                        # Error update with thread safety
+                        with download_progress_lock:
+                            download_progress[download_id].update({
+                                "status": "error",
+                                "error": result.get("error", "Unknown error"),
+                                "completed_at": datetime.now().isoformat()
+                            })
+                except Exception as e:
+                    # Exception update with thread safety
+                    with download_progress_lock:
+                        download_progress[download_id].update({
+                            "status": "error",
+                            "error": str(e),
+                            "completed_at": datetime.now().isoformat()
+                        })
+                finally:
+                    # Clean up task resources
+                    task_handler.cleanup_temp_files()
 
-        return {
-            "status": "started",
-            "download_id": download_id,
-            "message": "Recursive download started in background"
-        }
+            # Use asyncio.create_task for better async handling
+            background_tasks.add_task(run_recursive_download)
+
+            return {
+                "status": "started",
+                "download_id": download_id,
+                "message": "Recursive download started in background"
+            }
 
     except Exception as e:
         logger.error(f"❌ Recursive sync error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/recursive-drive-analysis")
+async def recursive_drive_analysis(
+    data: DriveSync,
+    current_user: User = Depends(get_current_user)
+):
+    """Analyze folder structure recursively without downloading"""
+    logger.info(f"🔍 Recursive drive analysis requested by: {current_user.username}")
+
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        # Use user-specific handler for better concurrency
+        async with get_user_drive_handler(current_user.username, data.api_key) as user_handler:
+            if not user_handler.service:
+                raise HTTPException(
+                    status_code=400, detail="Could not authenticate with Google Drive")
+
+            # Get folder structure without downloading
+            folder_structure = user_handler.get_folder_structure(data.root_folder_id, max_depth=data.max_depth)
+            
+            stats = user_handler.get_download_stats()
+            return {
+                "status": "success",
+                "message": f"Analyzed folder structure with {stats['total_folders']} folders and {stats['total_files']} files",
+                "statistics": stats,
+                "folder_structure": folder_structure
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Recursive drive analysis error: {str(e)}")
+        raise HTTPException(
+                status_code=500, detail=f"Drive analysis error: {str(e)}")
+
+
+@app.post("/recursive-drive-sync")
+async def recursive_drive_sync(
+    data: DriveSync,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user)
+):
+    """Sync files recursively from the specified Google Drive folder"""
+    logger.info(f"🔄 Recursive drive sync requested by: {current_user.username}")
+
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        # Use user-specific handler for better concurrency
+        async with get_user_drive_handler(current_user.username, data.api_key) as user_handler:
+            if not user_handler.service:
+                raise HTTPException(
+                    status_code=400, detail="Could not authenticate with Google Drive")
+
+            # Create a download ID for tracking
+            download_id = f"sync_{current_user.username}_{int(time.time())}"
+            
+            # Update download progress with thread safety
+            with download_progress_lock:
+                download_progress[download_id] = {
+                    "status": "starting",
+                    "progress": 0,
+                    "total_files": 0,
+                    "downloaded_files": 0,
+                    "current_file": "",
+                    "started_at": datetime.now().isoformat(),
+                    "folder_id": data.folder_id,
+                    "user": current_user.username
+                }
+                active_downloads[download_id] = True
+
+            # Create an isolated handler for the background task
+            task_handler = RecursiveDriveHandler()
+            task_handler.authenticate(api_key=data.api_key or "")
+
+            async def run_recursive_download():
+                try:
+                    # Update status with thread safety
+                    with download_progress_lock:
+                        download_progress[download_id]["status"] = "analyzing"
+                    
+                    # Run the download operation
+                    result = task_handler.download_drive_recursive(data.root_folder_id, max_depth=data.max_depth)
+
+                    if result['status'] == 'success':
+                        # Update progress with thread safety
+                        with download_progress_lock:
+                            download_progress[download_id].update({
+                                "status": "processing",
+                                "progress": 95, # Still processing
+                                "total_files": result["statistics"]["total_files"],
+                                "downloaded_files": result["statistics"]["downloaded_files"],
+                            })
+
+                        # Re-index materials in RAG handler
+                        if rag_handler:
+                            logger.info("🧠 Re-indexing materials after recursive sync...")
+                            rag_handler.process_and_initialize("data/materials")
+                            logger.info("✅ Re-indexing complete.")
+
+                        # Final update with thread safety
+                        with download_progress_lock:
+                            download_progress[download_id].update({
+                                "status": "completed",
+                                "progress": 100,
+                                "completed_at": datetime.now().isoformat(),
+                                "result": result
+                            })
+                    else:
+                        # Error update with thread safety
+                        with download_progress_lock:
+                            download_progress[download_id].update({
+                                "status": "error",
+                                "error": result.get("error", "Unknown error"),
+                                "completed_at": datetime.now().isoformat()
+                            })
+                except Exception as e:
+                    logger.error(f"❌ Recursive drive sync error: {str(e)}")
+                    # Exception update with thread safety
+                    with download_progress_lock:
+                        download_progress[download_id].update({
+                            "status": "error",
+                            "error": str(e),
+                            "completed_at": datetime.now().isoformat()
+                        })
+                finally:
+                    # Clean up task resources
+                    task_handler.cleanup_temp_files()
+
+            # Use background tasks for better async handling
+            background_tasks.add_task(run_recursive_download)
+
+            return {
+                "status": "started",
+                "download_id": download_id,
+                "message": "Recursive download started in background",
+                "note": "Check /drive/download-progress for status updates"
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Recursive drive sync error: {str(e)}")
+        raise HTTPException(
+                status_code=500, detail=f"Drive sync error: {str(e)}")
 
 
 @app.get("/drive/analyze-folder")
@@ -654,23 +891,24 @@ async def analyze_folder(
     current_user: User = Depends(get_current_user)
 ):
     """Analyze folder structure without downloading"""
-    logger.info(f"🔍 Folder analysis requested: {folder_id}")
+    logger.info(f"🔍 Folder analysis requested by {current_user.username}: {folder_id}")
 
     try:
-        auth_success = drive_handler.authenticate(api_key=api_key or "")
-        if not auth_success:
-            raise HTTPException(
-                status_code=400, detail="Authentication failed")
+        # Use user-specific handler for better concurrency
+        async with get_user_drive_handler(current_user.username, api_key) as user_handler:
+            if not user_handler.service:
+                raise HTTPException(
+                    status_code=400, detail="Authentication failed")
 
-        structure = drive_handler.get_folder_structure(folder_id)
-        stats = drive_handler.download_stats
+            structure = user_handler.get_folder_structure(folder_id)
+            stats = user_handler.download_stats
 
-        return {
-            "status": "success",
-            "folder_structure": structure,
-            "statistics": stats,
-            "analyzed_at": datetime.now().isoformat()
-        }
+            return {
+                "status": "success",
+                "folder_structure": structure,
+                "statistics": stats,
+                "analyzed_at": datetime.now().isoformat()
+            }
 
     except Exception as e:
         logger.error(f"❌ Folder analysis error: {str(e)}")
@@ -683,15 +921,40 @@ async def get_download_progress(
     current_user: User = Depends(get_current_user)
 ):
     """Get download progress status"""
-    if download_id:
-        if download_id not in download_progress:
-            raise HTTPException(status_code=404, detail="Download not found")
-        return download_progress[download_id]
+    # Use thread safety when accessing shared resources
+    with download_progress_lock:
+        if download_id:
+            if download_id not in download_progress:
+                raise HTTPException(status_code=404, detail="Download not found")
+            
+            # Check if this is the user's download or if user is admin
+            progress_info = download_progress[download_id]
+            if current_user.role != "admin" and progress_info.get("user") != current_user.username:
+                raise HTTPException(status_code=403, detail="Not authorized to view this download")
+                
+            return progress_info
 
-    return {
-        "active_downloads": list(active_downloads.keys()),
-        "download_progress": download_progress
-    }
+        # For admins, show all downloads
+        if current_user.role == "admin":
+            return {
+                "active_downloads": list(active_downloads.keys()),
+                "download_progress": download_progress
+            }
+        
+        # For regular users, only show their downloads
+        user_downloads = {}
+        user_active_downloads = []
+        
+        for dl_id, progress in download_progress.items():
+            if progress.get("user") == current_user.username:
+                user_downloads[dl_id] = progress
+                if dl_id in active_downloads:
+                    user_active_downloads.append(dl_id)
+        
+        return {
+            "active_downloads": user_active_downloads,
+            "download_progress": user_downloads
+        }
 
 
 @app.post("/drive/cancel-download")
@@ -700,20 +963,33 @@ async def cancel_download(
     current_user: User = Depends(get_current_user)
 ):
     """Cancel active download"""
-    if current_user.role not in ["admin", "instructor"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+    # Use thread safety when accessing shared resources
+    with download_progress_lock:
+        if download_id not in active_downloads:
+            raise HTTPException(status_code=404, detail="Download not found")
+            
+        # Check if this is the user's download or if user is admin/instructor
+        if download_id in download_progress:
+            progress_info = download_progress[download_id]
+            if current_user.role not in ["admin", "instructor"] and progress_info.get("user") != current_user.username:
+                raise HTTPException(status_code=403, detail="Not authorized to cancel this download")
+        
+        # Mark as cancelled
+        if download_id in download_progress:
+            download_progress[download_id]["status"] = "cancelled"
+            download_progress[download_id]["cancelled_at"] = datetime.now().isoformat()
 
-    if download_id not in active_downloads:
-        raise HTTPException(status_code=404, detail="Download not found")
+        # Find the appropriate handler to cancel
+        if download_progress[download_id].get("user") in user_drive_handlers:
+            user = download_progress[download_id].get("user")
+            # Set cancel flag on the user's handler
+            user_drive_handlers[user].set_cancel_flag(True)
+        else:
+            # Fallback to global handler
+            drive_handler.set_cancel_flag(True)
 
-    # Mark as cancelled
-    if download_id in download_progress:
-        download_progress[download_id]["status"] = "cancelled"
-        download_progress[download_id]["cancelled_at"] = datetime.now(
-        ).isoformat()
-
-    # Remove from active downloads
-    active_downloads.pop(download_id, None)
+        # Remove from active downloads
+        active_downloads.pop(download_id, None)
 
     return {"status": "cancelled", "download_id": download_id}
 
@@ -908,29 +1184,67 @@ async def clear_drive_cache(current_user: User = Depends(get_current_user)):
     logger.info(f"🧹 Drive cache clear requested by: {current_user.username}")
 
     try:
-        # Reset drive handler state
+        # Reset global drive handler state
         if hasattr(drive_handler, 'processed_files'):
             drive_handler.processed_files.clear()
         if hasattr(drive_handler, 'file_hashes'):
             drive_handler.file_hashes.clear()
 
-        # Reset download progress
-        global download_progress, active_downloads
-        download_progress.clear()
-        active_downloads.clear()
+        # Reset user-specific handlers with thread safety
+        for username, lock in user_handler_locks.items():
+            with lock:
+                if username in user_drive_handlers:
+                    handler = user_drive_handlers[username]
+                    if hasattr(handler, 'processed_files'):
+                        handler.processed_files.clear()
+                    if hasattr(handler, 'file_hashes'):
+                        handler.file_hashes.clear()
+                    handler.cleanup_temp_files()
+
+        # Reset download progress with thread safety
+        with download_progress_lock:
+            download_progress.clear()
+            active_downloads.clear()
 
         # Clean up temporary files
         drive_handler.cleanup_temp_files()
 
         return {
             "status": "success",
-            "message": "Drive cache and state cleared",
+            "message": "Drive cache and state cleared for all users",
             "cleared_at": datetime.now().isoformat()
         }
 
     except Exception as e:
         logger.error(f"❌ Error clearing drive cache: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/maintenance/clear-drive-cache")
+async def maintenance_clear_drive_cache(current_user: User = Depends(get_current_user)):
+    """Clear the drive handler's file hashes cache to allow redownloading files"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    logger.info(f"🧹 Clear drive cache requested by: {current_user.username}")
+    
+    try:
+        # Limpar o cache do simple_drive_handler
+        simple_result = simple_drive_handler.clear_file_hashes_cache()
+        
+        # Limpar também o cache do drive_handler recursivo
+        recursive_result = drive_handler.clear_file_hashes_cache()
+        
+        return {
+            "status": "success",
+            "message": "Drive cache cleared successfully",
+            "simple_handler": simple_result,
+            "recursive_handler": recursive_result
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error clearing drive cache: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Cache clearing error: {str(e)}")
 
 # ========================================
 # LEGACY DRIVE ENDPOINTS (for backward compatibility)
@@ -942,26 +1256,28 @@ async def test_drive_folder(
     data: DriveTest,
     current_user: User = Depends(get_current_user)
 ):
-    """Test access to a Google Drive folder (legacy endpoint)"""
+    """Test access to a Google Drive folder (non-recursive)"""
     logger.info(
-        f"🧪 Legacy drive folder test requested by: {current_user.username}")
+        f"🧪 Drive folder test requested by: {current_user.username}")
 
     try:
-        auth_success = drive_handler.authenticate(api_key=data.api_key or "")
+        # Alterado para usar o simple_drive_handler em vez do drive_handler recursivo
+        auth_success = simple_drive_handler.authenticate(api_key=data.api_key or "")
         if not auth_success:
             return {"accessible": False, "error": "Authentication failed"}
 
-        # Use the new analyze_folder functionality
-        structure = drive_handler.get_folder_structure(data.folder_id)
+        # Usar o método list_folder_contents_with_pagination em vez de get_folder_structure
+        files = simple_drive_handler.list_folder_contents_with_pagination(data.folder_id)
 
-        if structure and 'files' in structure:
+        if files:
             return {
                 "accessible": True,
-                "folder_name": structure.get('name', 'Unknown'),
-                "file_count": len(structure['files']),
-                "total_folders": len(structure.get('subfolders', {})),
+                "folder_name": "Folder",  # Nome básico da pasta
+                "file_count": len(files),
+                "total_folders": 0,  # Não contamos subpastas no modo não-recursivo
                 "public": True,  # Assume public if accessible
-                "method": "recursive_handler"
+                "method": "simple_handler",
+                "files_sample": [f.get('name', 'Unknown') for f in files[:5]]
             }
         else:
             return {
@@ -2022,15 +2338,15 @@ async def sync_drive_simple(
         raise HTTPException(status_code=403, detail="Not authorized")
 
     try:
-        # Autentica com o handler simples
+        # Autentica com o handler simples, agora com cache de autenticação
         auth_success = simple_drive_handler.authenticate(api_key=data.api_key or "")
         if not auth_success:
             raise HTTPException(
                 status_code=400, detail="Could not authenticate with Google Drive")
-
+                
         # Baixa apenas os arquivos da pasta (não recursivo)
         processed_files = simple_drive_handler.process_folder(
-            data.folder_id, download_all=True)
+            data.folder_id, download_all=data.download_files)
 
         stats = simple_drive_handler.get_download_stats()
         return {
@@ -2090,8 +2406,10 @@ async def startup_event():
         f"  - Credentials file: {'✅' if os.path.exists('credentials.json') else '❌'}")
     logger.info(
         f"  - Materials directory: {Path('data/materials').absolute()}")
+    logger.info(
+        f"  - Concurrency support: ✅ (User-specific handlers with thread locks)")
 
-    logger.info("✅ Sistema pronto com funcionalidades recursivas completas!")
+    logger.info("✅ Sistema pronto com funcionalidades recursivas completas e suporte a concorrência!")
 
 if __name__ == "__main__":
     import uvicorn

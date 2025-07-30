@@ -11,7 +11,7 @@
     "updated_at": "2025-07-28T19:40:03.602297",
     "external_id": null,
     "approved": true,
-    "last_login": "2025-07-28T21:06:09.994011",
+    "last_login": "2025-07-30T20:42:29.344483",
     "is_temporary_password": false
   },
   "instrutor": {
@@ -41,7 +41,7 @@
     "updated_at": "2025-07-28T20:48:11.323304",
     "external_id": "1",
     "approved": true,
-    "last_login": "2025-07-28T20:48:01.375677",
+    "last_login": "2025-07-29T20:05:13.611784",
     "is_temporary_password": false
   },
   "matheusbnas": {
@@ -50,13 +50,13 @@
     "email": "matheusbernardes@id.uff.br",
     "full_name": "",
     "role": "instructor",
-    "hashed_password": "$2b$12$9xzSUxhVD6CJnVgSA5/7B.KLPH78vGpwSVBsGS1QvcKWEUdGExVbG",
+    "hashed_password": "$2b$12$JmXSCQ4HwyayOzSIDz71GeX1tz/enKCZYi9rAZWjm1AfSRV2VZChi",
     "disabled": false,
     "created_at": "2025-07-28T21:10:28.060886",
-    "updated_at": "2025-07-28T21:11:38.143924",
+    "updated_at": "2025-07-29T00:53:24.083185",
     "external_id": "2",
     "approved": true,
-    "last_login": "2025-07-28T21:11:24.098705",
+    "last_login": "2025-07-30T12:56:20.114043",
     "is_temporary_password": false
   }
 }

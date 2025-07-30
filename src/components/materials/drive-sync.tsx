@@ -39,11 +39,16 @@ interface DriveFile {
 }
 
 export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
+  // Carregar valores do localStorage se disponíveis
   const [folderInput, setFolderInput] = useState(
-    "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
+    localStorage.getItem("lastDriveFolderId") || "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
   );
-  const [apiKey, setApiKey] = useState("");
-  const [downloadFiles, setDownloadFiles] = useState(true);
+  const [apiKey, setApiKey] = useState(
+    localStorage.getItem("lastDriveApiKey") || ""
+  );
+  const [downloadFiles, setDownloadFiles] = useState(
+    localStorage.getItem("lastDriveDownloadFiles") !== "false"
+  );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -94,6 +99,12 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
         setError("Formato do ID da pasta inválido");
         setIsTesting(false);
         return;
+      }
+
+      // Salvar o ID da pasta no localStorage
+      localStorage.setItem("lastDriveFolderId", folderId);
+      if (apiKey) {
+        localStorage.setItem("lastDriveApiKey", apiKey);
       }
 
       const response = await fetch("/api/test-drive-folder", {
@@ -155,7 +166,8 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
 
       console.log("Sincronizando pasta:", folderId);
 
-      const response = await fetch("/api/sync-drive", {
+      // Alterado de /api/sync-drive para /api/sync-drive-simple
+      const response = await fetch("/api/sync-drive-simple", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -164,7 +176,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
         body: JSON.stringify({
           folder_id: folderId,
           api_key: apiKey || undefined,
-          download_files: downloadFiles,
+          download_files: downloadFiles, // Usar a opção selecionada pelo usuário
         }),
       });
 
@@ -176,16 +188,15 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
       const result = await response.json();
       setSyncedFiles(result.files || []);
 
-      const actionText = downloadFiles ? "baixados" : "listados";
       setSuccess(
-        `✅ ${result.files?.length ?? 0} arquivos ${actionText} com sucesso!`
+        `✅ ${result.files?.length ?? 0} arquivos baixados com sucesso!`
       );
 
-      // Refresh materials list
+      // Não redirecionar para a tela de materiais
+      // Apenas limpar a mensagem de sucesso após alguns segundos
       setTimeout(() => {
-        onSync();
         setSuccess(null);
-      }, 2000);
+      }, 5000);
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Erro desconhecido";
@@ -272,19 +283,27 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
           </p>
         </div>
 
-        {/* Download Option */}
+        {/* Download Option - Restaurado para permitir escolha */}
         <div className="border border-gray-200 rounded-lg p-3">
-          <Switch
-            checked={downloadFiles}
-            onChange={(e) => setDownloadFiles(e.target.checked)}
-            disabled={isProcessing || isLoading || isTesting}
-            label={downloadFiles ? "Baixar arquivos" : "Apenas listar arquivos"}
-            description={
-              downloadFiles
-                ? "Os arquivos serão baixados para o servidor"
-                : "Apenas listará os arquivos sem baixar"
-            }
-          />
+          <div className="flex items-center space-x-2">
+            <Switch
+              checked={downloadFiles}
+              onCheckedChange={setDownloadFiles}
+              disabled={isProcessing || isLoading || isTesting}
+              id="download-switch"
+            />
+            <label 
+              htmlFor="download-switch"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              {downloadFiles ? "Baixar arquivos" : "Apenas listar arquivos"}
+            </label>
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            {downloadFiles
+              ? "Os arquivos serão baixados para o servidor"
+              : "Apenas listará os arquivos sem baixar"}
+          </p>
         </div>
 
         {/* Test Result */}
@@ -386,15 +405,11 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
             isLoading={isProcessing}
             className="flex-1 flex items-center justify-center gap-2"
           >
-            {downloadFiles ? <Download size={18} /> : <RefreshCw size={18} />}
+            <Download size={18} />
             <span>
-              {isProcessing
-                ? downloadFiles
-                  ? "Baixando..."
-                  : "Listando..."
-                : downloadFiles
-                ? "Baixar Materiais"
-                : "Listar Materiais"}
+              {isProcessing 
+                ? (downloadFiles ? "Baixando..." : "Processando...") 
+                : (downloadFiles ? "Baixar Materiais" : "Listar Materiais")}
             </span>
           </Button>
         </div>
