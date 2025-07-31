@@ -21,7 +21,8 @@ EMAIL_FROM = os.getenv("EMAIL_FROM", EMAIL_USER)
 EMAIL_CONFIGURED = all([EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASSWORD])
 
 # Arquivo para armazenar tokens de autenticação
-AUTH_TOKENS_FILE = Path(__file__).parent / "auth_tokens.json"
+AUTH_TOKENS_FILE = Path(__file__).parent.parent / "data" / "auth_tokens.json"
+
 
 def generate_temp_password(length=10):
     """Gera uma senha temporária aleatória"""
@@ -39,10 +40,12 @@ def generate_temp_password(length=10):
     random.shuffle(password)
     return ''.join(password)
 
+
 def generate_auth_token(length=32):
     """Gera um token de autenticação aleatório"""
     characters = string.ascii_letters + string.digits
     return ''.join(random.choice(characters) for _ in range(length))
+
 
 def send_email(to_email, subject, html_content):
     """Envia um e-mail usando SMTP"""
@@ -50,18 +53,19 @@ def send_email(to_email, subject, html_content):
         print(f"⚠️ Configurações de e-mail não definidas. E-mail não enviado.")
         print(f"⚠️ EMAIL_HOST: {EMAIL_HOST}, EMAIL_PORT: {EMAIL_PORT}, EMAIL_USER: {EMAIL_USER}, EMAIL_PASSWORD: {'*' * len(EMAIL_PASSWORD) if EMAIL_PASSWORD else 'vazio'}")
         return False
-    
+
     try:
         # Criar mensagem
         msg = MIMEMultipart()
         msg['From'] = EMAIL_FROM
         msg['To'] = to_email
         msg['Subject'] = subject
-        
+
         # Adicionar conteúdo HTML
         msg.attach(MIMEText(html_content, 'html'))
-        
-        print(f"🔄 Tentando conectar ao servidor SMTP: {EMAIL_HOST}:{EMAIL_PORT}")
+
+        print(
+            f"🔄 Tentando conectar ao servidor SMTP: {EMAIL_HOST}:{EMAIL_PORT}")
         # Conectar ao servidor SMTP
         server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT)
         server.set_debuglevel(1)  # Ativar depuração
@@ -69,12 +73,12 @@ def send_email(to_email, subject, html_content):
         server.starttls()
         print(f"🔄 Tentando login com usuário: {EMAIL_USER}")
         server.login(EMAIL_USER, EMAIL_PASSWORD)
-        
+
         # Enviar e-mail
         print(f"🔄 Enviando e-mail para: {to_email}")
         server.send_message(msg)
         server.quit()
-        
+
         print(f"✅ E-mail enviado com sucesso para {to_email}")
         return True
     except Exception as e:
@@ -85,13 +89,14 @@ def send_email(to_email, subject, html_content):
         print(f"❌ Traceback completo: {traceback.format_exc()}")
         return False
 
+
 def send_auth_email(user_email, username, auth_token, base_url="http://localhost:3000"):
     """Envia e-mail de autenticação com link para aprovação"""
     subject = "Confirmação de Cadastro - Sistema Educacional"
-    
+
     # URL de autenticação
     auth_url = f"{base_url}/auth/verify?token={auth_token}&username={username}"
-    
+
     # Conteúdo HTML do e-mail
     html_content = f"""
     <html>
@@ -140,13 +145,14 @@ def send_auth_email(user_email, username, auth_token, base_url="http://localhost
     </body>
     </html>
     """
-    
+
     return send_email(user_email, subject, html_content)
+
 
 def send_temp_password_email(user_email, username, temp_password):
     """Envia e-mail com senha temporária"""
     subject = "Senha Temporária - Sistema Educacional"
-    
+
     # Conteúdo HTML do e-mail
     html_content = f"""
     <html>
@@ -200,16 +206,17 @@ def send_temp_password_email(user_email, username, temp_password):
     </body>
     </html>
     """
-    
+
     return send_email(user_email, subject, html_content)
+
 
 def send_password_reset_email(user_email, username, reset_token, base_url="http://localhost:3000"):
     """Envia e-mail com link para reset de senha"""
     subject = "Redefinição de Senha - Sistema Educacional"
-    
+
     # URL de reset de senha
     reset_url = f"{base_url}/reset-password?token={reset_token}&username={username}"
-    
+
     # Conteúdo HTML do e-mail
     html_content = f"""
     <html>
@@ -252,5 +259,5 @@ def send_password_reset_email(user_email, username, reset_token, base_url="http:
     </body>
     </html>
     """
-    
+
     return send_email(user_email, subject, html_content)

@@ -22,14 +22,14 @@ from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
 
 # Import RAG handler
-from rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
-from chat_agent import graph as chat_agent_graph
-from drive_handler import DriveHandler
-from drive_handler_recursive import RecursiveDriveHandler
-from auth import get_current_user, User, router as auth_router
-from auth import get_optional_current_user
-from user_management import router as user_management_router
-from educational_agent import router as educational_agent_router
+from rag_system.rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
+from chat_agents.chat_agent import graph as chat_agent_graph
+from drive_sync.drive_handler import DriveHandler
+from drive_sync.drive_handler_recursive import RecursiveDriveHandler
+from auth.auth import get_current_user, User, router as auth_router
+from auth.auth import get_optional_current_user
+from auth.user_management import router as user_management_router
+from chat_agents.educational_agent import router as educational_agent_router
 import threading
 import asyncio
 from contextlib import asynccontextmanager
@@ -52,7 +52,8 @@ app = FastAPI(
 )
 
 # Configure CORS
-cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+cors_origins = os.getenv(
+    "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -190,14 +191,14 @@ def format_file_info(file_path: Path, uploaded_by: str = "system") -> dict:
     """Format file information for API response"""
     stat = file_path.stat()
     materials_dir = Path("data/materials")
-    
+
     # Obter caminho relativo à pasta materials
     try:
         relative_path = file_path.relative_to(materials_dir)
         file_id = str(relative_path).replace("\\", "/")
     except ValueError:
         file_id = file_path.name
-    
+
     return {
         "id": file_id,
         "title": file_path.stem.replace('_', ' ').title(),
@@ -565,11 +566,13 @@ async def stream_agent_response(message: str, thread_id: str):
 async def chat_agent_stream(request: ChatRequest, current_user: User = Depends(get_current_user)):
     """Endpoint to stream responses from the chat agent."""
     thread_id = request.thread_id or str(uuid4())
-    logger.info(f"🤖 Agent chat request from {current_user.username} on thread {thread_id}: {request.message[:50]}...")
+    logger.info(
+        f"🤖 Agent chat request from {current_user.username} on thread {thread_id}: {request.message[:50]}...")
 
     if not rag_handler:
         logger.error("❌ RAG handler not initialized for agent chat")
-        raise HTTPException(status_code=400, detail="System not initialized. Cannot use agent.")
+        raise HTTPException(
+            status_code=400, detail="System not initialized. Cannot use agent.")
 
     return StreamingResponse(
         stream_agent_response(request.message, thread_id),
@@ -590,17 +593,17 @@ async def get_user_drive_handler(username: str, api_key: str = None):
         # Create lock for this user if it doesn't exist
         if username not in user_handler_locks:
             user_handler_locks[username] = threading.Lock()
-    
+
     # Acquire the lock for this user
     with user_handler_locks[username]:
         # Create handler if it doesn't exist
         if username not in user_drive_handlers:
             user_drive_handlers[username] = RecursiveDriveHandler()
             logger.info(f"Created new drive handler for user: {username}")
-            
+
         # Get the user's handler
         handler = user_drive_handlers[username]
-        
+
         # Verificar se já autenticamos com sucesso anteriormente
         auth_needed = True
         if username in user_auth_status and user_auth_status[username]['authenticated']:
@@ -608,8 +611,9 @@ async def get_user_drive_handler(username: str, api_key: str = None):
             last_check = user_auth_status[username]['last_check']
             if time.time() - last_check < 1800:  # 30 minutos
                 auth_needed = False
-                logger.info(f"Reusing cached authentication for user: {username}")
-        
+                logger.info(
+                    f"Reusing cached authentication for user: {username}")
+
         # Authenticate if needed
         if auth_needed and api_key:
             auth_success = handler.authenticate(api_key=api_key)
@@ -618,13 +622,14 @@ async def get_user_drive_handler(username: str, api_key: str = None):
                 'authenticated': auth_success,
                 'last_check': time.time()
             }
-        
+
         try:
             # Yield the handler for use in the calling function
             yield handler
         finally:
             # Any cleanup if needed
             pass
+
 
 @app.post("/drive/sync-recursive")
 async def sync_drive_recursive(
@@ -649,7 +654,7 @@ async def sync_drive_recursive(
 
             # Start background download
             download_id = f"download_{current_user.username}_{int(time.time())}"
-            
+
             # Update download progress with thread safety
             with download_progress_lock:
                 download_progress[download_id] = {
@@ -674,24 +679,27 @@ async def sync_drive_recursive(
                     # Update status with thread safety
                     with download_progress_lock:
                         download_progress[download_id]["status"] = "analyzing"
-                    
+
                     # Run the download operation
-                    result = task_handler.download_drive_recursive(data.folder_id)
+                    result = task_handler.download_drive_recursive(
+                        data.folder_id)
 
                     if result["status"] == "success":
                         # Update progress with thread safety
                         with download_progress_lock:
                             download_progress[download_id].update({
                                 "status": "processing",
-                                "progress": 95, # Still processing
+                                "progress": 95,  # Still processing
                                 "total_files": result["statistics"]["total_files"],
                                 "downloaded_files": result["statistics"]["downloaded_files"],
                             })
 
                         # Re-index materials in RAG handler
                         if rag_handler:
-                            logger.info("🧠 Re-indexing materials in RAG handler...")
-                            rag_handler.process_and_initialize("data/materials")
+                            logger.info(
+                                "🧠 Re-indexing materials in RAG handler...")
+                            rag_handler.process_and_initialize(
+                                "data/materials")
                             logger.info("✅ Re-indexing complete.")
 
                         # Final update with thread safety
@@ -742,7 +750,8 @@ async def recursive_drive_analysis(
     current_user: User = Depends(get_current_user)
 ):
     """Analyze folder structure recursively without downloading"""
-    logger.info(f"🔍 Recursive drive analysis requested by: {current_user.username}")
+    logger.info(
+        f"🔍 Recursive drive analysis requested by: {current_user.username}")
 
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -755,8 +764,9 @@ async def recursive_drive_analysis(
                     status_code=400, detail="Could not authenticate with Google Drive")
 
             # Get folder structure without downloading
-            folder_structure = user_handler.get_folder_structure(data.root_folder_id, max_depth=data.max_depth)
-            
+            folder_structure = user_handler.get_folder_structure(
+                data.root_folder_id, max_depth=data.max_depth)
+
             stats = user_handler.get_download_stats()
             return {
                 "status": "success",
@@ -769,7 +779,7 @@ async def recursive_drive_analysis(
     except Exception as e:
         logger.error(f"❌ Recursive drive analysis error: {str(e)}")
         raise HTTPException(
-                status_code=500, detail=f"Drive analysis error: {str(e)}")
+            status_code=500, detail=f"Drive analysis error: {str(e)}")
 
 
 @app.post("/recursive-drive-sync")
@@ -779,7 +789,8 @@ async def recursive_drive_sync(
     current_user: User = Depends(get_current_user)
 ):
     """Sync files recursively from the specified Google Drive folder"""
-    logger.info(f"🔄 Recursive drive sync requested by: {current_user.username}")
+    logger.info(
+        f"🔄 Recursive drive sync requested by: {current_user.username}")
 
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -793,7 +804,7 @@ async def recursive_drive_sync(
 
             # Create a download ID for tracking
             download_id = f"sync_{current_user.username}_{int(time.time())}"
-            
+
             # Update download progress with thread safety
             with download_progress_lock:
                 download_progress[download_id] = {
@@ -817,24 +828,27 @@ async def recursive_drive_sync(
                     # Update status with thread safety
                     with download_progress_lock:
                         download_progress[download_id]["status"] = "analyzing"
-                    
+
                     # Run the download operation
-                    result = task_handler.download_drive_recursive(data.root_folder_id, max_depth=data.max_depth)
+                    result = task_handler.download_drive_recursive(
+                        data.root_folder_id, max_depth=data.max_depth)
 
                     if result['status'] == 'success':
                         # Update progress with thread safety
                         with download_progress_lock:
                             download_progress[download_id].update({
                                 "status": "processing",
-                                "progress": 95, # Still processing
+                                "progress": 95,  # Still processing
                                 "total_files": result["statistics"]["total_files"],
                                 "downloaded_files": result["statistics"]["downloaded_files"],
                             })
 
                         # Re-index materials in RAG handler
                         if rag_handler:
-                            logger.info("🧠 Re-indexing materials after recursive sync...")
-                            rag_handler.process_and_initialize("data/materials")
+                            logger.info(
+                                "🧠 Re-indexing materials after recursive sync...")
+                            rag_handler.process_and_initialize(
+                                "data/materials")
                             logger.info("✅ Re-indexing complete.")
 
                         # Final update with thread safety
@@ -881,7 +895,7 @@ async def recursive_drive_sync(
     except Exception as e:
         logger.error(f"❌ Recursive drive sync error: {str(e)}")
         raise HTTPException(
-                status_code=500, detail=f"Drive sync error: {str(e)}")
+            status_code=500, detail=f"Drive sync error: {str(e)}")
 
 
 @app.get("/drive/analyze-folder")
@@ -891,7 +905,8 @@ async def analyze_folder(
     current_user: User = Depends(get_current_user)
 ):
     """Analyze folder structure without downloading"""
-    logger.info(f"🔍 Folder analysis requested by {current_user.username}: {folder_id}")
+    logger.info(
+        f"🔍 Folder analysis requested by {current_user.username}: {folder_id}")
 
     try:
         # Use user-specific handler for better concurrency
@@ -925,13 +940,15 @@ async def get_download_progress(
     with download_progress_lock:
         if download_id:
             if download_id not in download_progress:
-                raise HTTPException(status_code=404, detail="Download not found")
-            
+                raise HTTPException(
+                    status_code=404, detail="Download not found")
+
             # Check if this is the user's download or if user is admin
             progress_info = download_progress[download_id]
             if current_user.role != "admin" and progress_info.get("user") != current_user.username:
-                raise HTTPException(status_code=403, detail="Not authorized to view this download")
-                
+                raise HTTPException(
+                    status_code=403, detail="Not authorized to view this download")
+
             return progress_info
 
         # For admins, show all downloads
@@ -940,17 +957,17 @@ async def get_download_progress(
                 "active_downloads": list(active_downloads.keys()),
                 "download_progress": download_progress
             }
-        
+
         # For regular users, only show their downloads
         user_downloads = {}
         user_active_downloads = []
-        
+
         for dl_id, progress in download_progress.items():
             if progress.get("user") == current_user.username:
                 user_downloads[dl_id] = progress
                 if dl_id in active_downloads:
                     user_active_downloads.append(dl_id)
-        
+
         return {
             "active_downloads": user_active_downloads,
             "download_progress": user_downloads
@@ -967,17 +984,19 @@ async def cancel_download(
     with download_progress_lock:
         if download_id not in active_downloads:
             raise HTTPException(status_code=404, detail="Download not found")
-            
+
         # Check if this is the user's download or if user is admin/instructor
         if download_id in download_progress:
             progress_info = download_progress[download_id]
             if current_user.role not in ["admin", "instructor"] and progress_info.get("user") != current_user.username:
-                raise HTTPException(status_code=403, detail="Not authorized to cancel this download")
-        
+                raise HTTPException(
+                    status_code=403, detail="Not authorized to cancel this download")
+
         # Mark as cancelled
         if download_id in download_progress:
             download_progress[download_id]["status"] = "cancelled"
-            download_progress[download_id]["cancelled_at"] = datetime.now().isoformat()
+            download_progress[download_id]["cancelled_at"] = datetime.now(
+            ).isoformat()
 
         # Find the appropriate handler to cancel
         if download_progress[download_id].get("user") in user_drive_handlers:
@@ -1225,26 +1244,27 @@ async def maintenance_clear_drive_cache(current_user: User = Depends(get_current
     """Clear the drive handler's file hashes cache to allow redownloading files"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
-    
+
     logger.info(f"🧹 Clear drive cache requested by: {current_user.username}")
-    
+
     try:
         # Limpar o cache do simple_drive_handler
         simple_result = simple_drive_handler.clear_file_hashes_cache()
-        
+
         # Limpar também o cache do drive_handler recursivo
         recursive_result = drive_handler.clear_file_hashes_cache()
-        
+
         return {
             "status": "success",
             "message": "Drive cache cleared successfully",
             "simple_handler": simple_result,
             "recursive_handler": recursive_result
         }
-        
+
     except Exception as e:
         logger.error(f"❌ Error clearing drive cache: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Cache clearing error: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Cache clearing error: {str(e)}")
 
 # ========================================
 # LEGACY DRIVE ENDPOINTS (for backward compatibility)
@@ -1262,12 +1282,14 @@ async def test_drive_folder(
 
     try:
         # Alterado para usar o simple_drive_handler em vez do drive_handler recursivo
-        auth_success = simple_drive_handler.authenticate(api_key=data.api_key or "")
+        auth_success = simple_drive_handler.authenticate(
+            api_key=data.api_key or "")
         if not auth_success:
             return {"accessible": False, "error": "Authentication failed"}
 
         # Usar o método list_folder_contents_with_pagination em vez de get_folder_structure
-        files = simple_drive_handler.list_folder_contents_with_pagination(data.folder_id)
+        files = simple_drive_handler.list_folder_contents_with_pagination(
+            data.folder_id)
 
         if files:
             return {
@@ -1590,7 +1612,8 @@ async def reset_chromadb(current_user: User = Depends(get_current_user)):
                 logger.info("🗑️ Removed ChromaDB directory")
             except Exception as e:
                 logger.error(f"❌ Failed to remove ChromaDB directory: {e}")
-                raise HTTPException(status_code=500, detail=f"Could not remove ChromaDB directory. It might be locked. Error: {e}")
+                raise HTTPException(
+                    status_code=500, detail=f"Could not remove ChromaDB directory. It might be locked. Error: {e}")
 
         return {
             "status": "success",
@@ -2115,7 +2138,7 @@ async def download_material(filename: str, download: bool = False, current_user:
     """Download a material file with optional authentication"""
     # Verificar se o arquivo deve ser protegido
     requires_auth = should_require_auth(filename)
-    
+
     # Se o arquivo requer autenticação e o usuário não está autenticado, negar acesso
     if requires_auth and current_user is None:
         raise HTTPException(
@@ -2123,7 +2146,7 @@ async def download_material(filename: str, download: bool = False, current_user:
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Normalizar o caminho do arquivo
     normalized_filename = filename.replace("/", os.path.sep)
     file_path = Path("data/materials") / normalized_filename
@@ -2137,13 +2160,14 @@ async def download_material(filename: str, download: bool = False, current_user:
             file_path = found_files[0]
         else:
             raise HTTPException(status_code=404, detail="File not found")
-    
+
     # Registrar o download (opcional)
-    logger.info(f"📥 File access: {file_path.name} by {current_user.username if current_user else 'anonymous'}")
-    
+    logger.info(
+        f"📥 File access: {file_path.name} by {current_user.username if current_user else 'anonymous'}")
+
     # Determinar o tipo MIME com base na extensão do arquivo
     content_type, _ = mimetypes.guess_type(str(file_path))
-    
+
     # Se não conseguir determinar o tipo MIME, usar um padrão baseado na extensão
     if not content_type:
         if file_path.name.lower().endswith('.pdf'):
@@ -2155,16 +2179,17 @@ async def download_material(filename: str, download: bool = False, current_user:
         else:
             # Para outros tipos, forçar o download
             content_type = 'application/octet-stream'
-    
+
     # Usar o parâmetro download da URL para determinar se deve forçar o download
     force_download = download
-    
+
     return FileResponse(
         path=str(file_path),
         filename=Path(normalized_filename).name,
         media_type=content_type,
         # Se force_download for True, adicionar o cabeçalho Content-Disposition
-        headers={'Content-Disposition': f'attachment; filename="{Path(normalized_filename).name}"'} if force_download else None
+        headers={
+            'Content-Disposition': f'attachment; filename="{Path(normalized_filename).name}"'} if force_download else None
     )
 
 
@@ -2173,11 +2198,11 @@ def should_require_auth(filename: str) -> bool:
     # Exemplo: arquivos com 'public' no nome não requerem autenticação
     if 'public' in filename.lower():
         return False
-        
+
     # Exemplo: certos tipos de arquivo não requerem autenticação
     if filename.lower().endswith(('.pdf', '.txt')):
         return False
-        
+
     # Por padrão, outros arquivos requerem autenticação
     return True
 
@@ -2187,11 +2212,11 @@ def should_require_auth(filename: str) -> bool:
     # Exemplo: arquivos com 'public' no nome não requerem autenticação
     if 'public' in filename.lower():
         return False
-        
+
     # Exemplo: certos tipos de arquivo não requerem autenticação
     if filename.lower().endswith(('.pdf', '.txt')):
         return False
-        
+
     # Por padrão, outros arquivos requerem autenticação
     return True
 
@@ -2254,33 +2279,33 @@ async def update_material_metadata(
         # Atualizar metadados no banco de dados ou em algum arquivo de metadados
         # Aqui você precisaria implementar a lógica para armazenar os metadados
         # Por exemplo, você poderia ter um arquivo JSON com os metadados de todos os materiais
-        
+
         # Exemplo simplificado (você precisaria adaptar isso ao seu sistema de armazenamento de metadados):
         metadata_file = Path("data/materials_metadata.json")
-        
+
         if metadata_file.exists():
             with open(metadata_file, "r") as f:
                 metadata = json.load(f)
         else:
             metadata = {}
-        
+
         # Atualizar metadados do arquivo
         if filename not in metadata:
             metadata[filename] = {}
-        
+
         metadata[filename]["description"] = description
-        
+
         if tags:
             try:
                 tags_list = json.loads(tags)
                 metadata[filename]["tags"] = tags_list
             except:
                 metadata[filename]["tags"] = []
-        
+
         # Salvar metadados atualizados
         with open(metadata_file, "w") as f:
             json.dump(metadata, f)
-        
+
         logger.info(f"✅ Metadata updated for {filename}")
         return {"status": "success", "message": f"Metadata updated for {filename}"}
     except Exception as e:
@@ -2339,11 +2364,12 @@ async def sync_drive_simple(
 
     try:
         # Autentica com o handler simples, agora com cache de autenticação
-        auth_success = simple_drive_handler.authenticate(api_key=data.api_key or "")
+        auth_success = simple_drive_handler.authenticate(
+            api_key=data.api_key or "")
         if not auth_success:
             raise HTTPException(
                 status_code=400, detail="Could not authenticate with Google Drive")
-                
+
         # Baixa apenas os arquivos da pasta (não recursivo)
         processed_files = simple_drive_handler.process_folder(
             data.folder_id, download_all=data.download_files)
@@ -2394,7 +2420,8 @@ async def startup_event():
         except Exception as e:
             logger.error(f"❌ Failed to initialize RAG handler: {e}")
     else:
-        logger.warning("⚠️ OpenAI API key not found. RAG handler not initialized.")
+        logger.warning(
+            "⚠️ OpenAI API key not found. RAG handler not initialized.")
 
     # Log environment info
     logger.info(f"📊 Environment check:")
@@ -2409,7 +2436,8 @@ async def startup_event():
     logger.info(
         f"  - Concurrency support: ✅ (User-specific handlers with thread locks)")
 
-    logger.info("✅ Sistema pronto com funcionalidades recursivas completas e suporte a concorrência!")
+    logger.info(
+        "✅ Sistema pronto com funcionalidades recursivas completas e suporte a concorrência!")
 
 if __name__ == "__main__":
     import uvicorn
