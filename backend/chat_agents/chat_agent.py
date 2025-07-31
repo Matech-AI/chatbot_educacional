@@ -9,7 +9,7 @@ from langchain_core.messages import SystemMessage
 from langchain_core.tools.retriever import create_retriever_tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, START, END
-from rag_handler import RAGHandler
+from rag_system.rag_handler import RAGHandler
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
@@ -19,8 +19,11 @@ load_dotenv()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # 1. Define State
+
+
 class State(TypedDict):
     messages: Annotated[list, add_messages]
+
 
 # 2. Setup Retriever
 # Initialize RAG Handler to manage the vector store
@@ -34,8 +37,9 @@ else:
     try:
         rag_handler = RAGHandler(api_key=openai_api_key)
         if rag_handler.vector_store:
-            retriever = rag_handler.vector_store.as_retriever(search_kwargs={"k": 3})
-            
+            retriever = rag_handler.vector_store.as_retriever(
+                search_kwargs={"k": 3})
+
             retriever_tool = create_retriever_tool(
                 retriever,
                 "search_study_materials",
@@ -76,11 +80,14 @@ model = ChatGoogleGenerativeAI(
 model_with_tools = model.bind_tools(tools)
 
 # 5. Define Graph Nodes
+
+
 def agent(state: State):
     """Invokes the agent model with the current state."""
     messages = [system_prompt] + state["messages"]
     response = model_with_tools.invoke(messages)
     return {"messages": [response]}
+
 
 # 6. Build Graph
 builder = StateGraph(State)
@@ -114,7 +121,7 @@ if __name__ == "__main__":
             if user_input.lower() in ["quit", "exit", "q"]:
                 print("Goodbye!")
                 break
-            
+
             current_thread_id = str(thread_id_counter)
             stream_graph_updates(user_input, current_thread_id)
             thread_id_counter += 1

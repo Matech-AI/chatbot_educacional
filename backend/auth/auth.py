@@ -9,9 +9,9 @@ from pydantic import BaseModel, EmailStr
 import json
 import os
 from pathlib import Path
-from email_service import generate_auth_token, send_password_reset_email, send_temp_password_email, generate_temp_password, send_auth_email
-from auth_token_manager import create_auth_token, verify_auth_token, mark_token_as_used, clean_expired_tokens
-from external_id_manager import get_next_external_id, mark_external_id_as_deleted, reorganize_external_ids
+from .email_service import generate_auth_token, send_password_reset_email, send_temp_password_email, generate_temp_password, send_auth_email
+from .auth_token_manager import create_auth_token, verify_auth_token, mark_token_as_used, clean_expired_tokens
+from .external_id_manager import get_next_external_id, mark_external_id_as_deleted, reorganize_external_ids
 from typing import Optional
 from fastapi import Request
 
