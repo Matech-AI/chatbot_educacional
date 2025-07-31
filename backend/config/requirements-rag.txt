@@ -1,5 +1,5 @@
-# Requirements Completo - Sistema RAG + API
-# Combina todas as dependências necessárias para ambos os servidores
+# Requirements específico para o Servidor RAG
+# Dependências otimizadas para processamento de documentos e IA
 
 # Core FastAPI e servidor
 fastapi
@@ -40,33 +40,16 @@ python-magic
 # ChromaDB para vector store
 chromadb
 
-# Google Drive API
-google-auth-oauthlib
-google-auth-httplib2
-google-api-python-client
-
-# LangChain para chat agents
-langchain-google-genai
-google-generativeai
-
-# Autenticação e segurança
-python-jose
-passlib[bcrypt]
-
 # Utilitários
 pydantic
 requests
+python-jose
+passlib[bcrypt]
+
+# Performance
 aiohttp
-pytz
 
-# Performance e cache (opcional)
-redis
-aioredis
-
-# Supabase (se usar)
-supabase
-
-# Dependências adicionais
+# Dependências adicionais que podem estar faltando
 langsmith
 sqlalchemy
 

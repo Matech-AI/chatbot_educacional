@@ -267,8 +267,8 @@ def create_user(user_data: UserCreate, password: str = None, send_email: bool = 
         raise HTTPException(status_code=400, detail="Username already exists")
 
     # Import here to avoid circular imports
-    from email_service import generate_temp_password, send_temp_password_email, generate_auth_token, send_auth_email
-    from auth_token_manager import create_auth_token
+    from .email_service import generate_temp_password, send_temp_password_email, generate_auth_token, send_auth_email
+    from .auth_token_manager import create_auth_token
 
     # Generate a temporary password if not provided and generate_password is True
     generated_password = None

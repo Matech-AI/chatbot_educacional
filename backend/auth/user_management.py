@@ -187,7 +187,7 @@ async def resend_verification_email(
             status_code=400, detail="Usuário não possui e-mail cadastrado")
 
     # Importar funções necessárias
-    from email_service import generate_auth_token, send_auth_email, generate_temp_password, send_temp_password_email
+    from .email_service import generate_auth_token, send_auth_email, generate_temp_password, send_temp_password_email
     from auth_token_manager import create_auth_token
 
     # Gerar novo token de autenticação
@@ -300,8 +300,8 @@ async def add_approved_user(
             status_code=400, detail="User already in approved list")
 
     # Importar funções de email
-    from email_service import generate_auth_token, send_auth_email
-    from auth_token_manager import create_auth_token
+    from .email_service import generate_auth_token, send_auth_email
+    from .auth_token_manager import create_auth_token
 
     # Gerar token de autenticação
     auth_token = generate_auth_token()

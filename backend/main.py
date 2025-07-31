@@ -615,7 +615,9 @@ async def get_user_drive_handler(username: str, api_key: str = None):
                     f"Reusing cached authentication for user: {username}")
 
         # Authenticate if needed
-        if auth_needed and api_key:
+        if auth_needed:
+            # Tentar autenticar com OAuth2 primeiro (se api_key não for fornecido)
+            # ou com api_key se fornecido
             auth_success = handler.authenticate(api_key=api_key)
             # Armazenar status de autenticação
             user_auth_status[username] = {
@@ -765,7 +767,7 @@ async def recursive_drive_analysis(
 
             # Get folder structure without downloading
             folder_structure = user_handler.get_folder_structure(
-                data.root_folder_id, max_depth=data.max_depth)
+                data.folder_id, max_depth=data.max_depth)
 
             stats = user_handler.get_download_stats()
             return {
@@ -831,7 +833,7 @@ async def recursive_drive_sync(
 
                     # Run the download operation
                     result = task_handler.download_drive_recursive(
-                        data.root_folder_id, max_depth=data.max_depth)
+                        data.folder_id, max_depth=data.max_depth)
 
                     if result['status'] == 'success':
                         # Update progress with thread safety

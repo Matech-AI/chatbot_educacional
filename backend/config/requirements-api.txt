@@ -1,0 +1,45 @@
+# Requirements específico para o Servidor API Geral
+# Dependências otimizadas para autenticação, Drive sync e funcionalidades gerais
+
+# Core FastAPI e servidor
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+
+# Autenticação e segurança
+python-jose
+passlib[bcrypt]
+python-magic
+
+# Google Drive API
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+
+# LangChain para chat agents
+langchain
+langchain-openai
+langchain-core
+langchain-google-genai
+langgraph==0.5.1
+langgraph-checkpoint==2.1.0
+langgraph-prebuilt==0.5.2
+langgraph-sdk==0.1.72
+
+# OpenAI e Gemini
+openai
+google-generativeai
+
+# Utilitários
+pydantic
+requests
+aiohttp
+pytz
+
+# Supabase (se usar)
+supabase
+
+# Performance e cache (opcional)
+redis
+aioredis 

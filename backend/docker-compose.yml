@@ -1,0 +1,87 @@
+version: "3.8"
+
+services:
+  # Servidor RAG - Sempre rodando para processamento de materiais
+  rag-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.rag
+    container_name: dna-forca-rag-server
+    ports:
+      - "8001:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - CHROMA_PERSIST_DIR=/app/data/.chromadb
+      - MATERIALS_DIR=/app/data/materials
+      - LOG_LEVEL=INFO
+    volumes:
+      - rag_data:/app/data
+      - ./data/materials:/app/data/materials:ro
+    networks:
+      - dna-forca-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Servidor API Geral - Para autenticação, chatbot, Drive sync, etc.
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: dna-forca-api-server
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_DRIVE_API_KEY=${GOOGLE_DRIVE_API_KEY}
+      - RAG_SERVER_URL=http://rag-server:8000
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      - LOG_LEVEL=INFO
+    volumes:
+      - api_data:/app/data
+      - ./data:/app/data
+    networks:
+      - dna-forca-network
+    depends_on:
+      rag-server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis para cache e sessões (opcional, para melhor performance)
+  redis:
+    image: redis:7-alpine
+    container_name: dna-forca-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - dna-forca-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+volumes:
+  rag_data:
+    driver: local
+  api_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  dna-forca-network:
+    driver: bridge

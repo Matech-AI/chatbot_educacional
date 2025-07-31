@@ -1,0 +1,44 @@
+# Dockerfile para o Servidor API Geral
+FROM python:3.11-slim
+
+# Definir variáveis de ambiente
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalar dependências do sistema
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Criar diretório de trabalho
+WORKDIR /app
+
+# Copiar requirements
+COPY config/requirements.txt .
+
+# Instalar dependências Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar código do servidor API
+COPY auth/ ./auth/
+COPY chat_agents/ ./chat_agents/
+COPY drive_sync/ ./drive_sync/
+COPY video_processing/ ./video_processing/
+COPY maintenance/ ./maintenance/
+COPY utils/ ./utils/
+COPY data/ ./data/
+
+# Copiar arquivo principal da API
+COPY api_server.py .
+
+# Criar diretórios necessários
+RUN mkdir -p /app/data/materials /app/logs
+
+# Expor porta
+EXPOSE 8000
+
+# Comando de inicialização
+CMD ["python", "api_server.py"] 

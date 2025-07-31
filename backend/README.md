@@ -72,6 +72,7 @@ backend/
 
 - Python 3.8+
 - Dependências listadas em `config/requirements.txt`
+- Chaves de API (OpenAI, Gemini, Google Drive)
 
 ### Instalação
 

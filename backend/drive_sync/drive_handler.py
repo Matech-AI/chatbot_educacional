@@ -6,7 +6,7 @@ import io
 import requests
 import json
 import time
-import hashlib 
+import hashlib
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
@@ -30,7 +30,7 @@ class DriveHandler:
         self.materials_dir.mkdir(parents=True, exist_ok=True)
         self.service = None
         self.api_key = None
-    
+
         # Adicionar rastreamento de arquivos processados e hashes
         self.processed_files = {}
         self.file_hashes = {}
@@ -40,13 +40,13 @@ class DriveHandler:
             'skipped_duplicates': 0,
             'errors': 0
         }
-    
+
         # Updated scopes for better access
         self.scopes = [
             'https://www.googleapis.com/auth/drive.readonly',
             'https://www.googleapis.com/auth/drive.metadata.readonly'
         ]
-        
+
         # Adicionar cache de autenticação
         self.auth_cache = {
             'last_auth_time': 0,
@@ -54,7 +54,7 @@ class DriveHandler:
             'auth_method': None,
             'is_authenticated': False
         }
-    
+
         logger.info(
             f"🚀 Initialized DriveHandler with materials directory: {self.materials_dir}")
         logger.info(
@@ -113,12 +113,12 @@ class DriveHandler:
                     return False
 
             self.service = test_service
-            
+
             # Atualizar o cache de autenticação
             self.auth_cache['last_auth_time'] = time.time()
             self.auth_cache['auth_method'] = 'api_key'
             self.auth_cache['is_authenticated'] = True
-            
+
             logger.info(
                 "✅ Successfully authenticated with Google Drive using API Key")
             return True
@@ -128,28 +128,28 @@ class DriveHandler:
             logger.error(f"❌ Error type: {type(e).__name__}")
             return False
 
-    def authenticate_with_credentials(self, credentials_path: str = 'credentials.json') -> bool:
+    def authenticate_with_credentials(self, credentials_path: str = 'data/credentials.json') -> bool:
         """Authenticate with Google Drive using OAuth2 credentials with improved flow"""
         try:
             # Verificar se já estamos autenticados e o cache ainda é válido
             current_time = time.time()
-            if (self.service and 
-                self.auth_cache['is_authenticated'] and 
+            if (self.service and
+                self.auth_cache['is_authenticated'] and
                 self.auth_cache['auth_method'] == 'oauth2' and
-                current_time - self.auth_cache['last_auth_time'] < self.auth_cache['auth_valid_for']):
+                    current_time - self.auth_cache['last_auth_time'] < self.auth_cache['auth_valid_for']):
                 logger.info("✅ Using cached OAuth2 authentication")
                 return True
-                
+
             logger.info("🔐 Attempting OAuth2 authentication...")
             logger.info(f"📄 Credentials file path: {credentials_path}")
             logger.info(
                 f"📄 Credentials file exists: {os.path.exists(credentials_path)}")
-    
+
             creds = None
             token_path = 'token.json'
             logger.info(f"🎫 Token file path: {token_path}")
             logger.info(f"🎫 Token file exists: {os.path.exists(token_path)}")
-    
+
             # Load existing token
             if os.path.exists(token_path):
                 logger.info("📖 Loading existing token from file...")
@@ -158,18 +158,18 @@ class DriveHandler:
                         token_path, self.scopes)
                     logger.info(
                         f"🎫 Token loaded. Valid: {creds.valid if creds else False}")
-    
+
                     if creds and creds.expired:
                         logger.info(f"🎫 Token expired: {creds.expired}")
                 except Exception as e:
                     logger.warning(f"⚠️ Error loading token: {e}")
                     creds = None
-    
+
             # If there are no (valid) credentials available, let the user log in
             if not creds or not creds.valid:
                 logger.info(
                     "🔄 Credentials invalid or missing, refreshing/creating new ones...")
-    
+
                 if creds and creds.expired and creds.refresh_token:
                     logger.info("🔄 Refreshing expired credentials...")
                     try:
@@ -178,30 +178,31 @@ class DriveHandler:
                     except Exception as e:
                         logger.warning(f"⚠️ Token refresh failed: {e}")
                         creds = None
-    
+
                 if not creds:
                     if not os.path.exists(credentials_path):
                         logger.error(
                             f"❌ Credentials file not found: {credentials_path}")
                         raise FileNotFoundError(
                             f"Credentials file not found: {credentials_path}")
-    
+
                     logger.info("🌐 Starting OAuth2 flow...")
-    
+
                     # Create flow with improved settings
                     flow = InstalledAppFlow.from_client_secrets_file(
                         credentials_path,
                         self.scopes,
                         redirect_uri='http://localhost:8080'  # Explicit redirect URI
                     )
-    
+
                     # Run local server with better error handling
                     try:
                         logger.info("🖥️ Starting local server for OAuth2...")
                         # Modificação aqui: Adicionar access_type='offline' e prompt='consent'
                         # para garantir que recebamos um refresh_token de longa duração
-                        flow.authorization_url(access_type='offline', prompt='consent')
-                        
+                        flow.authorization_url(
+                            access_type='offline', prompt='consent')
+
                         creds = flow.run_local_server(
                             port=8080,
                             open_browser=False,
@@ -209,16 +210,17 @@ class DriveHandler:
                             timeout_seconds=300  # 5 minute timeout
                         )
                         logger.info("✅ OAuth2 flow completed successfully")
-    
+
                     except Exception as oauth_error:
                         logger.error(f"❌ OAuth2 flow failed: {oauth_error}")
-    
+
                         # Try console flow as fallback
                         logger.info(
                             "🔄 Trying console-based authentication as fallback...")
                         try:
                             # Também adicionar access_type='offline' e prompt='consent' aqui
-                            auth_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
+                            auth_url, _ = flow.authorization_url(
+                                access_type='offline', prompt='consent')
                             print(f"Please go to this URL: {auth_url}")
                             creds = flow.run_console()
                             logger.info("✅ Console authentication successful")
@@ -226,7 +228,7 @@ class DriveHandler:
                             logger.error(
                                 f"❌ Console authentication also failed: {console_error}")
                             return False
-    
+
                 # Save the credentials for the next run
                 if creds:
                     logger.info("💾 Saving credentials to token.json...")
@@ -236,11 +238,11 @@ class DriveHandler:
                         logger.info("✅ Credentials saved successfully")
                     except Exception as e:
                         logger.warning(f"⚠️ Could not save credentials: {e}")
-    
+
             if creds:
                 logger.info("🔨 Building Google Drive service...")
                 self.service = build('drive', 'v3', credentials=creds)
-    
+
                 # Test the service with a simple request
                 try:
                     about = self.service.about().get(fields="user").execute()
@@ -251,34 +253,35 @@ class DriveHandler:
                 except Exception as e:
                     logger.warning(
                         f"⚠️ Could not get user info, but service created: {e}")
-    
+
                 # Atualizar o cache de autenticação
                 self.auth_cache['last_auth_time'] = time.time()
                 self.auth_cache['auth_method'] = 'oauth2'
                 self.auth_cache['is_authenticated'] = True
-                
+
                 logger.info(
                     "✅ Successfully authenticated with Google Drive using OAuth2")
                 return True
             else:
                 logger.error("❌ No valid credentials obtained")
                 return False
-    
+
         except Exception as e:
             logger.error(f"❌ Error authenticating with OAuth2: {str(e)}")
             logger.error(f"❌ Error type: {type(e).__name__}")
             return False
 
-    def authenticate(self, credentials_path: str = 'credentials.json', api_key: str = None) -> bool:
+    def authenticate(self, credentials_path: str = 'data/credentials.json', api_key: str = None) -> bool:
         """Main authentication method that tries multiple approaches in order"""
         # Verificar se já estamos autenticados e o cache ainda é válido
         current_time = time.time()
-        if (self.service and 
+        if (self.service and
             self.auth_cache['is_authenticated'] and
-            current_time - self.auth_cache['last_auth_time'] < self.auth_cache['auth_valid_for']):
-            logger.info(f"✅ Using cached authentication ({self.auth_cache['auth_method']})")
+                current_time - self.auth_cache['last_auth_time'] < self.auth_cache['auth_valid_for']):
+            logger.info(
+                f"✅ Using cached authentication ({self.auth_cache['auth_method']})")
             return True
-            
+
         logger.info("🚀 Starting Google Drive authentication process...")
 
         auth_methods = [
@@ -352,7 +355,7 @@ class DriveHandler:
         logger.info("❌ All public access methods failed")
         return None
 
-    def authenticate(self, credentials_path: str = 'credentials.json', api_key: str = None) -> bool:
+    def authenticate(self, credentials_path: str = 'data/credentials.json', api_key: str = None) -> bool:
         """Main authentication method that tries multiple approaches in order"""
         logger.info("🚀 Starting Google Drive authentication process...")
 
@@ -508,7 +511,7 @@ class DriveHandler:
             logger.info(f"❌ Public access test error: {e}")
 
         return result
-        
+
     def list_folder_contents(self, folder_id: str) -> List[Dict[str, Any]]:
         """Alias para list_folder_contents_with_pagination para manter compatibilidade"""
         return self.list_folder_contents_with_pagination(folder_id)
@@ -529,11 +532,11 @@ class DriveHandler:
             files = []
             page_token = None
             page_count = 0
-            
+
             while True:
                 page_count += 1
                 logger.info(f"📄 Fetching page {page_count}...")
-                
+
                 results = self.service.files().list(
                     q=query,
                     pageSize=100,
@@ -543,7 +546,8 @@ class DriveHandler:
 
                 page_files = results.get('files', [])
                 files.extend(page_files)
-                logger.info(f"📊 Found {len(page_files)} items on page {page_count}")
+                logger.info(
+                    f"📊 Found {len(page_files)} items on page {page_count}")
 
                 page_token = results.get('nextPageToken')
                 if not page_token:
@@ -551,7 +555,7 @@ class DriveHandler:
 
             logger.info(f"📊 Total files found: {len(files)}")
             return files
-        
+
         except HttpError as e:
             logger.error(f"❌ HTTP Error listing folder contents: {e}")
             logger.error(f"❌ Status code: {e.resp.status}")
@@ -563,7 +567,7 @@ class DriveHandler:
                 logger.error("❌ Folder not found")
 
             return []
-        
+
         except Exception as e:
             logger.error(f"❌ Unexpected error listing folder: {str(e)}")
             return []
@@ -572,38 +576,43 @@ class DriveHandler:
         """Download a single file with duplicate checking and memory optimization"""
         try:
             logger.info(f"📥 Starting download for file ID: {file_id}")
-    
+
             # Get file metadata if service is available
             file_metadata = None
             if self.service:
                 file_metadata = self.get_file_metadata(file_id)
-    
+
             if file_metadata:
-                filename = filename or file_metadata.get('name', f"file_{file_id}")
+                filename = filename or file_metadata.get(
+                    'name', f"file_{file_id}")
                 mime_type = file_metadata.get('mimeType', '')
-                file_size = int(file_metadata.get('size', 0)) if file_metadata.get('size') else 0
-    
-                logger.info(f"📁 File: {filename} ({mime_type}) - {file_size} bytes")
-                
+                file_size = int(file_metadata.get('size', 0)
+                                ) if file_metadata.get('size') else 0
+
+                logger.info(
+                    f"📁 File: {filename} ({mime_type}) - {file_size} bytes")
+
                 # Skip large files (opcional, ajuste o limite conforme necessário)
                 if file_size > 100 * 1024 * 1024:  # 100 MB
-                    logger.warning(f"⚠️ Skipping large file: {filename} ({file_size / (1024 * 1024):.2f} MB)")
+                    logger.warning(
+                        f"⚠️ Skipping large file: {filename} ({file_size / (1024 * 1024):.2f} MB)")
                     self.download_stats['errors'] += 1
                     return None
             else:
                 filename = filename or f"file_{file_id}"
                 mime_type = ''
                 file_size = 0
-                logger.info(f"📁 Downloading: {filename} (metadata unavailable)")
-    
+                logger.info(
+                    f"📁 Downloading: {filename} (metadata unavailable)")
+
             # Skip Google Apps files
             if mime_type.startswith('application/vnd.google-apps'):
                 logger.warning(f"⏭️ Skipping Google Apps file: {filename}")
                 return None
-    
+
             file_content = None
             download_method = None
-    
+
             # Method 1: Standard API download (if service available)
             if self.service:
                 try:
@@ -611,57 +620,62 @@ class DriveHandler:
                     request = self.service.files().get_media(fileId=file_id)
                     file = io.BytesIO()
                     downloader = MediaIoBaseDownload(file, request)
-    
+
                     done = False
                     while not done:
                         status, done = downloader.next_chunk()
                         if status:
                             progress = int(status.progress() * 100)
                             logger.info(f"📥 Download progress: {progress}%")
-    
+
                     file_content = file.getvalue()
                     download_method = "api_download"
-                    logger.info(f"✅ Downloaded via API: {len(file_content)} bytes")
-    
+                    logger.info(
+                        f"✅ Downloaded via API: {len(file_content)} bytes")
+
                 except HttpError as api_error:
-                    logger.warning(f"⚠️ API download failed: HTTP {api_error.resp.status}")
+                    logger.warning(
+                        f"⚠️ API download failed: HTTP {api_error.resp.status}")
                     if api_error.resp.status == 403:
                         logger.info("🔄 Trying public access methods...")
-    
+
             # Method 2: Public access methods (fallback)
             if not file_content:
                 logger.info("🔄 Attempting public download methods...")
                 public_result = self.try_public_file_access(file_id)
-    
+
                 if public_result:
                     file_content = public_result['content']
                     download_method = public_result['method']
-                    logger.info(f"✅ Downloaded via {download_method}: {len(file_content)} bytes")
-    
+                    logger.info(
+                        f"✅ Downloaded via {download_method}: {len(file_content)} bytes")
+
             # Check for duplicates and save file if download was successful
             if file_content:
                 # Verificar duplicados
-                is_duplicate, duplicate_info = self.is_duplicate_file(filename, file_content)
+                is_duplicate, duplicate_info = self.is_duplicate_file(
+                    filename, file_content)
                 if is_duplicate:
-                    logger.info(f"⏭️ Skipping duplicate file: {filename} - {duplicate_info}")
+                    logger.info(
+                        f"⏭️ Skipping duplicate file: {filename} - {duplicate_info}")
                     self.download_stats['skipped_duplicates'] += 1
                     return None
-                    
+
                 # Registrar hash do arquivo
                 file_hash = self.calculate_file_hash(file_content)
-                
+
                 # Salvar arquivo
                 result = self._save_downloaded_file(
                     file_content, filename, file_id, mime_type,
                     file_metadata or {}, download_method
                 )
-                
+
                 if result:
                     # Registrar arquivo processado
                     self.processed_files[filename] = file_id
                     self.file_hashes[file_hash] = result['path']
                     self.download_stats['downloaded_files'] += 1
-                    
+
                 return result
             else:
                 logger.error(f"❌ All download methods failed for: {filename}")
@@ -745,40 +759,43 @@ class DriveHandler:
 
     def process_folder(self, folder_id: str, download_all: bool = False) -> List[Dict[str, Any]]:
         """Process files in a Google Drive folder (non-recursive)"""
-        logger.info(f"📂 Processing folder: {folder_id}, download_all={download_all}")
-        
+        logger.info(
+            f"📂 Processing folder: {folder_id}, download_all={download_all}")
+
         # Get files in folder
         # Changed from list_folder_contents to list_folder_contents_with_pagination
         files = self.list_folder_contents_with_pagination(folder_id)
         if not files:
             logger.warning("⚠️ No files found in folder")
             return []
-        
+
         logger.info(f"📊 Found {len(files)} files in folder")
-        
+
         # Process files in batches
         processed_files = []
         batch_size = 10  # Adjust as needed
-        
+
         for i in range(0, len(files), batch_size):
             batch = files[i:i+batch_size]
             batch_results = []
-            
-            logger.info(f"📦 Processing batch {i//batch_size + 1}/{(len(files) + batch_size - 1)//batch_size}")
-            
+
+            logger.info(
+                f"📦 Processing batch {i//batch_size + 1}/{(len(files) + batch_size - 1)//batch_size}")
+
             for file in batch:
                 file_id = file.get('id')
                 file_name = file.get('name', 'Unknown')
                 mime_type = file.get('mimeType', '')
-                
+
                 # Skip Google Apps files and folders
                 if mime_type.startswith('application/vnd.google-apps'):
                     if mime_type == 'application/vnd.google-apps.folder':
                         logger.info(f"📁 Skipping subfolder: {file_name}")
                     else:
-                        logger.warning(f"⏭️ Skipping Google Apps file: {file_name}")
+                        logger.warning(
+                            f"⏭️ Skipping Google Apps file: {file_name}")
                     continue
-                
+
                 if download_all:
                     # Download the file
                     logger.info(f"⬇️ Downloading file: {file_name}")
@@ -800,14 +817,16 @@ class DriveHandler:
                         'created_time': file.get('createdTime'),
                         'modified_time': file.get('modifiedTime')
                     })
-            
+
             # Add batch results to processed files
             processed_files.extend(batch_results)
-            logger.info(f"✅ Processed batch {i//batch_size + 1}/{(len(files) + batch_size - 1)//batch_size}")
-    
+            logger.info(
+                f"✅ Processed batch {i//batch_size + 1}/{(len(files) + batch_size - 1)//batch_size}")
+
         logger.info(f"🎉 Processing completed!")
-        logger.info(f"📊 Successfully processed: {len(processed_files)} out of {len(files)} files")
-    
+        logger.info(
+            f"📊 Successfully processed: {len(processed_files)} out of {len(files)} files")
+
         return processed_files
 
     def _get_extension_from_mime_type(self, mime_type: str) -> str:
@@ -840,9 +859,10 @@ class DriveHandler:
         #             logger.info(f"🧹 Cleaned up temporary file: {file}")
         #         except Exception as e:
         #             logger.warning(f"⚠️ Could not remove {file}: {e}")
-        
+
         # Apenas registra que a função foi chamada sem remover arquivos
-        logger.info("🧹 Função cleanup_temp_files chamada, mas token.json foi preservado")
+        logger.info(
+            "🧹 Função cleanup_temp_files chamada, mas token.json foi preservado")
 
     def get_download_stats(self) -> Dict[str, Any]:
         """Get statistics about downloaded materials"""
@@ -872,20 +892,21 @@ class DriveHandler:
     def is_duplicate_file(self, filename: str, file_content: bytes) -> tuple[bool, str]:
         """Check if file is duplicate by content hash"""
         file_hash = self.calculate_file_hash(file_content)
-        
+
         # Check by hash (exact content match)
         if file_hash in self.file_hashes:
             return True, f"Content duplicate of: {self.file_hashes[file_hash]}"
-        
+
         # Check by filename (just log warning)
         if filename in self.processed_files:
             logger.warning(f"⚠️ Filename duplicate detected: {filename}")
-        
+
         return False, ""
 
     def clear_file_hashes_cache(self):
         """Clear the file hashes cache to allow redownloading files"""
-        logger.info(f"🧹 Clearing file hashes cache. Before: {len(self.file_hashes)} entries")
+        logger.info(
+            f"🧹 Clearing file hashes cache. Before: {len(self.file_hashes)} entries")
         self.file_hashes = {}
         self.processed_files = {}
         logger.info(f"✅ File hashes cache cleared successfully")

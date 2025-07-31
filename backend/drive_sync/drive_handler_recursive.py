@@ -30,7 +30,7 @@ class RecursiveDriveHandler:
         self.materials_dir.mkdir(parents=True, exist_ok=True)
         self.service = None
         self.api_key = None
-        
+
         # Track processed files to avoid duplicates
         self.processed_files: Dict[str, str] = {}  # filename -> file_id
         self.file_hashes: Dict[str, str] = {}      # hash -> filepath
@@ -50,7 +50,7 @@ class RecursiveDriveHandler:
             'https://www.googleapis.com/auth/drive.readonly',
             'https://www.googleapis.com/auth/drive.metadata.readonly'
         ]
-        
+
         # Adicionar cache de autenticação
         self.auth_cache = {
             'last_auth_time': 0,
@@ -59,37 +59,41 @@ class RecursiveDriveHandler:
             'is_authenticated': False
         }
 
-        logger.info(f"🚀 Initialized RecursiveDriveHandler with materials directory: {self.materials_dir}")
+        logger.info(
+            f"🚀 Initialized RecursiveDriveHandler with materials directory: {self.materials_dir}")
 
-    def authenticate(self, credentials_path: str = 'credentials.json', api_key: str = None) -> bool:
+    def authenticate(self, credentials_path: str = 'data/credentials.json', api_key: str = None) -> bool:
         """Main authentication method that tries multiple approaches in order"""
         logger.info("🚀 Starting Google Drive authentication process...")
 
         # Verificar se já estamos autenticados e o cache ainda é válido
         current_time = time.time()
-        if (self.service and 
+        if (self.service and
             self.auth_cache['is_authenticated'] and
-            current_time - self.auth_cache['last_auth_time'] < self.auth_cache['auth_valid_for']):
-            logger.info(f"✅ Using cached authentication ({self.auth_cache['auth_method']})")
+                current_time - self.auth_cache['last_auth_time'] < self.auth_cache['auth_valid_for']):
+            logger.info(
+                f"✅ Using cached authentication ({self.auth_cache['auth_method']})")
             return True
 
         # Priorizar token.json existente
-        token_path = 'token.json'
+        token_path = 'data/token.json'
         if os.path.exists(token_path):
             try:
-                logger.info("🔄 Found existing token.json, attempting to use it directly")
-                creds = Credentials.from_authorized_user_file(token_path, self.scopes)
-                
+                logger.info(
+                    "🔄 Found existing token.json, attempting to use it directly")
+                creds = Credentials.from_authorized_user_file(
+                    token_path, self.scopes)
+
                 # Verificar se o token é válido ou pode ser atualizado
                 if creds and creds.valid:
                     logger.info("✅ Existing token is valid")
                     self.service = build('drive', 'v3', credentials=creds)
-                    
+
                     # Atualizar o cache de autenticação
                     self.auth_cache['last_auth_time'] = time.time()
                     self.auth_cache['auth_method'] = 'oauth2'
                     self.auth_cache['is_authenticated'] = True
-                    
+
                     return True
                 elif creds and creds.expired and creds.refresh_token:
                     logger.info("🔄 Existing token expired, refreshing...")
@@ -99,12 +103,12 @@ class RecursiveDriveHandler:
                         token.write(creds.to_json())
                     logger.info("✅ Token refreshed successfully")
                     self.service = build('drive', 'v3', credentials=creds)
-                    
+
                     # Atualizar o cache de autenticação
                     self.auth_cache['last_auth_time'] = time.time()
                     self.auth_cache['auth_method'] = 'oauth2'
                     self.auth_cache['is_authenticated'] = True
-                    
+
                     return True
             except Exception as e:
                 logger.warning(f"⚠️ Error using existing token: {e}")
@@ -112,9 +116,12 @@ class RecursiveDriveHandler:
 
         # Tentar outros métodos de autenticação se o token.json não funcionou
         auth_methods = [
-            ("API Key", lambda: self.authenticate_with_api_key(api_key) if api_key else False),
-            ("Environment API Key", lambda: self.authenticate_with_api_key(os.getenv('GOOGLE_DRIVE_API_KEY')) if os.getenv('GOOGLE_DRIVE_API_KEY') else False),
-            ("OAuth2 Credentials", lambda: self.authenticate_with_credentials(credentials_path)),
+            ("API Key", lambda: self.authenticate_with_api_key(
+                api_key) if api_key else False),
+            ("Environment API Key", lambda: self.authenticate_with_api_key(os.getenv(
+                'GOOGLE_DRIVE_API_KEY')) if os.getenv('GOOGLE_DRIVE_API_KEY') else False),
+            ("OAuth2 Credentials",
+             lambda: self.authenticate_with_credentials(credentials_path)),
             ("Public Access", self.authenticate_public_access)
         ]
 
@@ -122,7 +129,8 @@ class RecursiveDriveHandler:
             logger.info(f"🔄 Trying authentication method: {method_name}")
             try:
                 if auth_func():
-                    logger.info(f"✅ Authentication successful with: {method_name}")
+                    logger.info(
+                        f"✅ Authentication successful with: {method_name}")
                     return True
                 else:
                     logger.info(f"❌ Authentication failed with: {method_name}")
@@ -131,7 +139,7 @@ class RecursiveDriveHandler:
 
         # Resetar o cache de autenticação em caso de falha
         self.auth_cache['is_authenticated'] = False
-        
+
         logger.error("❌ All authentication methods failed")
         return False
 
@@ -145,45 +153,50 @@ class RecursiveDriveHandler:
 
             self.api_key = api_key
             self.service = build('drive', 'v3', developerKey=api_key)
-            
+
             # Test the API key
             try:
-                test_result = self.service.files().list(pageSize=1, fields="files(id,name)").execute()
+                test_result = self.service.files().list(
+                    pageSize=1, fields="files(id,name)").execute()
                 logger.info("✅ API Key test successful")
             except HttpError as e:
                 if e.resp.status == 403:
-                    logger.warning("⚠️ API Key has limited permissions, but may work for public files")
+                    logger.warning(
+                        "⚠️ API Key has limited permissions, but may work for public files")
                 else:
-                    logger.error(f"❌ API Key test failed: HTTP {e.resp.status}")
+                    logger.error(
+                        f"❌ API Key test failed: HTTP {e.resp.status}")
                     return False
-            
+
             # Atualizar o cache de autenticação
             self.auth_cache['last_auth_time'] = time.time()
             self.auth_cache['auth_method'] = 'api_key'
             self.auth_cache['is_authenticated'] = True
 
-            logger.info("✅ Successfully authenticated with Google Drive using API Key")
+            logger.info(
+                "✅ Successfully authenticated with Google Drive using API Key")
             return True
 
         except Exception as e:
             logger.error(f"❌ Error authenticating with API Key: {str(e)}")
             return False
 
-    def authenticate_with_credentials(self, credentials_path: str = 'credentials.json') -> bool:
+    def authenticate_with_credentials(self, credentials_path: str = 'data/credentials.json') -> bool:
         """Authenticate with Google Drive using OAuth2 credentials with improved flow"""
         try:
             # Verificar se já estamos autenticados e o cache ainda é válido
             current_time = time.time()
-            if (self.service and 
-                self.auth_cache['is_authenticated'] and 
+            if (self.service and
+                self.auth_cache['is_authenticated'] and
                 self.auth_cache['auth_method'] == 'oauth2' and
-                current_time - self.auth_cache['last_auth_time'] < self.auth_cache['auth_valid_for']):
+                    current_time - self.auth_cache['last_auth_time'] < self.auth_cache['auth_valid_for']):
                 logger.info("✅ Using cached OAuth2 authentication")
                 return True
-                
+
             logger.info("🔐 Attempting OAuth2 authentication...")
             logger.info(f"📄 Credentials file path: {credentials_path}")
-            logger.info(f"📄 Credentials file exists: {os.path.exists(credentials_path)}")
+            logger.info(
+                f"📄 Credentials file exists: {os.path.exists(credentials_path)}")
 
             creds = None
             token_path = 'token.json'
@@ -194,8 +207,10 @@ class RecursiveDriveHandler:
             if os.path.exists(token_path):
                 logger.info("📖 Loading existing token from file...")
                 try:
-                    creds = Credentials.from_authorized_user_file(token_path, self.scopes)
-                    logger.info(f"🎫 Token loaded. Valid: {creds.valid if creds else False}")
+                    creds = Credentials.from_authorized_user_file(
+                        token_path, self.scopes)
+                    logger.info(
+                        f"🎫 Token loaded. Valid: {creds.valid if creds else False}")
 
                     if creds and creds.expired:
                         logger.info(f"🎫 Token expired: {creds.expired}")
@@ -205,7 +220,8 @@ class RecursiveDriveHandler:
 
             # If there are no (valid) credentials available, let the user log in
             if not creds or not creds.valid:
-                logger.info("🔄 Credentials invalid or missing, refreshing/creating new ones...")
+                logger.info(
+                    "🔄 Credentials invalid or missing, refreshing/creating new ones...")
 
                 if creds and creds.expired and creds.refresh_token:
                     logger.info("🔄 Refreshing expired credentials...")
@@ -218,8 +234,10 @@ class RecursiveDriveHandler:
 
                 if not creds:
                     if not os.path.exists(credentials_path):
-                        logger.error(f"❌ Credentials file not found: {credentials_path}")
-                        raise FileNotFoundError(f"Credentials file not found: {credentials_path}")
+                        logger.error(
+                            f"❌ Credentials file not found: {credentials_path}")
+                        raise FileNotFoundError(
+                            f"Credentials file not found: {credentials_path}")
 
                     logger.info("🌐 Starting OAuth2 flow...")
 
@@ -235,8 +253,9 @@ class RecursiveDriveHandler:
                         logger.info("🖥️ Starting local server for OAuth2...")
                         # Modificação aqui: Adicionar access_type='offline' e prompt='consent'
                         # para garantir que recebamos um refresh_token de longa duração
-                        flow.authorization_url(access_type='offline', prompt='consent')
-                        
+                        flow.authorization_url(
+                            access_type='offline', prompt='consent')
+
                         creds = flow.run_local_server(
                             port=8080,
                             open_browser=False,
@@ -249,15 +268,18 @@ class RecursiveDriveHandler:
                         logger.error(f"❌ OAuth2 flow failed: {oauth_error}")
 
                         # Try console flow as fallback
-                        logger.info("🔄 Trying console-based authentication as fallback...")
+                        logger.info(
+                            "🔄 Trying console-based authentication as fallback...")
                         try:
                             # Também adicionar access_type='offline' e prompt='consent' aqui
-                            auth_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
+                            auth_url, _ = flow.authorization_url(
+                                access_type='offline', prompt='consent')
                             print(f"Please go to this URL: {auth_url}")
                             creds = flow.run_console()
                             logger.info("✅ Console authentication successful")
                         except Exception as console_error:
-                            logger.error(f"❌ Console authentication also failed: {console_error}")
+                            logger.error(
+                                f"❌ Console authentication also failed: {console_error}")
                             return False
 
                 # Save the credentials for the next run
@@ -277,17 +299,21 @@ class RecursiveDriveHandler:
                 # Test the service with a simple request
                 try:
                     about = self.service.about().get(fields="user").execute()
-                    user_email = about.get('user', {}).get('emailAddress', 'Unknown')
-                    logger.info(f"✅ Successfully authenticated as: {user_email}")
+                    user_email = about.get('user', {}).get(
+                        'emailAddress', 'Unknown')
+                    logger.info(
+                        f"✅ Successfully authenticated as: {user_email}")
                 except Exception as e:
-                    logger.warning(f"⚠️ Could not get user info, but service created: {e}")
+                    logger.warning(
+                        f"⚠️ Could not get user info, but service created: {e}")
 
                 # Atualizar o cache de autenticação
                 self.auth_cache['last_auth_time'] = time.time()
                 self.auth_cache['auth_method'] = 'oauth2'
                 self.auth_cache['is_authenticated'] = True
-                
-                logger.info("✅ Successfully authenticated with Google Drive using OAuth2")
+
+                logger.info(
+                    "✅ Successfully authenticated with Google Drive using OAuth2")
                 return True
             else:
                 logger.error("❌ No valid credentials obtained")
@@ -303,12 +329,12 @@ class RecursiveDriveHandler:
         try:
             logger.info("🔓 Attempting public access without authentication...")
             self.service = build('drive', 'v3')
-            
+
             # Atualizar o cache de autenticação
             self.auth_cache['last_auth_time'] = time.time()
             self.auth_cache['auth_method'] = 'public'
             self.auth_cache['is_authenticated'] = True
-            
+
             logger.info("✅ Public service built successfully")
             return True
         except Exception as e:
@@ -317,22 +343,25 @@ class RecursiveDriveHandler:
 
     def get_folder_structure(self, folder_id: str, current_path: str = "", max_depth: int = None, current_depth: int = 0) -> Dict[str, Any]:
         """Get complete folder structure recursively with optional depth limit"""
-        logger.info(f"📁 Analyzing folder structure: {folder_id} at path: {current_path}")
-        
+        logger.info(
+            f"📁 Analyzing folder structure: {folder_id} at path: {current_path}")
+
         # Verificar flag de cancelamento
         if self.cancel_flag:
             logger.info("🛑 Análise de estrutura de pastas cancelada")
             raise Exception("Operação cancelada pelo usuário")
-            
+
         try:
             # Get folder info
             try:
-                folder_info = self.service.files().get(fileId=folder_id, fields="id,name").execute()
+                folder_info = self.service.files().get(
+                    fileId=folder_id, fields="id,name").execute()
                 folder_name = folder_info.get('name', 'Unknown')
             except Exception as e:
-                logger.warning(f"Could not get folder info for {folder_id}: {e}")
+                logger.warning(
+                    f"Could not get folder info for {folder_id}: {e}")
                 folder_name = f'folder_{folder_id[:8]}'
-            
+
             structure = {
                 'id': folder_id,
                 'name': folder_name,
@@ -340,11 +369,11 @@ class RecursiveDriveHandler:
                 'subfolders': {},
                 'files': []
             }
-            
+
             # Check if we've reached the maximum depth
             if max_depth is not None and current_depth >= max_depth:
                 return structure
-            
+
             # List all items in folder
             query = f"'{folder_id}' in parents and trashed = false"
             try:
@@ -353,29 +382,33 @@ class RecursiveDriveHandler:
                     pageSize=1000,
                     fields="files(id,name,mimeType,size,parents,createdTime,modifiedTime)"
                 ).execute()
-                
+
                 items = results.get('files', [])
-                logger.info(f"📊 Found {len(items)} items in folder: {folder_name}")
-                
+                logger.info(
+                    f"📊 Found {len(items)} items in folder: {folder_name}")
+
                 for item in items:
                     # Verificar flag de cancelamento periodicamente
                     if self.cancel_flag:
-                        logger.info("🛑 Análise de estrutura de pastas cancelada durante o processamento")
+                        logger.info(
+                            "🛑 Análise de estrutura de pastas cancelada durante o processamento")
                         raise Exception("Operação cancelada pelo usuário")
-                        
+
                     if item.get('mimeType') == 'application/vnd.google-apps.folder':
                         # It's a subfolder - recurse
-                        subfolder_path = os.path.join(current_path, folder_name) if current_path else folder_name
+                        subfolder_path = os.path.join(
+                            current_path, folder_name) if current_path else folder_name
                         try:
                             structure['subfolders'][item['id']] = self.get_folder_structure(
-                                item['id'], 
+                                item['id'],
                                 subfolder_path,
                                 max_depth=max_depth,
                                 current_depth=current_depth + 1
                             )
                             self.download_stats['total_folders'] += 1
                         except Exception as e:
-                            logger.error(f"Error processing subfolder {item.get('name', 'Unknown')}: {e}")
+                            logger.error(
+                                f"Error processing subfolder {item.get('name', 'Unknown')}: {e}")
                     else:
                         # It's a file
                         file_info = {
@@ -388,12 +421,12 @@ class RecursiveDriveHandler:
                         }
                         structure['files'].append(file_info)
                         self.download_stats['total_files'] += 1
-                        
+
             except Exception as e:
                 logger.error(f"Error listing folder contents: {e}")
-            
+
             return structure
-            
+
         except Exception as e:
             logger.error(f"❌ Error getting folder structure: {str(e)}")
             return {
@@ -406,7 +439,8 @@ class RecursiveDriveHandler:
 
     def clear_file_hashes_cache(self):
         """Clear the file hashes cache to allow redownloading files"""
-        logger.info(f"🧹 Clearing file hashes cache. Before: {len(self.file_hashes)} entries")
+        logger.info(
+            f"🧹 Clearing file hashes cache. Before: {len(self.file_hashes)} entries")
         self.file_hashes = {}
         self.processed_files = {}
         logger.info(f"✅ File hashes cache cleared successfully")
@@ -423,101 +457,111 @@ class RecursiveDriveHandler:
     def is_duplicate_file(self, filename: str, file_content: bytes) -> Tuple[bool, str]:
         """Check if file is duplicate by name or content"""
         file_hash = self.calculate_file_hash(file_content)
-        
+
         # Check by hash first (exact content match)
         if file_hash in self.file_hashes:
             return True, f"Content duplicate of: {self.file_hashes[file_hash]}"
-        
+
         # Check by filename (more lenient - just warn)
         if filename in self.processed_files:
             logger.warning(f"⚠️ Filename duplicate detected: {filename}")
-        
+
         return False, ""
 
     def download_file_with_duplicate_check(self, file_id: str, filename: str, folder_path: str) -> Optional[Dict[str, Any]]:
         """Download a single file with duplicate checking"""
         try:
-            logger.info(f"📥 Downloading file: {filename} in folder: {folder_path}")
-            
+            logger.info(
+                f"📥 Downloading file: {filename} in folder: {folder_path}")
+
             # Get file metadata
             file_metadata = self.get_file_metadata(file_id)
             if not file_metadata:
-                logger.warning(f"⚠️ Could not get metadata for file: {filename}")
+                logger.warning(
+                    f"⚠️ Could not get metadata for file: {filename}")
                 self.download_stats['errors'] += 1
                 return None
-            
+
             mime_type = file_metadata.get('mimeType', '')
-            file_size = int(file_metadata.get('size', 0)) if file_metadata.get('size') else 0
-            
+            file_size = int(file_metadata.get('size', 0)
+                            ) if file_metadata.get('size') else 0
+
             # Skip Google Apps files
             if mime_type.startswith('application/vnd.google-apps'):
                 logger.warning(f"⏭️ Skipping Google Apps file: {filename}")
                 return None
-            
+
             # Download file content
             file_content = None
             download_method = None
-            
+
             if self.service:
                 try:
                     request = self.service.files().get_media(fileId=file_id)
                     file = io.BytesIO()
                     downloader = MediaIoBaseDownload(file, request)
-                    
+
                     done = False
                     retry_count = 0
                     max_retries = 3
-                    
+
                     while not done and retry_count < max_retries:
                         try:
                             status, done = downloader.next_chunk()
                             if status:
                                 progress = int(status.progress() * 100)
                                 if progress % 20 == 0:  # Log every 20%
-                                    logger.debug(f"📥 Download progress for {filename}: {progress}%")
+                                    logger.debug(
+                                        f"📥 Download progress for {filename}: {progress}%")
                         except Exception as chunk_error:
                             retry_count += 1
-                            logger.warning(f"⚠️ Chunk download error (retry {retry_count}): {chunk_error}")
+                            logger.warning(
+                                f"⚠️ Chunk download error (retry {retry_count}): {chunk_error}")
                             if retry_count >= max_retries:
                                 raise chunk_error
                             time.sleep(1)  # Brief pause before retry
-                    
+
                     file_content = file.getvalue()
                     download_method = "api_download"
-                    logger.info(f"✅ Downloaded via API: {len(file_content)} bytes")
-                    
+                    logger.info(
+                        f"✅ Downloaded via API: {len(file_content)} bytes")
+
                 except HttpError as api_error:
-                    logger.warning(f"⚠️ API download failed: HTTP {api_error.resp.status}")
+                    logger.warning(
+                        f"⚠️ API download failed: HTTP {api_error.resp.status}")
                     # Try public access methods as fallback
                     public_result = self.try_public_file_access(file_id)
                     if public_result:
                         file_content = public_result['content']
                         download_method = public_result['method']
                 except Exception as download_error:
-                    logger.error(f"❌ Download error for {filename}: {download_error}")
+                    logger.error(
+                        f"❌ Download error for {filename}: {download_error}")
                     self.download_stats['errors'] += 1
                     return None
-            
+
             if not file_content:
                 logger.error(f"❌ Could not download file: {filename}")
                 self.download_stats['errors'] += 1
                 return None
-            
+
             # Check for duplicates
-            is_duplicate, duplicate_info = self.is_duplicate_file(filename, file_content)
+            is_duplicate, duplicate_info = self.is_duplicate_file(
+                filename, file_content)
             if is_duplicate:
-                logger.info(f"⏭️ Skipping duplicate file: {filename} ({duplicate_info})")
+                logger.info(
+                    f"⏭️ Skipping duplicate file: {filename} ({duplicate_info})")
                 self.download_stats['skipped_duplicates'] += 1
                 return None
-            
+
             # Create directory structure
             full_folder_path = self.materials_dir / folder_path
             full_folder_path.mkdir(parents=True, exist_ok=True)
-            
+
             # Clean filename for filesystem compatibility
             safe_filename = self.sanitize_filename(filename)
             file_path = full_folder_path / safe_filename
-            
+
             # Handle filename conflicts in same directory
             counter = 1
             original_path = file_path
@@ -526,24 +570,27 @@ class RecursiveDriveHandler:
                 suffix = original_path.suffix
                 file_path = full_folder_path / f"{stem}_{counter}{suffix}"
                 counter += 1
-            
+
             # Write file
             try:
                 with open(file_path, 'wb') as f:
                     f.write(file_content)
             except Exception as write_error:
-                logger.error(f"❌ Error writing file {file_path}: {write_error}")
+                logger.error(
+                    f"❌ Error writing file {file_path}: {write_error}")
                 self.download_stats['errors'] += 1
                 return None
-            
+
             # Track this file
             file_hash = self.calculate_file_hash(file_content)
             self.processed_files[filename] = file_id
-            self.file_hashes[file_hash] = str(file_path.relative_to(self.materials_dir))
-            
+            self.file_hashes[file_hash] = str(
+                file_path.relative_to(self.materials_dir))
+
             self.download_stats['downloaded_files'] += 1
-            logger.info(f"💾 Successfully saved: {file_path.relative_to(self.materials_dir)}")
-            
+            logger.info(
+                f"💾 Successfully saved: {file_path.relative_to(self.materials_dir)}")
+
             return {
                 'id': file_id,
                 'name': file_path.name,
@@ -558,7 +605,7 @@ class RecursiveDriveHandler:
                 'created_time': file_metadata.get('createdTime'),
                 'modified_time': file_metadata.get('modifiedTime')
             }
-            
+
         except Exception as e:
             logger.error(f"❌ Error downloading file {filename}: {str(e)}")
             self.download_stats['errors'] += 1
@@ -570,71 +617,74 @@ class RecursiveDriveHandler:
         invalid_chars = '<>:"/\\|?*'
         for char in invalid_chars:
             filename = filename.replace(char, '_')
-        
+
         # Trim whitespace and dots
         filename = filename.strip(' .')
-        
+
         # Ensure not empty
         if not filename:
             filename = 'unnamed_file'
-            
+
         # Limit length
         if len(filename) > 255:
             name, ext = os.path.splitext(filename)
             filename = name[:250] + ext
-            
+
         return filename
 
     def process_folder_recursive(self, folder_structure: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Process folder structure recursively and download all files"""
         processed_files = []
-        
+
         # Verificar flag de cancelamento
         if self.cancel_flag:
             logger.info("🛑 Folder processing cancelled")
             raise Exception("Operation cancelled by user")
-            
+
         folder_path = folder_structure['path']
         folder_name = folder_structure['name']
-        
+
         # Create current folder path
-        current_folder_path = os.path.join(folder_path, folder_name) if folder_path else folder_name
-        
+        current_folder_path = os.path.join(
+            folder_path, folder_name) if folder_path else folder_name
+
         logger.info(f"📂 Processing folder: {current_folder_path}")
-        
+
         # Process files in current folder
         for file_info in folder_structure['files']:
             # Verificar flag de cancelamento periodicamente
             if self.cancel_flag:
                 logger.info("🛑 File processing cancelled")
                 raise Exception("Operation cancelled by user")
-                
+
             try:
                 file_result = self.download_file_with_duplicate_check(
-                    file_info['id'], 
-                    file_info['name'], 
+                    file_info['id'],
+                    file_info['name'],
                     current_folder_path
                 )
                 if file_result:
                     processed_files.append(file_result)
             except Exception as e:
-                logger.error(f"Error processing file {file_info.get('name', 'Unknown')}: {e}")
+                logger.error(
+                    f"Error processing file {file_info.get('name', 'Unknown')}: {e}")
                 self.download_stats['errors'] += 1
-        
+
         # Process subfolders recursively
         for subfolder_structure in folder_structure['subfolders'].values():
             # Verificar flag de cancelamento periodicamente
             if self.cancel_flag:
                 logger.info("🛑 Subfolder processing cancelled")
                 raise Exception("Operation cancelled by user")
-                
+
             try:
-                subfolder_files = self.process_folder_recursive(subfolder_structure)
+                subfolder_files = self.process_folder_recursive(
+                    subfolder_structure)
                 processed_files.extend(subfolder_files)
             except Exception as e:
                 logger.error(f"Error processing subfolder: {e}")
                 self.download_stats['errors'] += 1
-        
+
         return processed_files
 
     async def download_drive_recursive_async(self, root_folder_id: str, max_depth: int = None) -> Dict[str, Any]:
@@ -644,8 +694,9 @@ class RecursiveDriveHandler:
 
     def download_drive_recursive(self, root_folder_id: str, max_depth: int = None) -> Dict[str, Any]:
         """Main method to download entire Drive folder structure recursively"""
-        logger.info(f"🚀 Starting recursive download of folder: {root_folder_id}")
-        
+        logger.info(
+            f"🚀 Starting recursive download of folder: {root_folder_id}")
+
         # Reset stats and cancel flag
         self.download_stats = {
             'total_folders': 0,
@@ -657,53 +708,61 @@ class RecursiveDriveHandler:
         self.processed_files.clear()
         self.file_hashes.clear()
         self.cancel_flag = False  # Garantir que começamos com o flag desativado
-        
+
         start_time = time.time()
-        
+
         try:
             # Verificar flag de cancelamento
             if self.cancel_flag:
                 logger.info("🛑 Download cancelado antes de iniciar a análise")
                 raise Exception("Operação cancelada pelo usuário")
-                
+
             # First, get the complete folder structure
             logger.info("📊 Analyzing complete folder structure...")
-            folder_structure = self.get_folder_structure(root_folder_id, max_depth=max_depth)
-            
+            folder_structure = self.get_folder_structure(
+                root_folder_id, max_depth=max_depth)
+
             # Verificar flag de cancelamento após análise da estrutura
             if self.cancel_flag:
                 logger.info("🛑 Download cancelado após análise da estrutura")
                 raise Exception("Operação cancelada pelo usuário")
-            
+
             analysis_time = time.time() - start_time
-            logger.info(f"✅ Structure analysis completed in {analysis_time:.2f}s")
-            logger.info(f"📊 Found {self.download_stats['total_folders']} folders and {self.download_stats['total_files']} files")
-            
+            logger.info(
+                f"✅ Structure analysis completed in {analysis_time:.2f}s")
+            logger.info(
+                f"📊 Found {self.download_stats['total_folders']} folders and {self.download_stats['total_files']} files")
+
             # Now download all files
             logger.info("📥 Starting file downloads...")
             download_start = time.time()
             processed_files = self.process_folder_recursive(folder_structure)
-            
+
             # Verificar flag de cancelamento após processamento
             if self.cancel_flag:
-                logger.info("🛑 Download cancelado após processamento de arquivos")
+                logger.info(
+                    "🛑 Download cancelado após processamento de arquivos")
                 raise Exception("Operação cancelada pelo usuário")
-            
+
             download_time = time.time() - download_start
             total_time = time.time() - start_time
-            
+
             # Final statistics
             logger.info("🎉 Recursive download completed!")
             logger.info(f"📊 Final Statistics:")
-            logger.info(f"   Total folders: {self.download_stats['total_folders']}")
-            logger.info(f"   Total files found: {self.download_stats['total_files']}")
-            logger.info(f"   Files downloaded: {self.download_stats['downloaded_files']}")
-            logger.info(f"   Duplicates skipped: {self.download_stats['skipped_duplicates']}")
+            logger.info(
+                f"   Total folders: {self.download_stats['total_folders']}")
+            logger.info(
+                f"   Total files found: {self.download_stats['total_files']}")
+            logger.info(
+                f"   Files downloaded: {self.download_stats['downloaded_files']}")
+            logger.info(
+                f"   Duplicates skipped: {self.download_stats['skipped_duplicates']}")
             logger.info(f"   Errors: {self.download_stats['errors']}")
             logger.info(f"   Analysis time: {analysis_time:.2f}s")
             logger.info(f"   Download time: {download_time:.2f}s")
             logger.info(f"   Total time: {total_time:.2f}s")
-            
+
             return {
                 'status': 'success',
                 'statistics': self.download_stats,
@@ -715,7 +774,7 @@ class RecursiveDriveHandler:
                     'total_time': total_time
                 }
             }
-            
+
         except Exception as e:
             logger.error(f"❌ Error in recursive download: {str(e)}")
             return {
@@ -738,10 +797,12 @@ class RecursiveDriveHandler:
             return file_metadata
 
         except HttpError as e:
-            logger.warning(f"⚠️ HTTP Error getting metadata for file {file_id}: {e}")
+            logger.warning(
+                f"⚠️ HTTP Error getting metadata for file {file_id}: {e}")
             return None
         except Exception as e:
-            logger.warning(f"⚠️ Error getting metadata for file {file_id}: {e}")
+            logger.warning(
+                f"⚠️ Error getting metadata for file {file_id}: {e}")
             return None
 
     def try_public_file_access(self, file_id: str) -> Optional[Dict[str, Any]]:
@@ -757,10 +818,11 @@ class RecursiveDriveHandler:
             try:
                 logger.info(f"🌐 Trying public URL method {i+1}...")
                 response = requests.get(url, allow_redirects=True, timeout=30)
-                
+
                 if response.status_code == 200 and len(response.content) > 100:
-                    content_type = response.headers.get('content-type', '').lower()
-                    
+                    content_type = response.headers.get(
+                        'content-type', '').lower()
+
                     # Skip HTML error pages
                     if 'text/html' in content_type and b'<html' in response.content[:1000]:
                         continue
@@ -783,16 +845,23 @@ class RecursiveDriveHandler:
         """Get statistics about downloaded materials"""
         if not self.materials_dir.exists():
             return {
+                'total_folders': 0,
                 'total_files': 0,
                 'total_size': 0,
                 'file_types': {},
                 'directory': str(self.materials_dir),
                 'processed_files_count': 0,
-                'unique_hashes_count': 0
+                'unique_hashes_count': 0,
+                'downloaded_files': 0,
+                'skipped_duplicates': 0,
+                'errors': 0
             }
 
         files = list(self.materials_dir.rglob("*"))
         total_size = sum(f.stat().st_size for f in files if f.is_file())
+        
+        # Contar pastas
+        total_folders = len([f for f in files if f.is_dir()])
 
         file_types = {}
         for file in files:
@@ -801,12 +870,16 @@ class RecursiveDriveHandler:
                 file_types[ext] = file_types.get(ext, 0) + 1
 
         return {
+            'total_folders': total_folders,
             'total_files': len([f for f in files if f.is_file()]),
             'total_size': total_size,
             'file_types': file_types,
             'directory': str(self.materials_dir),
             'processed_files_count': len(self.processed_files),
-            'unique_hashes_count': len(self.file_hashes)
+            'unique_hashes_count': len(self.file_hashes),
+            'downloaded_files': self.download_stats.get('downloaded_files', 0),
+            'skipped_duplicates': self.download_stats.get('skipped_duplicates', 0),
+            'errors': self.download_stats.get('errors', 0)
         }
 
     def cleanup_temp_files(self):
@@ -820,26 +893,27 @@ class RecursiveDriveHandler:
         #             logger.info(f"🧹 Cleaned up temporary file: {file}")
         #         except Exception as e:
         #             logger.warning(f"⚠️ Could not remove {file}: {e}")
-        
-        # Apenas registra que a função foi chamada sem remover arquivos
-        logger.info("🧹 Função cleanup_temp_files chamada, mas token.json foi preservado")
-        
-        def reset(self):
-            """Reset handler state"""
-            logger.info("🔄 Resetting RecursiveDriveHandler...")
-            self.processed_files.clear()
-            self.file_hashes.clear()
-            self.download_stats = {
-                'total_folders': 0,
-                'total_files': 0,
-                'downloaded_files': 0,
-                'skipped_duplicates': 0,
-                'errors': 0
-            }
-            self.cancel_flag = False  # Resetar flag de cancelamento
-            logger.info("✅ Handler reset completed")
 
-        def set_cancel_flag(self, value: bool = True):
-            """Define o flag de cancelamento para interromper operações em andamento"""
-            self.cancel_flag = value
-            logger.info(f"🛑 Flag de cancelamento definido como: {value}")
+        # Apenas registra que a função foi chamada sem remover arquivos
+        logger.info(
+            "🧹 Função cleanup_temp_files chamada, mas token.json foi preservado")
+
+    def reset(self):
+        """Reset handler state"""
+        logger.info("🔄 Resetting RecursiveDriveHandler...")
+        self.processed_files.clear()
+        self.file_hashes.clear()
+        self.download_stats = {
+            'total_folders': 0,
+            'total_files': 0,
+            'downloaded_files': 0,
+            'skipped_duplicates': 0,
+            'errors': 0
+        }
+        self.cancel_flag = False  # Resetar flag de cancelamento
+        logger.info("✅ Handler reset completed")
+
+    def set_cancel_flag(self, value: bool = True):
+        """Define o flag de cancelamento para interromper operações em andamento"""
+        self.cancel_flag = value
+        logger.info(f"🛑 Flag de cancelamento definido como: {value}")

@@ -1,0 +1,43 @@
+# Dockerfile para o Servidor RAG
+FROM python:3.11-slim
+
+# Definir variáveis de ambiente
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalar dependências do sistema
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    libmagic1 \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-por \
+    && rm -rf /var/lib/apt/lists/*
+
+# Criar diretório de trabalho
+WORKDIR /app
+
+# Copiar requirements
+COPY config/requirements.txt .
+
+# Instalar dependências Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar código do servidor RAG
+COPY rag_system/ ./rag_system/
+COPY utils/ ./utils/
+COPY data/ ./data/
+
+# Criar diretórios necessários
+RUN mkdir -p /app/data/.chromadb /app/data/materials /app/logs
+
+# Copiar script de inicialização do RAG
+COPY rag_server.py .
+
+# Expor porta
+EXPOSE 8000
+
+# Comando de inicialização
+CMD ["python", "rag_server.py"] 
