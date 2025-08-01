@@ -1,13 +1,16 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { AssistantConfig } from '../types';
 
 interface AssistantState {
   config: AssistantConfig;
   templates: string[];
+  customTemplates: Record<string, AssistantConfig>;
   isLoading: boolean;
   updateConfig: (updates: Partial<AssistantConfig>) => Promise<boolean>;
   saveAsTemplate: (name: string) => Promise<boolean>;
   loadTemplate: (name: string) => Promise<boolean>;
+  resetToDefault: () => void;
 }
 
 // Template configurations for each specialty
@@ -122,81 +125,121 @@ Use {context}, {chat_history} e {question} como variáveis no template.`,
 // Default configuration (Educação Física)
 const DEFAULT_CONFIG: AssistantConfig = TEMPLATE_CONFIGS['Educação Física'];
 
-export const useAssistantStore = create<AssistantState>((set) => ({
-  config: DEFAULT_CONFIG,
-  templates: ['Educação Física', 'Nutrição Esportiva', 'Anatomia Humana'],
-  isLoading: false,
-  
-  updateConfig: async (updates) => {
-    try {
-      set({ isLoading: true });
+
+
+export const useAssistantStore = create<AssistantState>()(
+  persist(
+    (set, get) => ({
+      config: DEFAULT_CONFIG,
+      templates: ['Educação Física', 'Nutrição Esportiva', 'Anatomia Humana'],
+      customTemplates: {},
+      isLoading: false,
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
+      updateConfig: async (updates) => {
+        try {
+          set({ isLoading: true });
+          
+          // Simulate API call
+          await new Promise(resolve => setTimeout(resolve, 800));
+          
+          set(state => {
+            const newConfig = { ...state.config, ...updates };
+            return { 
+              config: newConfig,
+              isLoading: false
+            };
+          });
+          
+          return true;
+        } catch (error) {
+          set({ isLoading: false });
+          console.error('❌ Erro ao atualizar configuração do assistente:', error);
+          return false;
+        }
+      },
       
-      set(state => ({ 
-        config: { ...state.config, ...updates },
-        isLoading: false
-      }));
+      saveAsTemplate: async (name) => {
+        try {
+          set({ isLoading: true });
+          
+          // Simulate API call
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          set(state => ({ 
+            templates: [...state.templates, name],
+            customTemplates: {
+              ...state.customTemplates,
+              [name]: { ...state.config } // Salva a configuração atual como template personalizado
+            },
+            isLoading: false
+          }));
+          
+          return true;
+        } catch (error) {
+          set({ isLoading: false });
+          console.error('❌ Erro ao salvar template:', error);
+          return false;
+        }
+      },
       
-      return true;
-    } catch (error) {
-      set({ isLoading: false });
-      console.error('Error updating assistant config:', error);
-      return false;
-    }
-  },
-  
-  saveAsTemplate: async (name) => {
-    try {
-      set({ isLoading: true });
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      set(state => ({ 
-        templates: [...state.templates, name],
-        isLoading: false
-      }));
-      
-      return true;
-    } catch (error) {
-      set({ isLoading: false });
-      console.error('Error saving template:', error);
-      return false;
-    }
-  },
-  
-  loadTemplate: async (name) => {
-    try {
-      set({ isLoading: true });
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Load the specific template configuration
-      const templateConfig = TEMPLATE_CONFIGS[name];
-      
-      if (templateConfig) {
-        console.log(`📋 Loading template: ${name}`);
-        set({ 
-          config: { ...templateConfig },
-          isLoading: false
-        });
-      } else {
-        console.warn(`⚠️ Template not found: ${name}`);
-        // Fallback to default if template not found
+      loadTemplate: async (name) => {
+        try {
+          set({ isLoading: true });
+          
+          // Simulate API call
+          await new Promise(resolve => setTimeout(resolve, 800));
+          
+          const state = get();
+          
+          // Primeiro tenta carregar template personalizado
+          const customTemplate = state.customTemplates[name];
+          if (customTemplate) {
+            set({ 
+              config: { ...customTemplate },
+              isLoading: false
+            });
+            return true;
+          }
+          
+          // Se não encontrar template personalizado, carrega template padrão
+          const templateConfig = TEMPLATE_CONFIGS[name];
+          if (templateConfig) {
+            set({ 
+              config: { ...templateConfig },
+              isLoading: false
+            });
+          } else {
+            // Fallback to default if template not found
+            set({ 
+              config: { ...DEFAULT_CONFIG },
+              isLoading: false
+            });
+          }
+          
+          return true;
+        } catch (error) {
+          set({ isLoading: false });
+          console.error('❌ Erro ao carregar template:', error);
+          return false;
+        }
+      },
+
+      resetToDefault: () => {
         set({ 
           config: { ...DEFAULT_CONFIG },
           isLoading: false
         });
       }
-      
-      return true;
-    } catch (error) {
-      set({ isLoading: false });
-      console.error('Error loading template:', error);
-      return false;
+    }),
+    {
+      name: 'assistant-config-storage',
+      partialize: (state) => ({ 
+        config: state.config,
+        templates: state.templates,
+        customTemplates: state.customTemplates
+      }),
+
+      skipHydration: false,
     }
-  }
-}));
+  )
+);

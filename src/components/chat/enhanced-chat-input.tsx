@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Send,
   Settings,
@@ -12,14 +12,14 @@ import {
   Hand,
   RotateCcw,
   ChevronDown,
-  ChevronUp
-} from 'lucide-react';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
+  ChevronUp,
+} from "lucide-react";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 
 interface LearningPreferences {
-  user_level: 'beginner' | 'intermediate' | 'advanced';
-  learning_style: 'visual' | 'auditory' | 'kinesthetic' | 'mixed';
+  user_level: "beginner" | "intermediate" | "advanced";
+  learning_style: "visual" | "auditory" | "kinesthetic" | "mixed";
   current_topic?: string;
   learning_objectives: string[];
 }
@@ -39,39 +39,42 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
   onSendMessage,
   onTopicExplore,
   isLoading = false,
-  sessionContext
+  sessionContext,
 }) => {
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
   const [showPreferences, setShowPreferences] = useState(false);
   const [preferences, setPreferences] = useState<LearningPreferences>({
-    user_level: 'intermediate',
-    learning_style: 'mixed',
-    learning_objectives: []
+    user_level: "intermediate",
+    learning_style: "mixed",
+    learning_objectives: [],
   });
-  const [newObjective, setNewObjective] = useState('');
-  
+  const [newObjective, setNewObjective] = useState("");
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
   }, [message]);
 
   // Update preferences based on session context
   useEffect(() => {
-    if (sessionContext?.current_focus && sessionContext.current_focus !== preferences.current_topic) {
-      setPreferences(prev => ({
+    if (
+      sessionContext?.current_focus &&
+      sessionContext.current_focus !== preferences.current_topic
+    ) {
+      setPreferences((prev) => ({
         ...prev,
-        current_topic: sessionContext.current_focus
+        current_topic: sessionContext.current_focus,
       }));
     }
     if (sessionContext?.difficulty_level) {
-      setPreferences(prev => ({
+      setPreferences((prev) => ({
         ...prev,
-        user_level: sessionContext.difficulty_level as any
+        user_level: sessionContext.difficulty_level as any,
       }));
     }
   }, [sessionContext]);
@@ -79,12 +82,12 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
   const handleSend = () => {
     if (message.trim() && !isLoading) {
       onSendMessage(message.trim(), preferences);
-      setMessage('');
+      setMessage("");
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -92,18 +95,20 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
 
   const addLearningObjective = () => {
     if (newObjective.trim() && preferences.learning_objectives.length < 5) {
-      setPreferences(prev => ({
+      setPreferences((prev) => ({
         ...prev,
-        learning_objectives: [...prev.learning_objectives, newObjective.trim()]
+        learning_objectives: [...prev.learning_objectives, newObjective.trim()],
       }));
-      setNewObjective('');
+      setNewObjective("");
     }
   };
 
   const removeLearningObjective = (index: number) => {
-    setPreferences(prev => ({
+    setPreferences((prev) => ({
       ...prev,
-      learning_objectives: prev.learning_objectives.filter((_, i) => i !== index)
+      learning_objectives: prev.learning_objectives.filter(
+        (_, i) => i !== index
+      ),
     }));
   };
 
@@ -112,25 +117,34 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
     "Qual a diferença entre hipertrofia e força?",
     "Como montar um programa de treino?",
     "Quais são os princípios da periodização?",
-    "Como prevenir lesões durante o treino?"
+    "Como prevenir lesões durante o treino?",
   ];
 
   const getLevelIcon = (level: string) => {
     switch (level) {
-      case 'beginner': return <BookOpen size={16} />;
-      case 'intermediate': return <Target size={16} />;
-      case 'advanced': return <TrendingUp size={16} />;
-      default: return <Target size={16} />;
+      case "beginner":
+        return <BookOpen size={16} />;
+      case "intermediate":
+        return <Target size={16} />;
+      case "advanced":
+        return <TrendingUp size={16} />;
+      default:
+        return <Target size={16} />;
     }
   };
 
   const getStyleIcon = (style: string) => {
     switch (style) {
-      case 'visual': return <Eye size={16} />;
-      case 'auditory': return <Volume2 size={16} />;
-      case 'kinesthetic': return <Hand size={16} />;
-      case 'mixed': return <Brain size={16} />;
-      default: return <Brain size={16} />;
+      case "visual":
+        return <Eye size={16} />;
+      case "auditory":
+        return <Volume2 size={16} />;
+      case "kinesthetic":
+        return <Hand size={16} />;
+      case "mixed":
+        return <Brain size={16} />;
+      default:
+        return <Brain size={16} />;
     }
   };
 
@@ -146,11 +160,13 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
                 Foco atual: {sessionContext.current_focus}
               </span>
             </div>
-            {sessionContext.topics_covered && sessionContext.topics_covered.length > 0 && (
-              <div className="text-xs text-blue-600">
-                {sessionContext.topics_covered.length} tópicos explorados
-              </div>
-            )}
+            {sessionContext.topics_covered &&
+              Array.isArray(sessionContext.topics_covered) &&
+              sessionContext.topics_covered.length > 0 && (
+                <div className="text-xs text-blue-600">
+                  {sessionContext.topics_covered.length} tópicos explorados
+                </div>
+              )}
           </div>
         </div>
       )}
@@ -173,7 +189,7 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
         {showPreferences && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
+            animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg overflow-hidden"
           >
@@ -189,20 +205,28 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
                   Nível de Conhecimento
                 </label>
                 <div className="flex space-x-2">
-                  {['beginner', 'intermediate', 'advanced'].map((level) => (
+                  {["beginner", "intermediate", "advanced"].map((level) => (
                     <button
                       key={level}
-                      onClick={() => setPreferences(prev => ({ ...prev, user_level: level as any }))}
+                      onClick={() =>
+                        setPreferences((prev) => ({
+                          ...prev,
+                          user_level: level as any,
+                        }))
+                      }
                       className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
                         preferences.user_level === level
-                          ? 'bg-red-100 text-red-700 border border-red-300'
-                          : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                          ? "bg-red-100 text-red-700 border border-red-300"
+                          : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
                       }`}
                     >
                       {getLevelIcon(level)}
                       <span className="capitalize">
-                        {level === 'beginner' ? 'Iniciante' : 
-                         level === 'intermediate' ? 'Intermediário' : 'Avançado'}
+                        {level === "beginner"
+                          ? "Iniciante"
+                          : level === "intermediate"
+                          ? "Intermediário"
+                          : "Avançado"}
                       </span>
                     </button>
                   ))}
@@ -216,18 +240,23 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
                 </label>
                 <div className="flex space-x-2">
                   {[
-                    { key: 'visual', label: 'Visual' },
-                    { key: 'auditory', label: 'Auditivo' },
-                    { key: 'kinesthetic', label: 'Cinestésico' },
-                    { key: 'mixed', label: 'Misto' }
+                    { key: "visual", label: "Visual" },
+                    { key: "auditory", label: "Auditivo" },
+                    { key: "kinesthetic", label: "Cinestésico" },
+                    { key: "mixed", label: "Misto" },
                   ].map(({ key, label }) => (
                     <button
                       key={key}
-                      onClick={() => setPreferences(prev => ({ ...prev, learning_style: key as any }))}
+                      onClick={() =>
+                        setPreferences((prev) => ({
+                          ...prev,
+                          learning_style: key as any,
+                        }))
+                      }
                       className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
                         preferences.learning_style === key
-                          ? 'bg-blue-100 text-blue-700 border border-blue-300'
-                          : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                          ? "bg-blue-100 text-blue-700 border border-blue-300"
+                          : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
                       }`}
                     >
                       {getStyleIcon(key)}
@@ -243,8 +272,13 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
                   Tópico Atual (opcional)
                 </label>
                 <Input
-                  value={preferences.current_topic || ''}
-                  onChange={(e) => setPreferences(prev => ({ ...prev, current_topic: e.target.value }))}
+                  value={preferences.current_topic || ""}
+                  onChange={(e) =>
+                    setPreferences((prev) => ({
+                      ...prev,
+                      current_topic: e.target.value,
+                    }))
+                  }
                   placeholder="Ex: hipertrofia, força, resistência..."
                   className="text-sm"
                 />
@@ -255,7 +289,7 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
                 <label className="block text-xs font-medium text-gray-700 mb-2">
                   Objetivos de Aprendizado (máx. 5)
                 </label>
-                
+
                 {preferences.learning_objectives.length > 0 && (
                   <div className="mb-2 space-y-1">
                     {preferences.learning_objectives.map((objective, index) => (
@@ -263,7 +297,9 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
                         key={index}
                         className="flex items-center justify-between bg-white border border-gray-200 rounded px-3 py-2"
                       >
-                        <span className="text-sm text-gray-700">{objective}</span>
+                        <span className="text-sm text-gray-700">
+                          {objective}
+                        </span>
                         <button
                           onClick={() => removeLearningObjective(index)}
                           className="text-red-500 hover:text-red-700 ml-2"
@@ -282,7 +318,9 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
                       onChange={(e) => setNewObjective(e.target.value)}
                       placeholder="Adicionar objetivo..."
                       className="text-sm"
-                      onKeyPress={(e) => e.key === 'Enter' && addLearningObjective()}
+                      onKeyPress={(e) =>
+                        e.key === "Enter" && addLearningObjective()
+                      }
                     />
                     <Button
                       onClick={addLearningObjective}
@@ -339,24 +377,28 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
       </div>
 
       {/* Quick Topic Exploration */}
-      {sessionContext?.topics_covered && sessionContext.topics_covered.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-gray-100">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-gray-600">Explorar tópicos relacionados:</span>
+      {sessionContext?.topics_covered &&
+        Array.isArray(sessionContext.topics_covered) &&
+        sessionContext.topics_covered.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-gray-600">
+                Explorar tópicos relacionados:
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {sessionContext.topics_covered.slice(-3).map((topic, index) => (
+                <button
+                  key={index}
+                  onClick={() => onTopicExplore?.(topic)}
+                  className="text-xs bg-green-100 text-green-700 hover:bg-green-200 rounded-full px-3 py-1 transition-colors"
+                >
+                  {topic}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {sessionContext.topics_covered.slice(-3).map((topic, index) => (
-              <button
-                key={index}
-                onClick={() => onTopicExplore?.(topic)}
-                className="text-xs bg-green-100 text-green-700 hover:bg-green-200 rounded-full px-3 py-1 transition-colors"
-              >
-                {topic}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+        )}
     </div>
   );
 };

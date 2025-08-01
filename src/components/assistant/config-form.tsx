@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Textarea } from '../ui/textarea';
-import { AssistantConfig } from '../../types';
+import React, { useState, useEffect } from "react";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
+import { AssistantConfig } from "../../types";
 
 interface ConfigFormProps {
   config: AssistantConfig;
   onSave: (config: AssistantConfig) => Promise<boolean>;
   onSaveAsTemplate: (name: string) => Promise<boolean>;
+  onReset?: () => void;
   isLoading: boolean;
 }
 
@@ -15,55 +16,61 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   config,
   onSave,
   onSaveAsTemplate,
-  isLoading
+  onReset,
+  isLoading,
 }) => {
   const [formState, setFormState] = useState<AssistantConfig>(config);
-  const [templateName, setTemplateName] = useState('');
+  const [templateName, setTemplateName] = useState("");
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
-  
+
   // Update form when config prop changes (when template is loaded)
   useEffect(() => {
     setFormState(config);
   }, [config]);
-  
+
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
   ) => {
     const { name, value } = e.target;
-    
+
     // Handle numeric values
-    if (['temperature', 'chunkSize', 'chunkOverlap'].includes(name)) {
+    if (["temperature", "chunkSize", "chunkOverlap"].includes(name)) {
       setFormState({
         ...formState,
-        [name]: Number(value)
+        [name]: Number(value),
       });
     } else {
       setFormState({
         ...formState,
-        [name]: value
+        [name]: value,
       });
     }
   };
-  
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await onSave(formState);
   };
-  
+
   const handleSaveTemplate = async () => {
     if (templateName.trim()) {
       const success = await onSaveAsTemplate(templateName);
       if (success) {
-        setTemplateName('');
+        setTemplateName("");
         setShowSaveTemplate(false);
       }
     }
   };
-  
+
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
+    <form
+      onSubmit={handleSubmit}
+      className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm"
+    >
       <h2 className="text-lg font-semibold mb-4">Configuração do Assistente</h2>
-      
+
       <div className="space-y-4">
         {/* Basic info */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -78,7 +85,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               placeholder="Nome do assistente"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Modelo
@@ -95,7 +102,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
             </select>
           </div>
         </div>
-        
+
         {/* Description */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -103,12 +110,12 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
           </label>
           <Input
             name="description"
-            value={formState.description || ''}
+            value={formState.description || ""}
             onChange={handleChange}
             placeholder="Descrição breve do assistente"
           />
         </div>
-        
+
         {/* Advanced settings */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
@@ -128,7 +135,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               Valores mais baixos = respostas mais precisas
             </p>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Tamanho do Chunk
@@ -145,7 +152,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               Tamanho de cada fragmento de texto
             </p>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Sobreposição
@@ -163,7 +170,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
             </p>
           </div>
         </div>
-        
+
         {/* Embedding model */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -175,15 +182,21 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
             onChange={handleChange}
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value="text-embedding-ada-002">text-embedding-ada-002</option>
-            <option value="text-embedding-3-small">text-embedding-3-small</option>
-            <option value="text-embedding-3-large">text-embedding-3-large</option>
+            <option value="text-embedding-ada-002">
+              text-embedding-ada-002
+            </option>
+            <option value="text-embedding-3-small">
+              text-embedding-3-small
+            </option>
+            <option value="text-embedding-3-large">
+              text-embedding-3-large
+            </option>
           </select>
           <p className="text-xs text-gray-500 mt-1">
             Modelo usado para converter texto em vetores
           </p>
         </div>
-        
+
         {/* Prompt template */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -197,20 +210,17 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
             className="font-mono text-sm"
           />
           <p className="text-xs text-gray-500 mt-1">
-            Use {"{context}"}, {"{chat_history}"} e {"{question}"} como variáveis no template
+            Use {"{context}"}, {"{chat_history}"} e {"{question}"} como
+            variáveis no template
           </p>
         </div>
-        
+
         {/* Save buttons */}
         <div className="flex flex-col sm:flex-row gap-3 pt-4">
-          <Button 
-            type="submit"
-            isLoading={isLoading}
-            className="flex-1"
-          >
+          <Button type="submit" isLoading={isLoading} className="flex-1">
             Salvar Configurações
           </Button>
-          
+
           {showSaveTemplate ? (
             <div className="flex gap-2 flex-1">
               <Input
@@ -219,7 +229,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 placeholder="Nome do template"
                 className="flex-1"
               />
-              <Button 
+              <Button
                 type="button"
                 variant="outline"
                 onClick={handleSaveTemplate}
@@ -229,7 +239,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               </Button>
             </div>
           ) : (
-            <Button 
+            <Button
               type="button"
               variant="outline"
               onClick={() => setShowSaveTemplate(true)}
@@ -239,6 +249,21 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
             </Button>
           )}
         </div>
+
+        {/* Reset button - separate row */}
+        {onReset && (
+          <div className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onReset}
+              disabled={isLoading}
+              className="w-full"
+            >
+              Resetar para Padrão
+            </Button>
+          </div>
+        )}
       </div>
     </form>
   );

@@ -1,33 +1,40 @@
-import React, { useEffect, useCallback, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  useChatSessions,
+  useUserChatSessions,
   useChatActions,
   useSessionMessages,
+  useChatStore,
 } from "../store/chat-store";
 import { EducationalMessageBubble } from "../components/chat/educational-message-bubble";
 import { EnhancedChatInput } from "../components/chat/enhanced-chat-input";
 import { LearningPathExplorer } from "../components/chat/learning-path-explorer";
 import { Button } from "../components/ui/button";
 import { BackButton } from "../components/ui/back-button";
-import { 
-  PlusCircle, 
-  Trash2, 
-  BookOpen, 
-  Target, 
+import {
+  PlusCircle,
+  Trash2,
+  BookOpen,
+  Target,
   TrendingUp,
   ChevronLeft,
   ChevronRight,
   Settings,
-  Brain
+  Brain,
 } from "lucide-react";
 import { api } from "../lib/api";
 
 interface EducationalMessage {
   id: string;
   content: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   timestamp: Date;
   sources?: any[];
   follow_up_questions?: string[];
@@ -39,26 +46,38 @@ interface EducationalMessage {
 }
 
 interface LearningPreferences {
-  user_level: 'beginner' | 'intermediate' | 'advanced';
-  learning_style: 'visual' | 'auditory' | 'kinesthetic' | 'mixed';
+  user_level: "beginner" | "intermediate" | "advanced";
+  learning_style: "visual" | "auditory" | "kinesthetic" | "mixed";
   current_topic?: string;
   learning_objectives: string[];
 }
 
 const EnhancedChatPage: React.FC = () => {
   // Chat state
-  const { sessions, activeSessionId, isProcessing } = useChatSessions();
-  const { createSession, setActiveSession, deleteSession, sendMessage } = useChatActions();
+  const { sessions, activeSessionId, isProcessing, currentUserId } =
+    useUserChatSessions();
+  const {
+    createSession,
+    setActiveSession,
+    deleteSession,
+    sendMessage,
+    addMessage,
+  } = useChatActions();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Enhanced chat state
-  const [educationalMessages, setEducationalMessages] = useState<EducationalMessage[]>([]);
+  const [educationalMessages, setEducationalMessages] = useState<
+    EducationalMessage[]
+  >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionContext, setSessionContext] = useState<any>(null);
   const [showLearningPath, setShowLearningPath] = useState(false);
-  const [currentExplorationTopic, setCurrentExplorationTopic] = useState<string>("");
-  const [userLevel, setUserLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('intermediate');
+  const [currentExplorationTopic, setCurrentExplorationTopic] =
+    useState<string>("");
+  const [userLevel, setUserLevel] = useState<
+    "beginner" | "intermediate" | "advanced"
+  >("intermediate");
 
   // References
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -67,82 +86,112 @@ const EnhancedChatPage: React.FC = () => {
   // URL session management
   const urlSessionId = searchParams.get("session");
 
+  // Load session context function - moved before useEffect
+  const loadSessionContext = useCallback(async () => {
+    if (!activeSessionId) return;
+
+    try {
+      const context = await api.getSessionContext(activeSessionId);
+      setSessionContext(context);
+    } catch (error) {
+      console.error("Error loading session context:", error);
+    }
+  }, [activeSessionId]);
+
   // Initialize session
   useEffect(() => {
+    // Verificar se há um usuário logado
+    if (!currentUserId) {
+      console.log("⚠️ No user logged in, cannot create sessions");
+      return;
+    }
+
     if (sessions.length === 0) {
-      const newSessionId = createSession("Conversa educacional");
-      setSearchParams({ session: newSessionId }, { replace: true });
+      try {
+        const newSessionId = createSession();
+        setSearchParams({ session: newSessionId }, { replace: true });
+      } catch (error) {
+        console.error("❌ Failed to create session:", error);
+      }
     } else if (urlSessionId && urlSessionId !== activeSessionId) {
-      const sessionExists = sessions.some(s => s.id === urlSessionId);
+      const sessionExists = sessions.some((s) => s.id === urlSessionId);
       if (sessionExists) {
         setActiveSession(urlSessionId);
       } else {
         setSearchParams({}, { replace: true });
       }
     }
-  }, [urlSessionId, activeSessionId, sessions, setActiveSession, setSearchParams, createSession]);
+  }, [
+    urlSessionId,
+    activeSessionId,
+    sessions.length,
+    setActiveSession,
+    setSearchParams,
+    createSession,
+    currentUserId,
+  ]);
 
   // Load session context
   useEffect(() => {
     if (activeSessionId) {
       loadSessionContext();
     }
-  }, [activeSessionId]);
+  }, [activeSessionId, loadSessionContext]);
 
   // Auto-scroll to bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [educationalMessages]);
-
-  const loadSessionContext = async () => {
-    if (!activeSessionId) return;
-    
-    try {
-      const context = await api.getSessionContext(activeSessionId);
-      setSessionContext(context);
-    } catch (error) {
-      console.error('Error loading session context:', error);
+    if (educationalMessages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  };
+  }, [educationalMessages.length]);
 
-  const handleSendMessage = async (content: string, preferences?: LearningPreferences) => {
+  const handleSendMessage = async (
+    content: string,
+    preferences?: LearningPreferences
+  ) => {
     if (!content.trim() || isLoading) return;
 
     const userMessage: EducationalMessage = {
       id: `user_${Date.now()}`,
       content,
-      role: 'user',
-      timestamp: new Date()
+      role: "user",
+      timestamp: new Date(),
     };
 
-    setEducationalMessages(prev => [...prev, userMessage]);
+    // Adicionar à UI
+    setEducationalMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
+
+    // Adicionar ao store persistente
+    if (activeSessionId) {
+      addMessage(activeSessionId, content, "user");
+    }
 
     // Add loading message
     const loadingMessage: EducationalMessage = {
       id: `assistant_${Date.now()}`,
       content: "Analisando sua pergunta e buscando as melhores fontes...",
-      role: 'assistant',
+      role: "assistant",
       timestamp: new Date(),
-      isLoading: true
+      isLoading: true,
     };
 
-    setEducationalMessages(prev => [...prev, loadingMessage]);
+    setEducationalMessages((prev) => [...prev, loadingMessage]);
 
     try {
       const response = await api.educationalChat({
         content,
         user_level: preferences?.user_level || userLevel,
-        learning_style: preferences?.learning_style || 'mixed',
-        session_id: activeSessionId,
+        learning_style: preferences?.learning_style || "mixed",
+        session_id: activeSessionId || undefined,
         current_topic: preferences?.current_topic,
-        learning_objectives: preferences?.learning_objectives || []
+        learning_objectives: preferences?.learning_objectives || [],
       });
 
       // Replace loading message with actual response
-      setEducationalMessages(prev => 
-        prev.map(msg => 
-          msg.id === loadingMessage.id 
+      setEducationalMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === loadingMessage.id
             ? {
                 ...msg,
                 content: response.response,
@@ -152,11 +201,21 @@ const EnhancedChatPage: React.FC = () => {
                 related_topics: response.related_topics,
                 video_suggestions: response.video_suggestions,
                 educational_metadata: response.educational_metadata,
-                isLoading: false
+                isLoading: false,
               }
             : msg
         )
       );
+
+      // Adicionar resposta do assistente ao store persistente
+      if (activeSessionId) {
+        addMessage(
+          activeSessionId,
+          response.response,
+          "assistant",
+          response.sources
+        );
+      }
 
       // Update session context
       await loadSessionContext();
@@ -165,18 +224,17 @@ const EnhancedChatPage: React.FC = () => {
       if (response.related_topics && response.related_topics.length > 0) {
         setCurrentExplorationTopic(response.related_topics[0]);
       }
-
     } catch (error) {
-      console.error('Error in educational chat:', error);
-      
+      console.error("Error in educational chat:", error);
+
       // Replace loading message with error
-      setEducationalMessages(prev => 
-        prev.map(msg => 
-          msg.id === loadingMessage.id 
+      setEducationalMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === loadingMessage.id
             ? {
                 ...msg,
                 content: "Desculpe, ocorreu um erro. Pode tentar novamente?",
-                isLoading: false
+                isLoading: false,
               }
             : msg
         )
@@ -193,7 +251,7 @@ const EnhancedChatPage: React.FC = () => {
   const handleTopicExplore = async (topic: string) => {
     setCurrentExplorationTopic(topic);
     setShowLearningPath(true);
-    
+
     // Also send an exploration message
     const explorationPrompt = `Quero explorar mais profundamente o tópico: ${topic}`;
     handleSendMessage(explorationPrompt);
@@ -201,12 +259,12 @@ const EnhancedChatPage: React.FC = () => {
 
   const handleSourceClick = (source: any) => {
     // Open source in a modal or new tab
-    console.log('Source clicked:', source);
+    console.log("Source clicked:", source);
   };
 
   const handleVideoPlay = (video: any) => {
     // Handle video play request
-    console.log('Video play requested:', video);
+    console.log("Video play requested:", video);
     // Could open in modal, navigate to video page, or handle differently
   };
 
@@ -214,12 +272,17 @@ const EnhancedChatPage: React.FC = () => {
     if (isUpdatingRef.current) return;
     isUpdatingRef.current = true;
 
-    const newSessionId = createSession("Nova conversa educacional");
-    setEducationalMessages([]);
-    setSessionContext(null);
-    setCurrentExplorationTopic("");
-    setShowLearningPath(false);
-    setSearchParams({ session: newSessionId }, { replace: true });
+    try {
+      const newSessionId = createSession();
+      setEducationalMessages([]);
+      setSessionContext(null);
+      setCurrentExplorationTopic("");
+      setShowLearningPath(false);
+      setSearchParams({ session: newSessionId }, { replace: true });
+    } catch (error) {
+      console.error("❌ Failed to create new session:", error);
+      alert("Erro ao criar nova conversa. Verifique se você está logado.");
+    }
 
     setTimeout(() => {
       isUpdatingRef.current = false;
@@ -232,17 +295,82 @@ const EnhancedChatPage: React.FC = () => {
 
       deleteSession(sessionId);
       if (sessionId === activeSessionId) {
-        const remainingSessions = sessions.filter(s => s.id !== sessionId);
+        const remainingSessions = sessions.filter((s) => s.id !== sessionId);
         if (remainingSessions.length > 0) {
           setActiveSession(remainingSessions[0].id);
-          setSearchParams({ session: remainingSessions[0].id }, { replace: true });
+          setSearchParams(
+            { session: remainingSessions[0].id },
+            { replace: true }
+          );
         }
       }
     },
-    [sessions, activeSessionId, deleteSession, setActiveSession, setSearchParams]
+    [
+      sessions,
+      activeSessionId,
+      deleteSession,
+      setActiveSession,
+      setSearchParams,
+    ]
   );
 
-  const currentSession = sessions.find(s => s.id === activeSessionId);
+  const currentSession = sessions.find((s) => s.id === activeSessionId);
+
+  // Hook para pegar mensagens da sessão ativa
+  const sessionMessages = useSessionMessages(activeSessionId);
+
+  // Sincronizar mensagens do store com o estado local
+  useEffect(() => {
+    if (activeSessionId) {
+      if (sessionMessages.length > 0) {
+        const convertedMessages = sessionMessages.map((msg) => ({
+          id: msg.id,
+          content: msg.content,
+          role: msg.role as "user" | "assistant",
+          timestamp: new Date(msg.timestamp),
+          sources: msg.sources,
+          isLoading: false,
+        }));
+
+        setEducationalMessages(convertedMessages);
+      } else {
+        setEducationalMessages([]);
+      }
+    }
+  }, [activeSessionId, sessionMessages.length]);
+
+  // Verificar se há usuário logado
+  if (!currentUserId) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-6">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-red-600"
+            >
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="m22 2-7 20-4-9-9-4 20-7z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-semibold mb-2">Usuário não logado</h3>
+          <p className="text-gray-600 mb-4">
+            Você precisa estar logado para acessar o assistente educacional.
+          </p>
+          <Button onClick={() => navigate("/login")}>Fazer Login</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex">
@@ -274,7 +402,7 @@ const EnhancedChatPage: React.FC = () => {
                 <BookOpen size={16} />
                 <span>Trilha de Aprendizado</span>
               </Button>
-              
+
               <Button
                 onClick={handleNewSession}
                 variant="outline"
@@ -337,8 +465,9 @@ const EnhancedChatPage: React.FC = () => {
                   Bem-vindo ao Assistente Educacional!
                 </h3>
                 <p className="text-gray-600 mb-6 max-w-md mx-auto">
-                  Faça perguntas sobre treinamento físico e receba respostas detalhadas 
-                  com fontes, sugestões de aprofundamento e trilhas de aprendizado personalizadas.
+                  Faça perguntas sobre treinamento físico e receba respostas
+                  detalhadas com fontes, sugestões de aprofundamento e trilhas
+                  de aprendizado personalizadas.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto">
                   <div className="bg-blue-50 p-4 rounded-lg">
@@ -350,14 +479,18 @@ const EnhancedChatPage: React.FC = () => {
                   </div>
                   <div className="bg-green-50 p-4 rounded-lg">
                     <BookOpen className="text-green-600 mb-2" size={24} />
-                    <h4 className="font-medium text-green-900">Fontes Confiáveis</h4>
+                    <h4 className="font-medium text-green-900">
+                      Fontes Confiáveis
+                    </h4>
                     <p className="text-sm text-green-700">
                       Respostas baseadas em materiais científicos e práticos
                     </p>
                   </div>
                   <div className="bg-purple-50 p-4 rounded-lg">
                     <TrendingUp className="text-purple-600 mb-2" size={24} />
-                    <h4 className="font-medium text-purple-900">Aprendizado Progressivo</h4>
+                    <h4 className="font-medium text-purple-900">
+                      Aprendizado Progressivo
+                    </h4>
                     <p className="text-sm text-purple-700">
                       Trilhas estruturadas para aprofundar conhecimentos
                     </p>
@@ -400,7 +533,9 @@ const EnhancedChatPage: React.FC = () => {
           >
             <div className="p-4 h-full overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Trilha de Aprendizado</h3>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Trilha de Aprendizado
+                </h3>
                 <button
                   onClick={() => setShowLearningPath(false)}
                   className="text-gray-400 hover:text-gray-600"
@@ -422,7 +557,8 @@ const EnhancedChatPage: React.FC = () => {
                 <div className="text-center py-12">
                   <BookOpen size={48} className="mx-auto text-gray-400 mb-4" />
                   <p className="text-gray-600">
-                    Selecione um tópico na conversa para ver a trilha de aprendizado
+                    Selecione um tópico na conversa para ver a trilha de
+                    aprendizado
                   </p>
                 </div>
               )}

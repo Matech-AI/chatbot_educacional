@@ -13,6 +13,7 @@ const AssistantPage: React.FC = () => {
     updateConfig,
     saveAsTemplate,
     loadTemplate,
+    resetToDefault,
   } = useAssistantStore();
 
   return (
@@ -57,6 +58,7 @@ const AssistantPage: React.FC = () => {
             config={config}
             onSave={updateConfig}
             onSaveAsTemplate={saveAsTemplate}
+            onReset={resetToDefault}
             isLoading={isLoading}
           />
         </motion.div>

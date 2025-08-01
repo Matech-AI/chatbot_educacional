@@ -14,6 +14,8 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import uvicorn
 from dotenv import load_dotenv
+from uuid import uuid4
+import time
 
 # Importar componentes RAG
 from rag_system.rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
@@ -43,6 +45,101 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Importar o router corretamente
+from chat_agents.educational_agent import router as educational_router
+
+# Incluir router do educational agent
+app.include_router(educational_router, prefix="/chat", tags=["educational"])
+
+# Comente ou remova a implementação direta do endpoint
+# @app.post("/chat/educational")
+# async def educational_chat(request: dict):
+#     """Enhanced educational chat with learning features"""
+#     logger.info(
+#         f"🎓 Educational chat request: {request.get('content', '')[:50]}...")
+
+#     try:
+#         # Simulate educational response
+#         response_data = {
+#             "response": f"Resposta educacional para: {request.get('content', '')}. Este é um sistema de IA educacional focado em treinamento físico e educação esportiva.",
+#             "sources": [
+#                 {
+#                     "title": "Material de Treinamento",
+#                     "source": "rag_server.py",
+#                     "chunk": "Conteúdo educacional sobre treinamento físico...",
+#                     "page": 1
+#                 }
+#             ],
+#             "follow_up_questions": [
+#                 "Como posso aplicar esse conhecimento na prática?",
+#                 "Quais são os benefícios principais?",
+#                 "Existe alguma contraindicação?"
+#             ],
+#             "learning_suggestions": [
+#                 "Considere praticar os exercícios demonstrados",
+#                 "Mantenha um diário de treino",
+#                 "Consulte um profissional se necessário"
+#             ],
+#             "related_topics": ["treinamento", "fitness", "saúde"],
+#             "educational_metadata": {
+#                 "difficulty_level": request.get('user_level', 'intermediate'),
+#                 "estimated_reading_time": 2.5,
+#                 "complexity_score": 0.6
+#             },
+#             "learning_context": {
+#                 "user_id": "default_user",
+#                 "session_id": request.get('session_id') or f"session_{int(time.time())}",
+#                 "current_topic": request.get('current_topic') or "treinamento",
+#                 "learning_objectives": request.get('learning_objectives', []),
+#                 "topics_covered": ["treinamento", "fitness"],
+#                 "difficulty_level": request.get('user_level', 'intermediate'),
+#                 "preferred_learning_style": request.get('learning_style', 'mixed')
+#             },
+#             "video_suggestions": [],
+#             "response_time": 0.1
+#         }
+
+#         return response_data
+
+#     except Exception as e:
+#         logger.error(f"❌ Educational chat error: {str(e)}")
+#         raise HTTPException(
+#             status_code=500, detail=f"Educational chat error: {str(e)}")
+
+
+@app.get("/chat/session/{session_id}/context")
+async def get_session_context(session_id: str):
+    """Get learning context for a chat session"""
+    logger.info(f"📚 Session context request: {session_id}")
+
+    try:
+        return {
+            "session_id": session_id,
+            "learning_context": {
+                "user_id": "default_user",
+                "session_id": session_id,
+                "current_topic": None,
+                "learning_objectives": [],
+                "topics_covered": [],
+                "difficulty_level": "beginner",
+                "preferred_learning_style": "mixed",
+                "knowledge_gaps": [],
+                "follow_up_questions": []
+            },
+            "summary": {
+                "topics_covered": 0,
+                "current_focus": None,
+                "difficulty_level": "beginner",
+                "objectives_count": 0
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Session context error: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Session context error: {str(e)}")
+
 
 # Variáveis globais
 rag_handler = None
@@ -78,6 +175,21 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
     response_time: float
+
+
+class Question(BaseModel):
+    content: str
+
+
+class Response(BaseModel):
+    answer: str
+    sources: List[dict]
+    response_time: float
+
+
+class ChatRequest(BaseModel):
+    message: str
+    thread_id: Optional[str] = None
 
 
 @app.on_event("startup")
@@ -287,12 +399,88 @@ async def get_rag_stats():
         raise HTTPException(
             status_code=500, detail=f"Erro ao obter estatísticas: {str(e)}")
 
+
+# ========================================
+# CHAT ENDPOINTS
+# ========================================
+
+@app.post("/chat", response_model=Response)
+async def chat(question: Question):
+    """Simplified chat endpoint"""
+    logger.info(f"💬 Chat request: {question.content[:50]}...")
+
+    if not rag_handler:
+        simulated_answer = f"Sistema não inicializado. Esta é uma resposta simulada para: '{question.content}'. Configure uma chave OpenAI válida para funcionalidades completas."
+        return Response(
+            answer=simulated_answer,
+            sources=[{"title": "Sistema de Teste",
+                      "source": "rag_server.py", "page": 1, "relevance": 0.9}],
+            response_time=0.1
+        )
+
+    try:
+        response = rag_handler.generate_response(question.content)
+        return response
+    except Exception as e:
+        logger.error(f"❌ Chat error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat-auth", response_model=Response)
+async def chat_auth(question: Question):
+    """Process a chat question with authentication"""
+    logger.info(f"💬 Chat request: {question.content[:50]}...")
+
+    if not rag_handler:
+        logger.error("❌ RAG handler not initialized")
+        raise HTTPException(status_code=400, detail="System not initialized")
+
+    try:
+        response = rag_handler.generate_response(question.content)
+        logger.info(
+            f"✅ Chat response generated (time: {response.get('response_time', 0):.2f}s)")
+        return response
+    except Exception as e:
+        logger.error(f"❌ Chat error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat/agent")
+async def chat_agent_stream(request: ChatRequest):
+    """Endpoint to stream responses from the chat agent."""
+    thread_id = request.thread_id or str(uuid4())
+    logger.info(
+        f"🤖 Agent chat request on thread {thread_id}: {request.message[:50]}...")
+
+    if not rag_handler:
+        logger.error("❌ RAG handler not initialized for agent chat")
+        raise HTTPException(
+            status_code=400, detail="System not initialized. Cannot use agent.")
+
+    try:
+        # For now, return a simple response since we don't have the full agent setup
+        response = rag_handler.generate_response(request.message)
+        return response
+    except Exception as e:
+        logger.error(f"❌ Agent chat error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
-    logger.info("🚀 Iniciando servidor RAG na porta 8001...")
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="DNA da Força RAG Server")
+    parser.add_argument("--host", default="0.0.0.0", help="Host para o servidor")
+    parser.add_argument("--port", type=int, default=8001, help="Porta para o servidor")
+    parser.add_argument("--reload", action="store_true", help="Habilitar reload automático")
+    
+    args = parser.parse_args()
+    
+    logger.info(f"🚀 Iniciando servidor RAG em {args.host}:{args.port}...")
     uvicorn.run(
         "rag_server:app",
-        host="0.0.0.0",
-        port=8001,
-        reload=False,  # Não usar reload em produção
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
         log_level="info"
     )

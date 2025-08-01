@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { User, UserRole } from '../types';
 import { api } from '../lib/api';
+import { useChatStore } from './chat-store';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -169,6 +170,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             user,
             error: null
           });
+          
+          // Definir o usuário atual no chat store
+          useChatStore.getState().setCurrentUser(user.id);
         })
         .catch(error => {
           console.error('❌ Token validation failed on backend:', error);
@@ -231,6 +235,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error: null
       });
       
+      // Definir o usuário atual no chat store
+      useChatStore.getState().setCurrentUser(user.id);
+      
       return result; // Retorna o objeto completo para que login-page.tsx possa acessar is_temporary_password
     } catch (error) {
       // Garantir que o erro seja uma string
@@ -255,6 +262,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: () => {
     console.log('🚪 Logging out...');
     localStorage.removeItem('token');
+    
+    // Limpar dados do chat do usuário
+    useChatStore.getState().clearUserData();
+    
     set({ 
       isAuthenticated: false, 
       user: null,

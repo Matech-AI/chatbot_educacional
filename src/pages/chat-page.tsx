@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useMemo, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  useChatSessions,
+  useUserChatSessions,
   useChatActions,
   useSessionMessages,
 } from "../store/chat-store";
@@ -14,7 +14,8 @@ import { motion } from "framer-motion";
 
 const ChatPage: React.FC = () => {
   // Usar hooks especializados para evitar re-renders desnecessários
-  const { sessions, activeSessionId, isProcessing } = useChatSessions();
+  const { sessions, activeSessionId, isProcessing, currentUserId } =
+    useUserChatSessions();
   const { createSession, setActiveSession, deleteSession, sendMessage } =
     useChatActions();
 
@@ -23,7 +24,7 @@ const ChatPage: React.FC = () => {
 
   // Pegar o sessionId da URL de forma controlada
   const urlSessionId = searchParams.get("session");
-  
+
   // Flag para prevenir loops infinitos
   const isUpdatingRef = useRef(false);
 
@@ -38,41 +39,78 @@ const ChatPage: React.FC = () => {
   useEffect(() => {
     // Se há uma sessão na URL diferente da ativa, ativá-la
     if (urlSessionId && urlSessionId !== activeSessionId) {
-      const sessionExists = sessions.some(s => s.id === urlSessionId);
+      const sessionExists = sessions.some((s) => s.id === urlSessionId);
       if (sessionExists) {
         console.log("🎯 Activating session from URL:", urlSessionId);
         setActiveSession(urlSessionId);
       } else {
-        console.log("⚠️ Session from URL doesn't exist, clearing URL:", urlSessionId);
+        console.log(
+          "⚠️ Session from URL doesn't exist, clearing URL:",
+          urlSessionId
+        );
         setSearchParams({}, { replace: true });
       }
     }
-  }, [urlSessionId, activeSessionId, sessions, setActiveSession, setSearchParams]);
+  }, [
+    urlSessionId,
+    activeSessionId,
+    sessions,
+    setActiveSession,
+    setSearchParams,
+  ]);
 
   // 2. NÃO atualizar URL automaticamente quando sessão ativa muda
   // A URL só deve ser atualizada por ações explícitas do usuário
 
   // 3. Log para debug (sem limpeza automática para evitar confusão)
   useEffect(() => {
-    console.log('📊 Current state - Sessions:', sessions.length, 'Active:', activeSessionId, 'URL:', urlSessionId);
+    console.log(
+      "📊 Current state - Sessions:",
+      sessions.length,
+      "Active:",
+      activeSessionId,
+      "URL:",
+      urlSessionId
+    );
   }, [sessions.length, activeSessionId, urlSessionId]);
-  
+
   // 4. Criar primeira sessão automaticamente quando acessar a página de chat
   useEffect(() => {
+    // Verificar se há um usuário logado
+    if (!currentUserId) {
+      console.log("⚠️ No user logged in, cannot create sessions");
+      return;
+    }
+
     // ✅ Sempre criar uma sessão se não houver nenhuma
     if (sessions.length === 0) {
-      console.log("📝 ChatPage: No sessions exist, creating first session automatically");
-      const newSessionId = createSession();
-      // Navegar imediatamente para a nova sessão
-      setSearchParams({ session: newSessionId }, { replace: true });
+      console.log(
+        "📝 ChatPage: No sessions exist, creating first session automatically"
+      );
+      try {
+        const newSessionId = createSession();
+        // Navegar imediatamente para a nova sessão
+        setSearchParams({ session: newSessionId }, { replace: true });
+      } catch (error) {
+        console.error("❌ Failed to create session:", error);
+      }
     }
     // Se há sessões mas nenhuma ativa e nenhuma na URL, ativar a primeira
     else if (!activeSessionId && !urlSessionId && sessions.length > 0) {
-      console.log("📝 ChatPage: Sessions exist but none active, activating first one");
+      console.log(
+        "📝 ChatPage: Sessions exist but none active, activating first one"
+      );
       const firstSession = sessions[0];
       setSearchParams({ session: firstSession.id }, { replace: true });
     }
-  }, [sessions.length, activeSessionId, urlSessionId, createSession, setSearchParams]); // ✅ Incluir dependências para evitar criações desnecessárias
+  }, [
+    sessions.length,
+    activeSessionId,
+    urlSessionId,
+    createSession,
+    setSearchParams,
+    currentUserId,
+  ]); // ✅ Incluir dependências para evitar criações desnecessárias
 
   // ========================================
   // CALLBACKS MEMOIZADOS
@@ -88,15 +126,23 @@ const ChatPage: React.FC = () => {
 
   const handleNewSession = useCallback(() => {
     console.log("➕ Creating SINGLE new session from button");
-    const newSessionId = createSession();
-    // Forçar navegação imediata para a nova sessão
-    setSearchParams({ session: newSessionId }, { replace: true });
+    try {
+      const newSessionId = createSession();
+      // Forçar navegação imediata para a nova sessão
+      setSearchParams({ session: newSessionId }, { replace: true });
+    } catch (error) {
+      console.error("❌ Failed to create new session:", error);
+      // Mostrar mensagem de erro para o usuário
+      alert("Erro ao criar nova conversa. Verifique se você está logado.");
+    }
   }, [createSession, setSearchParams]);
-  
+
   // Função temporária para resetar todas as sessões
   const handleResetSessions = useCallback(() => {
-    if (window.confirm('Deseja limpar todas as conversas e resetar o sistema?')) {
-      localStorage.removeItem('chat-storage');
+    if (
+      window.confirm("Deseja limpar todas as conversas e resetar o sistema?")
+    ) {
+      localStorage.removeItem("chat-storage");
       window.location.reload();
     }
   }, []);
@@ -109,10 +155,10 @@ const ChatPage: React.FC = () => {
       }
 
       console.log("🗑️ Deleting session:", sessionId);
-      
+
       // Get remaining sessions after deletion
-      const remainingSessions = sessions.filter(s => s.id !== sessionId);
-      
+      const remainingSessions = sessions.filter((s) => s.id !== sessionId);
+
       // Delete the session
       deleteSession(sessionId);
 
@@ -121,7 +167,10 @@ const ChatPage: React.FC = () => {
         if (remainingSessions.length > 0) {
           // Navigate to the first remaining session
           const firstRemaining = remainingSessions[0];
-          console.log("🎯 Navigating to first remaining session:", firstRemaining.id);
+          console.log(
+            "🎯 Navigating to first remaining session:",
+            firstRemaining.id
+          );
           setSearchParams({ session: firstRemaining.id }, { replace: true });
         } else {
           // No sessions left, clear URL
@@ -134,13 +183,7 @@ const ChatPage: React.FC = () => {
         setSearchParams({}, { replace: true });
       }
     },
-    [
-      sessions,
-      deleteSession,
-      activeSessionId,
-      urlSessionId,
-      setSearchParams,
-    ]
+    [sessions, deleteSession, activeSessionId, urlSessionId, setSearchParams]
   );
 
   const handleSelectSession = useCallback(
@@ -164,6 +207,39 @@ const ChatPage: React.FC = () => {
   // ========================================
   // RENDER
   // ========================================
+
+  // Verificar se há usuário logado
+  if (!currentUserId) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-6">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-red-600"
+            >
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="m22 2-7 20-4-9-9-4 20-7z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-semibold mb-2">Usuário não logado</h3>
+          <p className="text-gray-600 mb-4">
+            Você precisa estar logado para acessar o assistente de treino.
+          </p>
+          <Button onClick={() => navigate("/login")}>Fazer Login</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col">
