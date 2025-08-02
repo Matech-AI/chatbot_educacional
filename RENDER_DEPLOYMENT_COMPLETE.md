@@ -2,29 +2,34 @@
 
 ## 📋 Visão Geral
 
-Este guia mostra como fazer deploy completo no Render com **3 serviços**:
+Este guia mostra como fazer deploy completo no Render com **3 serviços** usando **Docker** para um sistema profissional:
 
-- 🎨 **Frontend React** (gratuito)
-- 🔧 **API Server** (gratuito)
-- 🧠 **RAG Server** (gratuito)
+- 🎨 **Frontend React** (Docker + Nginx)
+- 🔧 **API Server** (Docker + Python)
+- 🧠 **RAG Server** (Docker + Python)
 
 ## 🏗️ Arquitetura
 
 ```
-Frontend (Render) ←→ API Server (Render) ←→ RAG Server (Render)
-     ↓                      ↓                      ↓
-Interface React        Autenticação         Processamento RAG
-Upload de arquivos    Drive sync          ChromaDB
-Chat interface        Endpoints gerais    Embeddings
+Frontend (Docker + Nginx) ←→ API Server (Docker + Python) ←→ RAG Server (Docker + Python)
+         ↓                              ↓                              ↓
+   Interface React                Autenticação                 Processamento RAG
+   Upload de arquivos            Drive sync                  ChromaDB
+   Chat interface                Endpoints gerais            Embeddings
 ```
 
 ## 📁 Estrutura de Arquivos
 
 ```
 projeto/
-├── render.yaml                    # Configuração frontend
+├── render.yaml                    # Configuração de TODOS os serviços
+├── Dockerfile.frontend           # Dockerfile do Frontend
+├── nginx.conf                    # Configuração do Nginx
+├── .dockerignore                 # Otimização do build frontend
 ├── backend/
-│   ├── render.yaml               # Configuração backend
+│   ├── Dockerfile.rag           # Dockerfile do RAG Server
+│   ├── Dockerfile.api           # Dockerfile do API Server
+│   ├── .dockerignore            # Otimização do build backend
 │   ├── rag_server.py            # Servidor RAG
 │   ├── api_server.py            # Servidor API
 │   └── config/
@@ -39,9 +44,12 @@ projeto/
 ### **1. Preparação do Repositório**
 
 1. **Certifique-se de que o código está no GitHub**
-2. **Verifique se os arquivos estão corretos:**
-   - `render.yaml` (raiz) - Frontend
-   - `backend/render.yaml` - Backend
+2. **Verifique se todos os arquivos Docker estão presentes:**
+   - `render.yaml` (raiz) - Configuração dos serviços
+   - `Dockerfile.frontend` - Frontend React
+   - `nginx.conf` - Configuração Nginx
+   - `backend/Dockerfile.rag` - RAG Server
+   - `backend/Dockerfile.api` - API Server
 
 ### **2. Deploy no Render**
 
@@ -52,12 +60,12 @@ projeto/
 3. Clique em **"New +"**
 4. Selecione **"Blueprint"**
 5. Conecte seu repositório
-6. O Render detectará automaticamente os arquivos `render.yaml`
+6. O Render detectará automaticamente o arquivo `render.yaml` na raiz
 
 #### **Opção B: Deploy Manual**
 
 1. Crie **3 Web Services** separados
-2. Configure cada um conforme especificado abaixo
+2. Configure cada um para usar Docker conforme especificado abaixo
 
 ### **3. URLs dos Serviços**
 
@@ -69,15 +77,16 @@ Após o deploy, você terá:
 
 ## 🔧 Configuração dos Serviços
 
-### **Frontend (render.yaml na raiz)**
+### **Arquivo Único (render.yaml na raiz)**
 
 ```yaml
 services:
+  # Frontend React
   - type: web
     name: dna-forca-frontend
-    env: static
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
+    env: docker
+    dockerfilePath: ./Dockerfile.frontend
+    dockerContext: .
     envVars:
       - key: VITE_API_BASE_URL
         value: https://dna-forca-api-server.onrender.com
@@ -88,18 +97,13 @@ services:
         source: /*
         destination: /index.html
     autoDeploy: true
-```
 
-### **Backend (backend/render.yaml)**
-
-```yaml
-services:
-  # RAG Server
+  # Servidor RAG
   - type: web
     name: dna-forca-rag-server
-    env: python
-    buildCommand: pip install -r config/requirements.txt
-    startCommand: python rag_server.py --host 0.0.0.0 --port $PORT
+    env: docker
+    dockerfilePath: ./backend/Dockerfile.rag
+    dockerContext: ./backend
     envVars:
       - key: OPENAI_API_KEY
         sync: false
@@ -107,12 +111,12 @@ services:
         value: https://dna-forca-frontend.onrender.com
     autoDeploy: true
 
-  # API Server
+  # Servidor API
   - type: web
     name: dna-forca-api-server
-    env: python
-    buildCommand: pip install -r config/requirements.txt
-    startCommand: python api_server.py --host 0.0.0.0 --port $PORT
+    env: docker
+    dockerfilePath: ./backend/Dockerfile.api
+    dockerContext: ./backend
     envVars:
       - key: OPENAI_API_KEY
         sync: false
@@ -121,6 +125,85 @@ services:
       - key: CORS_ORIGINS
         value: https://dna-forca-frontend.onrender.com
     autoDeploy: true
+```
+
+## 🐳 Dockerfiles
+
+### **Frontend (Dockerfile.frontend)**
+
+```dockerfile
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine AS production
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/nginx.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+### **RAG Server (backend/Dockerfile.rag)**
+
+```dockerfile
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+RUN apt-get update && apt-get install -y \
+    curl build-essential libmagic1 poppler-utils \
+    tesseract-ocr tesseract-ocr-por \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY config/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY rag_system/ ./rag_system/
+COPY chat_agents/ ./chat_agents/
+COPY auth/ ./auth/
+COPY utils/ ./utils/
+COPY data/ ./data/
+COPY config/ ./config/
+COPY rag_server.py .
+
+RUN mkdir -p /app/data/.chromadb /app/data/materials /app/logs
+EXPOSE 8000
+CMD ["python", "rag_server.py"]
+```
+
+### **API Server (backend/Dockerfile.api)**
+
+```dockerfile
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+RUN apt-get update && apt-get install -y \
+    curl build-essential libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY config/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY auth/ ./auth/
+COPY chat_agents/ ./chat_agents/
+COPY drive_sync/ ./drive_sync/
+COPY video_processing/ ./video_processing/
+COPY maintenance/ ./maintenance/
+COPY utils/ ./utils/
+COPY data/ ./data/
+COPY config/ ./config/
+COPY rag_system/ ./rag_system/
+COPY api_server.py .
+
+RUN mkdir -p /app/data/materials /app/logs /app/data/.chromadb
+EXPOSE 8000
+CMD ["python", "api_server.py"]
 ```
 
 ## 🔑 Variáveis de Ambiente
@@ -137,8 +220,8 @@ VITE_RAG_BASE_URL=https://dna-forca-rag-server.onrender.com
 ```bash
 OPENAI_API_KEY=sua_chave_openai_aqui
 GEMINI_API_KEY=sua_chave_gemini_aqui
-CHROMA_PERSIST_DIR=/opt/render/project/src/data/.chromadb
-MATERIALS_DIR=/opt/render/project/src/data/materials
+CHROMA_PERSIST_DIR=/app/data/.chromadb
+MATERIALS_DIR=/app/data/materials
 CORS_ORIGINS=https://dna-forca-frontend.onrender.com
 LOG_LEVEL=INFO
 ```
@@ -189,6 +272,32 @@ Após a configuração inicial:
 - **RAG Server**: Gratuito (web service)
 - **Total**: 100% gratuito no Render!
 
+## 🐳 Vantagens do Docker
+
+### **Isolamento:**
+
+- Cada serviço roda em seu próprio container
+- Dependências isoladas
+- Ambiente consistente
+
+### **Performance:**
+
+- Builds otimizados
+- Cache de camadas
+- Imagens menores
+
+### **Segurança:**
+
+- Containers isolados
+- Permissões limitadas
+- Menor superfície de ataque
+
+### **Escalabilidade:**
+
+- Fácil replicação
+- Load balancing
+- Deploy independente
+
 ## 🔧 Troubleshooting
 
 ### **Problemas Comuns:**
@@ -209,8 +318,13 @@ Após a configuração inicial:
    - Confirme se as chaves de API estão configuradas
 
 4. **RAG não inicializa:**
+
    - Verifique se `OPENAI_API_KEY` está configurada
    - Aguarde o RAG server inicializar completamente
+
+5. **Erro de Docker:**
+   - Verifique se os Dockerfiles estão corretos
+   - Confirme se os contextos estão configurados
 
 ### **Logs Úteis:**
 
@@ -232,11 +346,12 @@ curl https://dna-forca-rag-server.onrender.com/health
 
 Após o deploy, você terá:
 
-- ✅ **Frontend** rodando no Render (gratuito)
-- ✅ **API Server** rodando no Render (gratuito)
-- ✅ **RAG Server** rodando no Render (gratuito)
+- ✅ **Frontend** rodando no Render com Docker + Nginx (gratuito)
+- ✅ **API Server** rodando no Render com Docker + Python (gratuito)
+- ✅ **RAG Server** rodando no Render com Docker + Python (gratuito)
 - ✅ **Deploy automático** a cada push
 - ✅ **Zero custos** mensais
+- ✅ **Sistema profissional** com isolamento e segurança
 
 ## 📞 Suporte
 
@@ -247,4 +362,4 @@ Após o deploy, você terá:
 
 ---
 
-**🎯 Resumo:** Com essa configuração, você terá todo o sistema rodando no Render de forma gratuita e com deploy automático!
+**🎯 Resumo:** Com essa configuração Docker, você terá um sistema completo e profissional rodando no Render de forma gratuita e com deploy automático!

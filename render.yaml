@@ -1,13 +1,13 @@
-# Configuração para deploy no Render - Frontend
-# Este arquivo define o serviço frontend para deploy automático
+# Configuração para deploy no Render - DNA da Força AI
+# Sistema completo com Docker para produção
 
 services:
   # Frontend React
   - type: web
     name: dna-forca-frontend
-    env: static
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
+    env: docker
+    dockerfilePath: ./Dockerfile.frontend
+    dockerContext: .
     envVars:
       - key: VITE_API_BASE_URL
         value: https://dna-forca-api-server.onrender.com
@@ -18,3 +18,84 @@ services:
         source: /*
         destination: /index.html
     autoDeploy: true
+
+  # Servidor RAG
+  - type: web
+    name: dna-forca-rag-server
+    env: docker
+    dockerfilePath: ./backend/Dockerfile.rag
+    dockerContext: ./backend
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CHROMA_PERSIST_DIR
+        value: /app/data/.chromadb
+      - key: MATERIALS_DIR
+        value: /app/data/materials
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PORT
+        value: 8001
+      - key: CORS_ORIGINS
+        value: https://dna-forca-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+    disk:
+      name: rag-data
+      mountPath: /app/data
+      sizeGB: 10
+    healthCheckPath: /health
+    autoDeploy: true
+
+  # Servidor API Geral
+  - type: web
+    name: dna-forca-api-server
+    env: docker
+    dockerfilePath: ./backend/Dockerfile.api
+    dockerContext: ./backend
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GOOGLE_DRIVE_API_KEY
+        sync: false
+      - key: RAG_SERVER_URL
+        value: https://dna-forca-rag-server.onrender.com
+      - key: DATABASE_URL
+        value: postgresql://user:password@localhost/dbname
+      - key: PORT
+        value: 8000
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+      - key: CORS_ORIGINS
+        value: https://dna-forca-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CHROMA_PERSIST_DIR
+        value: /app/data/.chromadb
+      - key: MATERIALS_DIR
+        value: /app/data/materials
+    disk:
+      name: api-data
+      mountPath: /app/data
+      sizeGB: 5
+    healthCheckPath: /health
+    autoDeploy: true
+
+  # Redis (opcional)
+  - type: redis
+    name: dna-forca-redis
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
+    plan: free
