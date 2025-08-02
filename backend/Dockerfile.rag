@@ -30,10 +30,11 @@ COPY rag_system/ ./rag_system/
 COPY chat_agents/ ./chat_agents/
 COPY auth/ ./auth/
 COPY utils/ ./utils/
-COPY data/ ./data/
+# Remover esta linha:
+# COPY data/ ./data/
 COPY config/ ./config/
 
-# Criar diretórios necessários
+# Criar diretórios necessários (mantenha esta parte)
 RUN mkdir -p /app/data/.chromadb /app/data/materials /app/logs
 
 # Copiar script de inicialização do RAG
@@ -43,4 +44,4 @@ COPY rag_server.py .
 EXPOSE 8000
 
 # Comando de inicialização
-CMD ["python", "rag_server.py"] 
+CMD ["python", "rag_server.py"]

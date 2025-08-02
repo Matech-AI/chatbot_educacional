@@ -43,7 +43,7 @@ Thumbs.db
 logs/
 *.log
 
-# Data (será montado como volume)
+# Ignorar diretório de dados
 data/
 *.db
 *.sqlite3
@@ -60,4 +60,4 @@ README.md
 # Frontend (não necessário para backend)
 ../src/
 ../package.json
-../vite.config.ts 
+../vite.config.ts

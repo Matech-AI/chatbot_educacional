@@ -46,6 +46,7 @@ services:
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: 30
+    # Para o servidor RAG
     disk:
       name: rag-data
       mountPath: /app/data
@@ -89,7 +90,7 @@ services:
     disk:
       name: api-data
       mountPath: /app/data
-      sizeGB: 5
+      sizeGB: 15
     healthCheckPath: /health
     autoDeploy: true
 
