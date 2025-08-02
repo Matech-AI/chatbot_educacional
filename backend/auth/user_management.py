@@ -130,6 +130,48 @@ async def list_users(current_user: User = Depends(get_current_user)):
 
     return get_all_users()
 
+
+@router.get("/users/count")
+async def count_users_by_role(current_user: User = Depends(get_current_user)):
+    """Count users by role (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    users = get_all_users()
+    counts = {
+        "admin": 0,
+        "instructor": 0,
+        "student": 0,
+        "total": len(users)
+    }
+
+    for user in users:
+        if user.role in counts:
+            counts[user.role] += 1
+
+    return counts
+
+
+@router.get("/users-count")
+async def count_users_by_role_alt(current_user: User = Depends(get_current_user)):
+    """Count users by role (admin only) - Alternative endpoint"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    users = get_all_users()
+    counts = {
+        "admin": 0,
+        "instructor": 0,
+        "student": 0,
+        "total": len(users)
+    }
+
+    for user in users:
+        if user.role in counts:
+            counts[user.role] += 1
+
+    return counts
+
 # @router.post("/public/verify-token")
 # async def verify_authentication_token(token_data: TokenVerification):
 #     """Verifica o token de autenticação enviado por e-mail (rota pública)"""

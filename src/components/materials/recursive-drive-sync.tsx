@@ -61,7 +61,8 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
 }) => {
   // Carregar valores do localStorage se disponíveis
   const [folderInput, setFolderInput] = useState(
-    localStorage.getItem("lastDriveFolderId") || "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
+    localStorage.getItem("lastDriveFolderId") ||
+      "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
   );
   const [apiKey, setApiKey] = useState(
     localStorage.getItem("lastDriveApiKey") || ""
@@ -200,7 +201,7 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
       console.log("Iniciando sincronização recursiva:", folderId);
 
       // Substituir a chamada fetch direta pela função da API
-      const result = await apiRequestJson("/drive/sync-recursive", {
+      const result = await apiRequestJson("/api/drive/sync-recursive", {
         method: "POST",
         body: JSON.stringify({
           folder_id: folderId,

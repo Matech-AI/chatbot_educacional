@@ -16,6 +16,7 @@ import {
   Clock,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { apiRequestJson } from "../lib/api";
 
 interface MaintenancePanelProps {
   onRefresh?: () => void;
@@ -91,19 +92,11 @@ export const MaintenancePanel: React.FC<MaintenancePanelProps> = ({
   };
 
   const apiCall = async (endpoint: string, method: string = "POST") => {
-    const response = await fetch(`/api${endpoint}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    if (method === "GET") {
+      return await apiRequestJson(endpoint, { method: "GET" });
+    } else {
+      return await apiRequestJson(endpoint, { method: "POST" });
     }
-
-    return response.json();
   };
 
   const generateSystemReport = async () => {
@@ -159,7 +152,8 @@ export const MaintenancePanel: React.FC<MaintenancePanelProps> = ({
       endpoint: "/maintenance/cleanup-duplicates",
       confirmMessage:
         "Tem certeza que deseja remover todos os arquivos duplicados?",
-      recommended: systemReport?.file_analysis?.duplicates?.duplicate_files > 0,
+      recommended:
+        (systemReport?.file_analysis?.duplicates?.duplicate_files || 0) > 0,
     },
     {
       id: "cleanup-folders",
@@ -203,7 +197,8 @@ export const MaintenancePanel: React.FC<MaintenancePanelProps> = ({
     {
       id: "clear-drive-cache",
       title: "Limpar Cache do Drive",
-      description: "Limpa o cache de hashes para permitir baixar arquivos novamente",
+      description:
+        "Limpa o cache de hashes para permitir baixar arquivos novamente",
       icon: <RefreshCw size={20} />,
       color: "bg-indigo-500",
       endpoint: "/maintenance/clear-drive-cache",

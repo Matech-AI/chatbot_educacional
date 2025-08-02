@@ -207,7 +207,13 @@ const ProtectedRouteBase: React.FC<{
 }> = ({ children, allowedRoles, currentPath }) => {
   const { isAuthenticated, user } = useAuthStore();
 
+  console.log("ProtectedRouteBase - currentPath:", currentPath);
+  console.log("ProtectedRouteBase - user.role:", user?.role);
+  console.log("ProtectedRouteBase - allowedRoles:", allowedRoles);
+  console.log("ProtectedRouteBase - isAuthenticated:", isAuthenticated);
+
   if (!isAuthenticated) {
+    console.log("ProtectedRouteBase - Not authenticated, redirecting to /login");
     return <Navigate to="/login" replace />;
   }
 
@@ -215,20 +221,28 @@ const ProtectedRouteBase: React.FC<{
   if (user && user.role === "student" && currentPath) {
     const allowedStudentPaths = ["/", "/chat"];
 
+    console.log("ProtectedRouteBase - Student check - allowedStudentPaths:", allowedStudentPaths);
+    console.log("ProtectedRouteBase - Student check - is path allowed:", allowedStudentPaths.some(
+      (path) => currentPath === path || currentPath.startsWith(path + "/")
+    ));
+
     // Se o caminho atual não estiver na lista de permitidos para estudantes
     if (
       !allowedStudentPaths.some(
         (path) => currentPath === path || currentPath.startsWith(path + "/")
       )
     ) {
+      console.log("ProtectedRouteBase - Student not allowed, redirecting to /");
       return <Navigate to="/" replace />;
     }
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
+    console.log("ProtectedRouteBase - User role not in allowedRoles, redirecting to /");
     return <Navigate to="/" replace />;
   }
 
+  console.log("ProtectedRouteBase - Access granted");
   return (
     <Suspense fallback={<LoadingSpinner />}>
       <ErrorBoundary>{children}</ErrorBoundary>

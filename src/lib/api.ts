@@ -1,6 +1,6 @@
 // API utility functions - FIXED VERSION
 const API_BASE = process.env.NODE_ENV === 'production' 
-  ? 'https://your-backend-domain.com' 
+  ? (import.meta.env.VITE_API_BASE_URL || 'https://dna-forca-api-server.onrender.com')
   : '/api';  // Usar /api para que o proxy do Vite funcione
 
 // Get auth token from memory (localStorage not supported in Claude artifacts)
@@ -186,6 +186,7 @@ export const api = {
   // User management (admin only)
   users: {
     list: () => apiRequestJson('/auth/users'),
+            count: () => apiRequestJson('/users-count'),
     create: (userData: any) => apiRequestJson('/auth/users', {
       method: 'POST',
       body: JSON.stringify(userData),

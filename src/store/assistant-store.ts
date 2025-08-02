@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AssistantConfig } from '../types';
+import { apiRequestJson } from '../lib/api';
 
 interface AssistantState {
   config: AssistantConfig;
@@ -10,6 +11,8 @@ interface AssistantState {
   updateConfig: (updates: Partial<AssistantConfig>) => Promise<boolean>;
   saveAsTemplate: (name: string) => Promise<boolean>;
   loadTemplate: (name: string) => Promise<boolean>;
+  loadCurrentConfig: () => Promise<boolean>;
+  loadTemplates: () => Promise<boolean>;
   resetToDefault: () => void;
 }
 
@@ -139,18 +142,21 @@ export const useAssistantStore = create<AssistantState>()(
         try {
           set({ isLoading: true });
           
-          // Simulate API call
-          await new Promise(resolve => setTimeout(resolve, 800));
-          
-          set(state => {
-            const newConfig = { ...state.config, ...updates };
-            return { 
-              config: newConfig,
-              isLoading: false
-            };
+          // Fazer chamada real para a API usando apiRequestJson
+          const result = await apiRequestJson('/assistant/config', {
+            method: 'POST',
+            body: JSON.stringify(updates),
           });
           
-          return true;
+          if (result.status === 'success') {
+            set(state => ({
+              config: { ...state.config, ...result.config },
+              isLoading: false
+            }));
+            return true;
+          } else {
+            throw new Error(result.message || 'Erro ao atualizar configuração');
+          }
         } catch (error) {
           set({ isLoading: false });
           console.error('❌ Erro ao atualizar configuração do assistente:', error);
@@ -162,19 +168,27 @@ export const useAssistantStore = create<AssistantState>()(
         try {
           set({ isLoading: true });
           
-          // Simulate API call
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          const state = get();
           
-          set(state => ({ 
-            templates: [...state.templates, name],
-            customTemplates: {
-              ...state.customTemplates,
-              [name]: { ...state.config } // Salva a configuração atual como template personalizado
-            },
-            isLoading: false
-          }));
+          // Fazer chamada real para a API usando apiRequestJson
+          const result = await apiRequestJson(`/assistant/config/save-template?template_name=${encodeURIComponent(name)}`, {
+            method: 'POST',
+            body: JSON.stringify(state.config),
+          });
           
-          return true;
+          if (result.status === 'success') {
+            set(state => ({ 
+              templates: [...state.templates, name],
+              customTemplates: {
+                ...state.customTemplates,
+                [name]: { ...result.config }
+              },
+              isLoading: false
+            }));
+            return true;
+          } else {
+            throw new Error(result.message || 'Erro ao salvar template');
+          }
         } catch (error) {
           set({ isLoading: false });
           console.error('❌ Erro ao salvar template:', error);
@@ -186,40 +200,71 @@ export const useAssistantStore = create<AssistantState>()(
         try {
           set({ isLoading: true });
           
-          // Simulate API call
-          await new Promise(resolve => setTimeout(resolve, 800));
+          // Fazer chamada real para a API usando apiRequestJson
+          const result = await apiRequestJson(`/assistant/config/template/${encodeURIComponent(name)}`, {
+            method: 'POST',
+          });
           
-          const state = get();
-          
-          // Primeiro tenta carregar template personalizado
-          const customTemplate = state.customTemplates[name];
-          if (customTemplate) {
+          if (result.status === 'success') {
             set({ 
-              config: { ...customTemplate },
+              config: { ...result.config },
               isLoading: false
             });
             return true;
-          }
-          
-          // Se não encontrar template personalizado, carrega template padrão
-          const templateConfig = TEMPLATE_CONFIGS[name];
-          if (templateConfig) {
-            set({ 
-              config: { ...templateConfig },
-              isLoading: false
-            });
           } else {
-            // Fallback to default if template not found
-            set({ 
-              config: { ...DEFAULT_CONFIG },
-              isLoading: false
-            });
+            throw new Error(result.message || 'Erro ao carregar template');
           }
+        } catch (error) {
+          set({ isLoading: false });
+          console.error('❌ Erro ao carregar template:', error);
+          return false;
+        }
+      },
+      
+      loadTemplates: async () => {
+        try {
+          set({ isLoading: true });
+          
+          // Fazer chamada real para a API usando apiRequestJson
+          const templates = await apiRequestJson('/assistant/templates', {
+            method: 'GET',
+          });
+          
+          // Extrair nomes dos templates
+          const templateNames = Object.keys(templates);
+          
+          set({ 
+            templates: templateNames,
+            customTemplates: templates,
+            isLoading: false
+          });
           
           return true;
         } catch (error) {
           set({ isLoading: false });
-          console.error('❌ Erro ao carregar template:', error);
+          console.error('❌ Erro ao carregar templates:', error);
+          return false;
+        }
+      },
+      
+      loadCurrentConfig: async () => {
+        try {
+          set({ isLoading: true });
+          
+          // Fazer chamada real para a API usando apiRequestJson
+          const config = await apiRequestJson('/assistant/config', {
+            method: 'GET',
+          });
+          
+          set({ 
+            config: { ...config },
+            isLoading: false
+          });
+          
+          return true;
+        } catch (error) {
+          set({ isLoading: false });
+          console.error('❌ Erro ao carregar configuração atual:', error);
           return false;
         }
       },

@@ -4,21 +4,77 @@ Servidor RAG Independente - DNA da Força AI
 Este servidor fica sempre rodando para processamento de materiais e treinamento do modelo.
 """
 
+from chat_agents.educational_agent import router as educational_router
 import os
 import logging
 import asyncio
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import uvicorn
 from dotenv import load_dotenv
 from uuid import uuid4
 import time
+import json
 
 # Importar componentes RAG
 from rag_system.rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
+from chat_agents.chat_agent import graph as chat_agent_graph
+from langchain_core.runnables import RunnableConfig
+
+# ========================================
+# MODELS PYDANTIC
+# ========================================
+
+
+class Question(BaseModel):
+    content: str
+
+
+class Response(BaseModel):
+    answer: str
+    sources: List[dict]
+    response_time: float
+
+
+class ChatRequest(BaseModel):
+    message: str
+    thread_id: Optional[str] = None
+
+
+class ProcessMaterialsRequest(BaseModel):
+    api_key: str
+    force_reprocess: bool = False
+
+
+class ProcessResponse(BaseModel):
+    success: bool
+    message: str
+
+
+class QueryRequest(BaseModel):
+    question: str
+    material_ids: Optional[List[str]] = None
+    config: Optional[ProcessingConfig] = None
+
+
+class QueryResponse(BaseModel):
+    answer: str
+    sources: List[dict]
+    response_time: float
+
+
+class AssistantConfigRequest(BaseModel):
+    prompt: Optional[str] = None
+    chunk_size: Optional[int] = None
+    chunk_overlap: Optional[int] = None
+    temperature: Optional[float] = None
+    title: Optional[str] = None
+
 
 # Configurar logging
 logging.basicConfig(
@@ -30,11 +86,206 @@ logger = logging.getLogger(__name__)
 # Carregar variáveis de ambiente
 load_dotenv()
 
+# Variáveis globais
+rag_handler = None
+chroma_persist_dir = None
+materials_dir = None
+
+# Sistema de persistência para configurações do assistente
+assistant_configs_file = Path("data/assistant_configs.json")
+assistant_configs = {}
+current_assistant_config = None
+
+
+def load_assistant_configs():
+    """Carregar configurações do assistente do arquivo"""
+    global assistant_configs, current_assistant_config
+
+    if assistant_configs_file.exists():
+        try:
+            with open(assistant_configs_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                assistant_configs = data.get('configs', {})
+                current_assistant_config = data.get('current', None)
+                logger.info(
+                    f"✅ Configurações do assistente carregadas: {len(assistant_configs)} templates")
+        except Exception as e:
+            logger.error(f"❌ Erro ao carregar configurações: {e}")
+            assistant_configs = {}
+            current_assistant_config = None
+
+
+def save_assistant_configs():
+    """Salvar configurações do assistente no arquivo"""
+    global assistant_configs, current_assistant_config
+
+    try:
+        # Criar diretório se não existir
+        assistant_configs_file.parent.mkdir(parents=True, exist_ok=True)
+
+        data = {
+            'configs': assistant_configs,
+            'current': current_assistant_config,
+            'last_updated': time.time()
+        }
+
+        with open(assistant_configs_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+        logger.info(
+            f"✅ Configurações do assistente salvas: {len(assistant_configs)} templates")
+    except Exception as e:
+        logger.error(f"❌ Erro ao salvar configurações: {e}")
+
+
+def get_default_templates():
+    """Retornar templates padrão"""
+    return {
+        "Educação Física": {
+            "name": "Assistente Educacional de Educação Física",
+            "description": "Especializado em responder dúvidas sobre treinamento, fisiologia do exercício e metodologia do ensino",
+            "prompt": """Você é um ASSISTENTE EDUCACIONAL especializado em EDUCAÇÃO FÍSICA. Seu objetivo é auxiliar estudantes a compreender conceitos de treinamento, fisiologia do exercício, biomecânica e metodologia do ensino. Siga estas diretrizes:
+
+1. CONTEXTO DO CURSO:
+   - Basear suas respostas exclusivamente nos materiais do curso fornecidos
+   - Citar a fonte específica (aula, página, vídeo) de onde a informação foi extraída
+   - Nunca inventar informações que não estejam nos materiais do curso
+
+2. ESTILO DE RESPOSTA:
+   - Usar linguagem clara, técnica mas acessível
+   - Relacionar teoria com aplicação prática no treinamento
+   - Fornecer exemplos de exercícios e progressões quando apropriado
+   - Explicar os princípios fisiológicos por trás dos conceitos
+
+3. CITAÇÕES E FONTES:
+   - Sempre indicar a origem da informação (ex: "Conforme a Aula 3, página 7...")
+   - Para citações diretas, usar aspas e referenciar a fonte exata
+   - Se a pergunta não puder ser respondida com os materiais disponíveis, informar isto claramente
+
+4. ESTRATÉGIAS PEDAGÓGICAS:
+   - Conectar conceitos teóricos com aplicações práticas no treinamento
+   - Usar analogias relacionadas ao movimento humano
+   - Incentivar análise crítica de métodos de treinamento
+   - Sugerir progressões e adaptações para diferentes níveis
+
+Use {context}, {chat_history} e {question} como variáveis no template.""",
+            "model": "gpt-4o-mini",
+            "temperature": 0.1,
+            "chunkSize": 2000,
+            "chunkOverlap": 100,
+            "retrievalSearchType": "mmr",
+            "embeddingModel": "text-embedding-ada-002"
+        },
+        "Nutrição Esportiva": {
+            "name": "Assistente Educacional de Nutrição Esportiva",
+            "description": "Especializado em nutrição aplicada ao esporte, suplementação e estratégias alimentares para performance",
+            "prompt": """Você é um ASSISTENTE EDUCACIONAL especializado em NUTRIÇÃO ESPORTIVA. Seu objetivo é auxiliar estudantes a compreender conceitos de nutrição aplicada ao esporte, metabolismo energético, suplementação e estratégias alimentares. Siga estas diretrizes:
+
+1. CONTEXTO DO CURSO:
+   - Basear suas respostas exclusivamente nos materiais do curso fornecidos
+   - Citar a fonte específica (aula, página, vídeo) de onde a informação foi extraída
+   - Nunca inventar informações que não estejam nos materiais do curso
+
+2. ESTILO DE RESPOSTA:
+   - Usar linguagem científica mas didática
+   - Relacionar conceitos nutricionais com performance esportiva
+   - Fornecer exemplos práticos de aplicação nutricional
+   - Explicar os mecanismos bioquímicos quando relevante
+
+3. CITAÇÕES E FONTES:
+   - Sempre indicar a origem da informação (ex: "Conforme a Aula 5, página 12...")
+   - Para citações diretas, usar aspas e referenciar a fonte exata
+   - Se a pergunta não puder ser respondida com os materiais disponíveis, informar isto claramente
+
+4. ESTRATÉGIAS PEDAGÓGICAS:
+   - Conectar bioquímica nutricional com aplicações práticas
+   - Usar exemplos de diferentes modalidades esportivas
+   - Incentivar análise crítica de estratégias nutricionais
+   - Sugerir adequações nutricionais para diferentes objetivos
+
+Use {context}, {chat_history} e {question} como variáveis no template.""",
+            "model": "gpt-4o-mini",
+            "temperature": 0.2,
+            "chunkSize": 2200,
+            "chunkOverlap": 150,
+            "retrievalSearchType": "mmr",
+            "embeddingModel": "text-embedding-ada-002"
+        },
+        "Anatomia Humana": {
+            "name": "Assistente Educacional de Anatomia Humana",
+            "description": "Especializado em anatomia sistêmica, cinesiologia e biomecânica do movimento humano",
+            "prompt": """Você é um ASSISTENTE EDUCACIONAL especializado em ANATOMIA HUMANA. Seu objetivo é auxiliar estudantes a compreender a estrutura do corpo humano, cinesiologia e biomecânica do movimento. Siga estas diretrizes:
+
+1. CONTEXTO DO CURSO:
+   - Basear suas respostas exclusivamente nos materiais do curso fornecidos
+   - Citar a fonte específica (aula, página, atlas, vídeo) de onde a informação foi extraída
+   - Nunca inventar informações que não estejam nos materiais do curso
+
+2. ESTILO DE RESPOSTA:
+   - Usar terminologia anatômica precisa e correta
+   - Relacionar estrutura anatômica com função
+   - Fornecer exemplos de movimentos e posições
+   - Explicar a biomecânica quando relevante
+
+3. CITAÇÕES E FONTES:
+   - Sempre indicar a origem da informação (ex: "Conforme o Atlas de Anatomia, página 45...")
+   - Para citações diretas, usar aspas e referenciar a fonte exata
+   - Se a pergunta não puder ser respondida com os materiais disponíveis, informar isto claramente
+
+4. ESTRATÉGIAS PEDAGÓGICAS:
+   - Conectar anatomia com movimento e função
+   - Usar exemplos práticos de palpação e identificação
+   - Incentivar análise crítica de estruturas anatômicas
+   - Sugerir exercícios de memorização e identificação
+
+Use {context}, {chat_history} e {question} como variáveis no template.""",
+            "model": "gpt-4o-mini",
+            "temperature": 0.1,
+            "chunkSize": 2000,
+            "chunkOverlap": 100,
+            "retrievalSearchType": "mmr",
+            "embeddingModel": "text-embedding-ada-002"
+        }
+    }
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan manager para inicializar e limpar recursos"""
+    global rag_handler, chroma_persist_dir, materials_dir
+
+    logger.info("🚀 Iniciando servidor RAG...")
+
+    # Configurar diretórios
+    chroma_persist_dir = Path("data/chromadb")
+    materials_dir = Path("data/materials")
+
+    # Criar diretórios se não existirem
+    chroma_persist_dir.mkdir(parents=True, exist_ok=True)
+    materials_dir.mkdir(parents=True, exist_ok=True)
+
+    # Carregar configurações do assistente
+    load_assistant_configs()
+
+    logger.info(f"📁 Diretórios configurados:")
+    logger.info(f"   - ChromaDB: {chroma_persist_dir}")
+    logger.info(f"   - Materiais: {materials_dir}")
+
+    # RAG handler será inicializado quando necessário
+    logger.info("✅ Servidor RAG iniciado com sucesso")
+
+    yield
+
+    logger.info("🛑 Encerrando servidor RAG...")
+    # Salvar configurações do assistente ao encerrar
+    save_assistant_configs()
+
 # Inicializar FastAPI
 app = FastAPI(
     title="DNA da Força RAG Server",
     description="Servidor RAG para processamento de materiais e treinamento de modelos",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Configurar CORS
@@ -47,7 +298,6 @@ app.add_middleware(
 )
 
 # Importar o router corretamente
-from chat_agents.educational_agent import router as educational_router
 
 # Incluir router do educational agent
 app.include_router(educational_router, prefix="/chat", tags=["educational"])
@@ -103,112 +353,8 @@ app.include_router(educational_router, prefix="/chat", tags=["educational"])
 #         return response_data
 
 #     except Exception as e:
-#         logger.error(f"❌ Educational chat error: {str(e)}")
-#         raise HTTPException(
-#             status_code=500, detail=f"Educational chat error: {str(e)}")
 
-
-@app.get("/chat/session/{session_id}/context")
-async def get_session_context(session_id: str):
-    """Get learning context for a chat session"""
-    logger.info(f"📚 Session context request: {session_id}")
-
-    try:
-        return {
-            "session_id": session_id,
-            "learning_context": {
-                "user_id": "default_user",
-                "session_id": session_id,
-                "current_topic": None,
-                "learning_objectives": [],
-                "topics_covered": [],
-                "difficulty_level": "beginner",
-                "preferred_learning_style": "mixed",
-                "knowledge_gaps": [],
-                "follow_up_questions": []
-            },
-            "summary": {
-                "topics_covered": 0,
-                "current_focus": None,
-                "difficulty_level": "beginner",
-                "objectives_count": 0
-            }
-        }
-
-    except Exception as e:
-        logger.error(f"❌ Session context error: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Session context error: {str(e)}")
-
-
-# Variáveis globais
-rag_handler = None
-materials_dir = os.getenv("MATERIALS_DIR", "/app/data/materials")
-chroma_persist_dir = os.getenv("CHROMA_PERSIST_DIR", "/app/data/.chromadb")
-
-# Modelos Pydantic
-
-
-class ProcessMaterialsRequest(BaseModel):
-    """Request para processar materiais"""
-    api_key: str
-    force_reprocess: bool = False
-
-
-class QueryRequest(BaseModel):
-    """Request para consulta RAG"""
-    question: str
-    material_ids: Optional[List[str]] = None
-    config: Optional[AssistantConfigModel] = None
-
-
-class ProcessResponse(BaseModel):
-    """Response do processamento"""
-    success: bool
-    message: str
-    processed_files: List[str] = []
-    errors: List[str] = []
-
-
-class QueryResponse(BaseModel):
-    """Response da consulta RAG"""
-    answer: str
-    sources: List[Dict[str, Any]]
-    response_time: float
-
-
-class Question(BaseModel):
-    content: str
-
-
-class Response(BaseModel):
-    answer: str
-    sources: List[dict]
-    response_time: float
-
-
-class ChatRequest(BaseModel):
-    message: str
-    thread_id: Optional[str] = None
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Inicializar o servidor RAG"""
-    global rag_handler
-
-    logger.info("🚀 Iniciando servidor RAG...")
-
-    # Verificar se o diretório de materiais existe
-    materials_path = Path(materials_dir)
-    if not materials_path.exists():
-        logger.warning(
-            f"⚠️ Diretório de materiais não encontrado: {materials_dir}")
-        materials_path.mkdir(parents=True, exist_ok=True)
-        logger.info(f"✅ Diretório criado: {materials_dir}")
-
-    logger.info(f"📁 Diretório de materiais: {materials_dir}")
-    logger.info(f"📁 Diretório ChromaDB: {chroma_persist_dir}")
+embeddingModel: str = "text-embedding-ada-002"
 
 
 @app.get("/health")
@@ -445,6 +591,45 @@ async def chat_auth(question: Question):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def stream_agent_response(message: str, thread_id: str):
+    """Generator function to stream agent responses."""
+    config = RunnableConfig(configurable={"thread_id": thread_id})
+    async for event in chat_agent_graph.astream_events(
+        {"messages": [("user", message)]},
+        config=config,
+        version="v1"
+    ):
+        kind = event["event"]
+        if kind == "on_chat_model_stream" and "chunk" in event["data"] and event["data"]["chunk"].content:
+            content = event["data"]["chunk"].content
+            data = {
+                "thread_id": thread_id,
+                "event": "stream",
+                "data": content,
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+        elif kind == "on_tool_start":
+            data = {
+                "thread_id": thread_id,
+                "event": "tool_start",
+                "data": {
+                    "name": event["name"],
+                    "input": event["data"].get("input"),
+                },
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+        elif kind == "on_tool_end":
+            data = {
+                "thread_id": thread_id,
+                "event": "tool_end",
+                "data": {
+                    "name": event["name"],
+                    "output": event["data"].get("output"),
+                },
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+
+
 @app.post("/chat/agent")
 async def chat_agent_stream(request: ChatRequest):
     """Endpoint to stream responses from the chat agent."""
@@ -457,25 +642,196 @@ async def chat_agent_stream(request: ChatRequest):
         raise HTTPException(
             status_code=400, detail="System not initialized. Cannot use agent.")
 
+    return StreamingResponse(
+        stream_agent_response(request.message, thread_id),
+        media_type="text/event-stream"
+    )
+
+
+# ========================================
+# ASSISTANT CONFIGURATION ENDPOINTS
+# ========================================
+
+
+@app.get("/assistant/config")
+async def get_assistant_config():
+    """Get current assistant configuration"""
+    logger.info("⚙️ Assistant config requested")
+
+    # Carregar configurações do assistente
+    load_assistant_configs()
+
+    # Se há uma configuração atual salva, retorná-la
+    if current_assistant_config and current_assistant_config in assistant_configs:
+        logger.info(f"✅ Returning current config: {current_assistant_config}")
+        return assistant_configs[current_assistant_config]
+
+    # Caso contrário, retornar configuração padrão
+    default_templates = get_default_templates()
+    default_config = default_templates["Educação Física"]
+    logger.info("✅ Returning default config")
+    return default_config
+
+
+@app.post("/assistant/config")
+async def update_assistant_config(config: AssistantConfigRequest):
+    """Update assistant configuration"""
+    logger.info("⚙️ Assistant config update")
+
     try:
-        # For now, return a simple response since we don't have the full agent setup
-        response = rag_handler.generate_response(request.message)
-        return response
+        # Carregar configurações atuais
+        load_assistant_configs()
+
+        # Obter configuração atual
+        current_config_name = current_assistant_config or "Educação Física"
+
+        # Atualizar configuração atual
+        if current_config_name not in assistant_configs:
+            # Se não existe, criar a partir do template padrão
+            default_templates = get_default_templates()
+            assistant_configs[current_config_name] = default_templates.get(
+                current_config_name, default_templates["Educação Física"])
+
+        # Aplicar atualizações
+        current_config = assistant_configs[current_config_name]
+        for field, value in config.dict(exclude_unset=True).items():
+            if value is not None:
+                current_config[field] = value
+
+        # Salvar configurações
+        save_assistant_configs()
+
+        logger.info(f"✅ Assistant config updated for '{current_config_name}'")
+        return {
+            "status": "success",
+            "message": f"Configuração do assistente '{current_config_name}' atualizada com sucesso",
+            "config": current_config
+        }
     except Exception as e:
-        logger.error(f"❌ Agent chat error: {str(e)}")
+        logger.error(f"❌ Error updating assistant config: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/assistant/templates")
+async def get_assistant_templates():
+    """Get available assistant templates"""
+    logger.info("📋 Assistant templates requested")
+
+    # Carregar configurações do assistente
+    load_assistant_configs()
+
+    # Combinar templates padrão com templates personalizados
+    all_templates = get_default_templates()
+
+    # Adicionar templates personalizados
+    for template_name, template_config in assistant_configs.items():
+        if template_name not in all_templates:  # Não sobrescrever templates padrão
+            all_templates[template_name] = template_config
+
+    logger.info(f"✅ Returning {len(all_templates)} templates")
+    return all_templates
+
+
+@app.post("/assistant/config/template/{template_name}")
+async def apply_assistant_template(template_name: str):
+    """Apply a specific assistant template"""
+    logger.info(f"📋 Applying template '{template_name}'")
+
+    # Carregar configurações do assistente
+    load_assistant_configs()
+
+    # Verificar se o template existe nos templates padrão ou personalizados
+    default_templates = get_default_templates()
+    all_templates = {**default_templates, **assistant_configs}
+
+    # Debug: log dos templates disponíveis
+    logger.info(f"🔍 Available templates: {list(all_templates.keys())}")
+    logger.info(f"🔍 Requested template: '{template_name}'")
+    logger.info(f"🔍 Template exists: {template_name in all_templates}")
+
+    if template_name not in all_templates:
+        raise HTTPException(
+            status_code=404, detail=f"Template '{template_name}' não encontrado")
+
+    # Se o template não está em assistant_configs, adicioná-lo
+    if template_name not in assistant_configs:
+        assistant_configs[template_name] = all_templates[template_name]
+
+    current_assistant_config = template_name
+    save_assistant_configs()  # Salvar a configuração aplicada
+
+    logger.info(f"✅ Template '{template_name}' applied")
+    return {
+        "status": "success",
+        "message": f"Template '{template_name}' aplicado com sucesso",
+        "config": assistant_configs[template_name]
+    }
+
+
+@app.post("/assistant/config/save-template")
+async def save_assistant_template(template_name: str, config: AssistantConfigRequest):
+    """Save current configuration as a custom template"""
+    logger.info(f"💾 Saving assistant template: {template_name}")
+
+    try:
+        # Carregar configurações atuais
+        load_assistant_configs()
+
+        # Criar nova configuração baseada na atual
+        current_config_name = current_assistant_config or "Educação Física"
+        base_config = assistant_configs.get(
+            current_config_name, get_default_templates()["Educação Física"])
+
+        # Aplicar atualizações
+        new_config = base_config.copy()
+        for field, value in config.dict(exclude_unset=True).items():
+            if value is not None:
+                new_config[field] = value
+
+        # Salvar como template personalizado
+        assistant_configs[template_name] = new_config
+        save_assistant_configs()
+
+        logger.info(f"✅ Template '{template_name}' saved successfully")
+        return {
+            "status": "success",
+            "message": f"Template '{template_name}' salvo com sucesso",
+            "config": new_config
+        }
+    except Exception as e:
+        logger.error(f"❌ Error saving template: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/assistant/config/reset")
+async def reset_assistant_config():
+    """Reset assistant configuration to default"""
+    logger.info("🔄 Assistant config reset")
+
+    global current_assistant_config
+    current_assistant_config = None
+    save_assistant_configs()
+
+    logger.info("✅ Assistant config reset to default")
+    return {
+        "status": "success",
+        "message": "Configuração do assistente resetada para padrão"
+    }
 
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="DNA da Força RAG Server")
-    parser.add_argument("--host", default="0.0.0.0", help="Host para o servidor")
-    parser.add_argument("--port", type=int, default=8001, help="Porta para o servidor")
-    parser.add_argument("--reload", action="store_true", help="Habilitar reload automático")
-    
+    parser.add_argument("--host", default="0.0.0.0",
+                        help="Host para o servidor")
+    parser.add_argument("--port", type=int, default=8001,
+                        help="Porta para o servidor")
+    parser.add_argument("--reload", action="store_true",
+                        help="Habilitar reload automático")
+
     args = parser.parse_args()
-    
+
     logger.info(f"🚀 Iniciando servidor RAG em {args.host}:{args.port}...")
     uvicorn.run(
         "rag_server:app",

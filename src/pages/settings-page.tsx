@@ -1,10 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/auth-store";
+import { useSettingsStore } from "../store/settings-store";
 import { MaintenancePanel } from "../maintenance/maintenance-panel";
 import { BackButton } from "../components/ui/back-button";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
+import { api } from "../lib/api";
 import {
   Settings,
   Database,
@@ -21,69 +24,72 @@ import {
 } from "lucide-react";
 
 const SettingsPage: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAuthStore();
+  const {
+    settings,
+    isLoading,
+    isDirty,
+    loadSettings,
+    updateSettings,
+    saveSettings,
+    setDirty,
+  } = useSettingsStore();
   const [activeTab, setActiveTab] = useState<
     "general" | "maintenance" | "security" | "about"
   >("general");
-  const [isDirty, setIsDirty] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
-
-  // Mock settings state
-  const [settings, setSettings] = useState({
-    general: {
-      siteName: "DNA da Força",
-      description: "Sistema Educacional de Treinamento Físico",
-      language: "pt-BR",
-      timezone: "America/Sao_Paulo",
-      maxFileSize: 50,
-      allowedFileTypes: ".pdf,.docx,.txt,.mp4,.avi,.mov,.pptx,.webm",
-    },
-    security: {
-      sessionTimeout: 180,
-      maxLoginAttempts: 3,
-      requirePasswordChange: false,
-      enableTwoFactor: false,
-    },
-    notifications: {
-      emailNotifications: true,
-      pushNotifications: false,
-      maintenanceAlerts: true,
-      systemUpdates: true,
-    },
+  const [userCounts, setUserCounts] = useState({
+    admin: 0,
+    instructor: 0,
+    student: 0,
+    total: 0,
   });
 
-  const handleSettingChange = (category: string, key: string, value: any) => {
-    setSettings((prev) => ({
-      ...prev,
-      [category]: {
-        ...prev[category as keyof typeof prev],
-        [key]: value,
-      },
-    }));
-    setIsDirty(true);
+  // Carregar configurações quando a página for carregada
+  useEffect(() => {
+    if (user?.role === "admin") {
+      loadSettings();
+      loadUserCounts();
+    }
+  }, [loadSettings, user?.role]);
+
+  const loadUserCounts = async () => {
+    try {
+      const counts = await api.users.count();
+      setUserCounts(counts);
+    } catch (error) {
+      console.error("Erro ao carregar contagem de usuários:", error);
+    }
   };
 
-  const saveSettings = async () => {
-    setIsLoading(true);
+  const handleSettingChange = (category: string, key: string, value: any) => {
+    updateSettings({
+      [category]: {
+        ...settings[category as keyof typeof settings],
+        [key]: value,
+      },
+    });
+  };
+
+  const handleSaveSettings = async () => {
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const success = await saveSettings();
 
-      setMessage({
-        type: "success",
-        text: "Configurações salvas com sucesso!",
-      });
-      setIsDirty(false);
-
-      setTimeout(() => setMessage(null), 3000);
+      if (success) {
+        setMessage({
+          type: "success",
+          text: "Configurações salvas com sucesso!",
+        });
+        setTimeout(() => setMessage(null), 3000);
+      } else {
+        setMessage({ type: "error", text: "Erro ao salvar configurações." });
+      }
     } catch (error) {
       setMessage({ type: "error", text: "Erro ao salvar configurações." });
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -150,7 +156,7 @@ const SettingsPage: React.FC = () => {
 
           {isDirty && activeTab !== "maintenance" && activeTab !== "about" && (
             <Button
-              onClick={saveSettings}
+              onClick={handleSaveSettings}
               isLoading={isLoading}
               className="flex items-center gap-2"
             >
@@ -485,15 +491,21 @@ const SettingsPage: React.FC = () => {
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="text-center p-4 bg-blue-50 rounded-lg">
-                    <div className="text-2xl font-bold text-blue-600">1</div>
+                    <div className="text-2xl font-bold text-blue-600">
+                      {userCounts.admin}
+                    </div>
                     <div className="text-sm text-blue-800">Administradores</div>
                   </div>
                   <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <div className="text-2xl font-bold text-green-600">2</div>
+                    <div className="text-2xl font-bold text-green-600">
+                      {userCounts.instructor}
+                    </div>
                     <div className="text-sm text-green-800">Instrutores</div>
                   </div>
                   <div className="text-center p-4 bg-purple-50 rounded-lg">
-                    <div className="text-2xl font-bold text-purple-600">∞</div>
+                    <div className="text-2xl font-bold text-purple-600">
+                      {userCounts.student}
+                    </div>
                     <div className="text-sm text-purple-800">Alunos</div>
                   </div>
                 </div>
@@ -502,12 +514,13 @@ const SettingsPage: React.FC = () => {
                   <Button
                     variant="outline"
                     className="flex items-center gap-2 mx-auto"
+                    onClick={() => {
+                      console.log("Attempting to navigate to /users");
+                      navigate("/users");
+                    }}
                   >
                     <Users size={16} />
                     Gerenciar Usuários
-                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
-                      Em breve
-                    </span>
                   </Button>
                 </div>
               </div>
@@ -533,11 +546,11 @@ const SettingsPage: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Versão:</span>
-                    <span className="font-medium">1.4.0 - Recursivo</span>
+                    <span className="font-medium">1.7.0 - Microserviços</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Última Atualização:</span>
-                    <span className="font-medium">Junho 2025</span>
+                    <span className="font-medium">Agosto 2025</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Licença:</span>
@@ -573,7 +586,7 @@ const SettingsPage: React.FC = () => {
             {/* Features */}
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <h3 className="text-lg font-semibold mb-4">
-                Funcionalidades v1.4.0
+                Funcionalidades v1.7.0
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -619,6 +632,26 @@ const SettingsPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <CheckCircle size={16} className="text-green-600" />
                     <span className="text-sm">Interface Responsiva</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={16} className="text-green-600" />
+                    <span className="text-sm">
+                      Arquitetura de Microserviços
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={16} className="text-green-600" />
+                    <span className="text-sm">Configurações Persistentes</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={16} className="text-green-600" />
+                    <span className="text-sm">Templates de Assistente IA</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={16} className="text-green-600" />
+                    <span className="text-sm">
+                      Sistema de Manutenção Inteligente
+                    </span>
                   </div>
                 </div>
               </div>

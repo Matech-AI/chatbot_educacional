@@ -7,8 +7,9 @@ services:
     name: dna-forca-rag-server
     env: python
     buildCommand: |
+      pip install --upgrade pip
       pip install -r config/requirements.txt
-    startCommand: python rag_server.py
+    startCommand: python rag_server.py --host 0.0.0.0 --port $PORT
     envVars:
       - key: OPENAI_API_KEY
         sync: false
@@ -20,18 +21,23 @@ services:
         value: /opt/render/project/src/data/materials
       - key: LOG_LEVEL
         value: INFO
+      - key: PORT
+        value: 8000
     disk:
       name: rag-data
       mountPath: /opt/render/project/src/data
       sizeGB: 10
+    healthCheckPath: /health
+    autoDeploy: true
 
   # Servidor API Geral
   - type: web
     name: dna-forca-api-server
     env: python
     buildCommand: |
+      pip install --upgrade pip
       pip install -r config/requirements.txt
-    startCommand: python api_server.py
+    startCommand: python api_server.py --host 0.0.0.0 --port $PORT
     envVars:
       - key: OPENAI_API_KEY
         sync: false
@@ -50,16 +56,23 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: 30
       - key: CORS_ORIGINS
-        value: https://chatbot-educacional.vercel.app,http://localhost:3000
+        value: https://chatbot-educacional.vercel.app,http://localhost:3000,https://dna-forca-frontend.vercel.app
       - key: LOG_LEVEL
         value: INFO
+      - key: CHROMA_PERSIST_DIR
+        value: /opt/render/project/src/data/.chromadb
+      - key: MATERIALS_DIR
+        value: /opt/render/project/src/data/materials
     disk:
       name: api-data
       mountPath: /opt/render/project/src/data
       sizeGB: 5
+    healthCheckPath: /health
+    autoDeploy: true
 
   # Redis (opcional)
   - type: redis
     name: dna-forca-redis
     ipAllowList: []
     maxmemoryPolicy: allkeys-lru
+    plan: free

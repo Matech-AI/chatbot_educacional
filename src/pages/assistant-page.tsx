@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useAssistantStore } from "../store/assistant-store";
 import { ConfigForm } from "../components/assistant/config-form";
 import { TemplateSelector } from "../components/assistant/template-selector";
@@ -13,8 +13,18 @@ const AssistantPage: React.FC = () => {
     updateConfig,
     saveAsTemplate,
     loadTemplate,
+    loadCurrentConfig,
+    loadTemplates,
     resetToDefault,
   } = useAssistantStore();
+
+  // Carregar configuração atual e templates quando a página for carregada
+  useEffect(() => {
+    const loadData = async () => {
+      await Promise.all([loadCurrentConfig(), loadTemplates()]);
+    };
+    loadData();
+  }, [loadCurrentConfig, loadTemplates]);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">

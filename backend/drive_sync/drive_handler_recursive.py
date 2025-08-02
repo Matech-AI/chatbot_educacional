@@ -450,6 +450,93 @@ class RecursiveDriveHandler:
             "cleared_entries": len(self.file_hashes)
         }
 
+    def analyze_folder_recursive(self, folder_id: str, max_depth: int = None) -> Dict[str, Any]:
+        """Analyze a Google Drive folder recursively and return detailed information"""
+        logger.info(f"📊 Starting recursive analysis of folder: {folder_id}")
+        
+        # Reset stats for analysis
+        self.download_stats = {
+            'total_folders': 0,
+            'total_files': 0,
+            'downloaded_files': 0,
+            'skipped_duplicates': 0,
+            'errors': 0
+        }
+        self.cancel_flag = False
+
+        start_time = time.time()
+
+        try:
+            # Get the complete folder structure
+            folder_structure = self.get_folder_structure(folder_id, max_depth=max_depth)
+            
+            analysis_time = time.time() - start_time
+            
+            # Calculate additional statistics
+            total_size = 0
+            file_types = {}
+            
+            def analyze_structure_recursive(structure):
+                nonlocal total_size, file_types
+                
+                # Analyze files in current folder
+                for file_info in structure.get('files', []):
+                    file_size = file_info.get('size', 0)
+                    total_size += file_size
+                    
+                    mime_type = file_info.get('mimeType', 'unknown')
+                    file_types[mime_type] = file_types.get(mime_type, 0) + 1
+                
+                # Analyze subfolders
+                for subfolder in structure.get('subfolders', {}).values():
+                    analyze_structure_recursive(subfolder)
+            
+            analyze_structure_recursive(folder_structure)
+            
+            analysis_result = {
+                'status': 'success',
+                'folder_id': folder_id,
+                'folder_name': folder_structure.get('name', 'Unknown'),
+                'statistics': {
+                    'total_folders': self.download_stats['total_folders'],
+                    'total_files': self.download_stats['total_files'],
+                    'total_size_bytes': total_size,
+                    'total_size_mb': round(total_size / (1024 * 1024), 2),
+                    'file_types': file_types,
+                    'analysis_time_seconds': round(analysis_time, 2)
+                },
+                'folder_structure': folder_structure,
+                'analysis_timestamp': time.time()
+            }
+            
+            logger.info(f"✅ Recursive analysis completed in {analysis_time:.2f}s")
+            logger.info(f"📊 Found {self.download_stats['total_folders']} folders and {self.download_stats['total_files']} files")
+            
+            return analysis_result
+            
+        except Exception as e:
+            logger.error(f"❌ Error in recursive analysis: {str(e)}")
+            return {
+                'status': 'error',
+                'error': str(e),
+                'statistics': self.download_stats
+            }
+
+    def sync_folder_recursive(self, folder_id: str, max_depth: int = None) -> Dict[str, Any]:
+        """Sync a Google Drive folder recursively (background task)"""
+        logger.info(f"🔄 Starting recursive sync of folder: {folder_id}")
+        try:
+            result = self.download_drive_recursive(folder_id, max_depth)
+            logger.info(f"✅ Recursive sync completed: {result.get('status', 'unknown')}")
+            return result
+        except Exception as e:
+            logger.error(f"❌ Error in recursive sync: {str(e)}")
+            return {
+                'status': 'error',
+                'error': str(e),
+                'statistics': self.download_stats
+            }
+
     def calculate_file_hash(self, file_content: bytes) -> str:
         """Calculate SHA256 hash of file content"""
         return hashlib.sha256(file_content).hexdigest()
@@ -859,7 +946,7 @@ class RecursiveDriveHandler:
 
         files = list(self.materials_dir.rglob("*"))
         total_size = sum(f.stat().st_size for f in files if f.is_file())
-        
+
         # Contar pastas
         total_folders = len([f for f in files if f.is_dir()])
 

@@ -63,7 +63,16 @@ const UserManagementPage: React.FC = () => {
     try {
       setLoading(true);
       const usersData = await api.users.list();
-      setUsers(usersData);
+
+      // Ordenar usuários por ID numérico (external_id)
+      // TODO: Quando migrar para BD, considerar usar ORDER BY na query SQL
+      const sortedUsers = usersData.sort((a, b) => {
+        const idA = parseInt(a.external_id || "0") || 0;
+        const idB = parseInt(b.external_id || "0") || 0;
+        return idA - idB;
+      });
+
+      setUsers(sortedUsers);
     } catch (err) {
       console.error("Error loading users:", err);
       // Check if it's an authentication error
@@ -150,11 +159,11 @@ const UserManagementPage: React.FC = () => {
   const formatDate = (dateString: string) => {
     // Criar um objeto Date a partir da string ISO
     const date = new Date(dateString);
-    
+
     // Ajustar para o fuso horário de São Paulo (GMT-3)
     // Isso é necessário porque o timestamp está em UTC
     return date.toLocaleString("pt-BR", {
-      timeZone: "America/Sao_Paulo"
+      timeZone: "America/Sao_Paulo",
     });
   };
 
@@ -299,7 +308,9 @@ const UserManagementPage: React.FC = () => {
                   users.map((userData) => (
                     <tr key={userData.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {userData.external_id || "N/A"}
+                        {userData.external_id
+                          ? parseInt(userData.external_id)
+                          : "N/A"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
