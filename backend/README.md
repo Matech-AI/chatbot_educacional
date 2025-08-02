@@ -1,8 +1,8 @@
-# DNA da Força AI - Backend
+# 🧠 DNA da Força AI - Backend
 
-Sistema educacional com IA para treinamento físico - Backend organizado e modular.
+Sistema de IA educacional especializado em Educação Física, com processamento RAG (Retrieval-Augmented Generation) e integração com Google Drive.
 
-## 📁 Estrutura do Projeto
+## 🏗️ Arquitetura
 
 ```
 backend/
@@ -66,141 +66,322 @@ backend/
 └── .venv/                  # Ambiente virtual Python
 ```
 
-## 🚀 Como Executar
+## 🚀 Deploy Rápido
 
 ### Pré-requisitos
 
-- Python 3.8+
-- Dependências listadas em `config/requirements.txt`
-- Chaves de API (OpenAI, Gemini, Google Drive)
+1. **Docker e Docker Compose**
+   ```bash
+   # Verificar instalação
+   docker --version
+   docker-compose --version
+   ```
 
-### Instalação
+2. **Variáveis de Ambiente**
+   - Copie `env.example` para `.env`
+   - Configure suas chaves de API
 
+### Deploy Local
+
+#### Usando Scripts Automatizados
+
+**Linux/Mac:**
 ```bash
-# Navegar para o diretório backend
-cd backend
+# Deploy completo
+./scripts/deploy.sh deploy
 
-# Criar ambiente virtual
-python -m venv .venv
+# Verificar status
+./scripts/deploy.sh status
 
-# Ativar ambiente virtual
-# Windows:
-.venv\Scripts\activate
-# Linux/Mac:
-source .venv/bin/activate
-
-# Instalar dependências
-pip install -r config/requirements.txt
+# Ver logs
+./scripts/deploy.sh logs rag-server
+./scripts/deploy.sh logs api-server
 ```
 
-### Execução
+**Windows:**
+```cmd
+# Deploy completo
+scripts\deploy.bat deploy
 
-```bash
-# Usando o script de inicialização
-python config/start_backend.py
+# Verificar status
+scripts\deploy.bat status
 
-# Ou diretamente
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# Ver logs
+scripts\deploy.bat logs rag-server
+scripts\deploy.bat logs api-server
 ```
 
-## 🔧 Módulos Principais
+#### Usando Docker Compose Diretamente
 
-### 🔐 Autenticação (`auth/`)
+```bash
+# Construir e iniciar todos os serviços
+docker-compose up -d
 
-- Sistema completo de autenticação JWT
-- Gerenciamento de usuários e permissões
-- Tokens de autenticação temporários
-- Integração com sistemas externos
-- Serviços de email para recuperação de senha
+# Verificar status
+docker-compose ps
 
-### ☁️ Sincronização Drive (`drive_sync/`)
+# Ver logs
+docker-compose logs -f rag-server
+docker-compose logs -f api-server
 
-- Integração completa com Google Drive
-- Download recursivo de pastas
-- Análise de estrutura de arquivos
-- Cache inteligente de arquivos
-- Suporte a diferentes tipos de autenticação
+# Parar serviços
+docker-compose down
+```
 
-### 🧠 Sistema RAG (`rag_system/`)
+### Deploy no Render
 
-- Processamento de documentos (PDF, Excel, Texto)
-- Embeddings com OpenAI
-- Busca semântica avançada
-- Geração de respostas contextualizadas
-- Configuração flexível de assistentes
+1. **Criar conta no Render**
+   - Acesse [render.com](https://render.com)
+   - Crie uma conta gratuita
 
-### 💬 Agentes de Chat (`chat_agents/`)
+2. **Configurar Serviços**
 
-- Agente educacional especializado
-- Contexto de aprendizado personalizado
-- Integração com sistema RAG
-- Sugestões de aprendizado adaptativas
-- Análise de progresso do usuário
+   **Servidor RAG:**
+   - Tipo: Web Service
+   - Build Command: `docker build -f Dockerfile.rag -t rag-server .`
+   - Start Command: `python rag_server.py --host 0.0.0.0 --port $PORT`
+   - Porta: 8000
+   - Variáveis de ambiente: Configure todas as chaves de API
 
-### 🎥 Processamento de Vídeo (`video_processing/`)
+   **Servidor API:**
+   - Tipo: Web Service
+   - Build Command: `docker build -f Dockerfile.api -t api-server .`
+   - Start Command: `python api_server.py --host 0.0.0.0 --port $PORT`
+   - Porta: 8000
+   - Variáveis de ambiente: Configure todas as chaves de API
 
-- Análise de conteúdo de vídeo
-- Geração de timestamps automáticos
-- Metadados estruturados
-- Integração com Google Drive
-- Cache de análise para performance
+3. **Configurar Rede**
+   - Use variáveis de ambiente para comunicação entre serviços
+   - Configure `RAG_SERVER_URL` no servidor API
 
-### 🛠️ Manutenção (`maintenance/`)
+## 🔧 Configuração
 
-- Limpeza de arquivos duplicados
-- Otimização de armazenamento
-- Relatórios de sistema
-- Reset de componentes
-- Monitoramento de saúde
+### Variáveis de Ambiente
 
-## 📊 Dados do Sistema
+Crie um arquivo `.env` baseado no `env.example`:
 
-Todos os dados persistentes estão organizados na pasta `data/`:
+```env
+# Configurações da API
+OPENAI_API_KEY=your_openai_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
+GOOGLE_DRIVE_API_KEY=your_google_drive_api_key_here
 
-- **Usuários**: Informações de usuários e autenticação
-- **Tokens**: Tokens de autenticação temporários
-- **Cache**: Cache de análise de vídeo e outros dados
-- **Configurações**: Configurações persistentes do sistema
+# Configurações do servidor RAG
+RAG_SERVER_URL=http://rag-server:8000
+CHROMA_PERSIST_DIR=/app/data/.chromadb
+MATERIALS_DIR=/app/data/materials
 
-## 🔍 Testes
+# Configurações de autenticação
+JWT_SECRET_KEY=your_jwt_secret_key_here
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
 
-Os testes estão organizados na pasta `tests/`:
+# Configurações de CORS
+CORS_ORIGINS=https://chatbot-educacional.vercel.app,http://localhost:3000,http://127.0.0.1:3000,https://dna-forca-frontend.vercel.app
 
-- Testes de integração com Google Drive
-- Validação de funcionalidades principais
-- Scripts de teste automatizados
+# Configurações de logging
+LOG_LEVEL=INFO
+```
 
-## 📝 Logs
+## 🔌 Endpoints
 
-Os arquivos de log estão organizados na pasta `utils/`:
+### Servidor RAG (Porta 8001)
 
-- Logs de autenticação
-- Logs de sincronização do drive
-- Logs de testes
+| Endpoint             | Método | Descrição                         |
+| -------------------- | ------ | --------------------------------- |
+| `/health`            | GET    | Verificar saúde do servidor       |
+| `/status`            | GET    | Status detalhado do sistema       |
+| `/process-materials` | POST   | Processar materiais em background |
+| `/query`             | POST   | Realizar consulta RAG             |
+| `/initialize`        | POST   | Inicializar RAG handler           |
+| `/reset`             | POST   | Resetar RAG handler               |
+| `/stats`             | GET    | Estatísticas do sistema           |
+| `/chat`              | POST   | Chat básico                       |
+| `/chat-auth`         | POST   | Chat autenticado                  |
 
-## 🔄 Migração da Estrutura Anterior
+### Servidor API (Porta 8000)
 
-Esta estrutura foi reorganizada a partir de uma estrutura plana anterior. As principais mudanças:
+| Endpoint             | Método | Descrição                   |
+| -------------------- | ------ | --------------------------- |
+| `/`                  | GET    | Informações do sistema      |
+| `/health`            | GET    | Verificar saúde do servidor |
+| `/status`            | GET    | Status detalhado            |
+| `/chat`              | POST   | Chat básico                 |
+| `/chat-auth`         | POST   | Chat autenticado            |
+| `/auth/*`            | \*     | Endpoints de autenticação   |
+| `/drive/*`           | \*     | Endpoints do Google Drive   |
+| `/materials/*`       | \*     | Gerenciamento de materiais  |
+| `/initialize-rag`    | POST   | Inicializar RAG via API     |
+| `/process-materials` | POST   | Processar materiais via API |
 
-1. **Modularização**: Código organizado em módulos lógicos
-2. **Separação de Responsabilidades**: Cada pasta tem uma responsabilidade específica
-3. **Facilidade de Manutenção**: Estrutura mais clara e organizada
-4. **Escalabilidade**: Fácil adição de novos módulos
-5. **Documentação**: Cada módulo tem documentação clara
+## 🔄 Comunicação Entre Servidores
 
-## 🤝 Contribuição
+### API Server → RAG Server
 
-Para contribuir com o projeto:
+O servidor API se comunica com o servidor RAG através de HTTP requests:
 
-1. Mantenha a estrutura de pastas organizada
-2. Adicione documentação para novos módulos
-3. Atualize este README quando necessário
-4. Siga as convenções de nomenclatura estabelecidas
+```python
+# Exemplo de comunicação
+async with aiohttp.ClientSession() as session:
+    async with session.post(
+        f"{RAG_SERVER_URL}/query",
+        json={
+            "question": "Pergunta do usuário",
+            "material_ids": None,
+            "config": None
+        }
+    ) as response:
+        result = await response.json()
+```
+
+## 📊 Monitoramento
+
+### Health Checks
+
+Ambos os servidores implementam health checks:
+
+```bash
+# Verificar servidor RAG
+curl http://localhost:8001/health
+
+# Verificar servidor API
+curl http://localhost:8000/health
+```
+
+### Logs
+
+```bash
+# Logs do servidor RAG
+docker-compose logs -f rag-server
+
+# Logs do servidor API
+docker-compose logs -f api-server
+
+# Todos os logs
+docker-compose logs -f
+```
+
+## 🔒 Segurança
+
+### Variáveis de Ambiente
+
+- Todas as chaves de API são configuradas via variáveis de ambiente
+- Arquivo `.env` não deve ser commitado no repositório
+
+### CORS
+
+- Configurado para permitir apenas origens específicas
+- Em produção, configure `CORS_ORIGINS` adequadamente
+
+### Autenticação
+
+- JWT tokens para autenticação
+- Tokens expiram automaticamente
+- Senhas são hasheadas com bcrypt
+
+## 🚨 Troubleshooting
+
+### Problemas Comuns
+
+1. **Servidor RAG não responde**
+
+   ```bash
+   # Verificar se o container está rodando
+   docker-compose ps
+
+   # Verificar logs
+   docker-compose logs rag-server
+
+   # Reiniciar serviço
+   docker-compose restart rag-server
+   ```
+
+2. **Erro de comunicação entre servidores**
+
+   ```bash
+   # Verificar rede
+   docker network ls
+   docker network inspect dna-forca-network
+
+   # Verificar variável RAG_SERVER_URL
+   docker-compose exec api-server env | grep RAG_SERVER_URL
+   ```
+
+3. **Problemas de volume**
+
+   ```bash
+   # Verificar volumes
+   docker volume ls
+
+   # Limpar volumes (cuidado!)
+   docker-compose down -v
+   ```
+
+### Logs de Debug
+
+Para habilitar logs detalhados, configure `LOG_LEVEL=DEBUG` no arquivo `.env`.
+
+## 📈 Escalabilidade
+
+### Horizontal Scaling
+
+Para escalar horizontalmente:
+
+1. **Servidor RAG**: Pode ser replicado com load balancer
+2. **Servidor API**: Pode ser replicado com load balancer
+3. **Redis**: Use Redis Cluster para alta disponibilidade
+
+### Vertical Scaling
+
+Ajuste recursos no `docker-compose.yml`:
+
+```yaml
+services:
+  rag-server:
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+```
+
+## 🔄 CI/CD
+
+### GitHub Actions (Exemplo)
+
+```yaml
+name: Deploy to Render
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Deploy to Render
+        uses: johnbeynon/render-deploy-action@v1.0.0
+        with:
+          service-id: ${{ secrets.RENDER_SERVICE_ID }}
+          api-key: ${{ secrets.RENDER_API_KEY }}
+```
 
 ## 📞 Suporte
 
-Para dúvidas ou problemas:
+Para problemas ou dúvidas:
 
-- Verifique a documentação de cada módulo
-- Consulte os logs em `utils/`
-- Execute os testes em `tests/`
+1. Verifique os logs dos containers
+2. Consulte a documentação do FastAPI
+3. Verifique as configurações de rede
+4. Teste a conectividade entre serviços
+
+## 🎯 Próximos Passos
+
+1. **Implementar monitoramento avançado** (Prometheus/Grafana)
+2. **Adicionar testes automatizados**
+3. **Implementar backup automático dos dados**
+4. **Configurar CDN para arquivos estáticos**
+5. **Implementar rate limiting**
+6. **Adicionar autenticação entre serviços**

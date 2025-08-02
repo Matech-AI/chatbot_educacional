@@ -1,40 +1,37 @@
 @echo off
 REM Script de Deploy - DNA da Força AI (Windows)
-REM Este script facilita o deploy dos serviços Docker no Windows
+REM Este script automatiza o processo de deploy dos servidores RAG e API
 
 setlocal enabledelayedexpansion
 
-REM Cores para output (Windows)
-set "RED=[91m"
-set "GREEN=[92m"
-set "YELLOW=[93m"
-set "BLUE=[94m"
-set "NC=[0m"
+REM Cores para output (Windows não suporta cores ANSI, mas mantemos a estrutura)
+set "RED=[ERROR]"
+set "GREEN=[SUCCESS]"
+set "YELLOW=[WARNING]"
+set "BLUE=[INFO]"
 
-REM Função para imprimir mensagens coloridas
+REM Funções de log
 :print_message
-echo %GREEN%[INFO]%NC% %~1
+echo %BLUE% %~1
+goto :eof
+
+:print_success
+echo %GREEN% %~1
 goto :eof
 
 :print_warning
-echo %YELLOW%[WARNING]%NC% %~1
+echo %YELLOW% %~1
 goto :eof
 
 :print_error
-echo %RED%[ERROR]%NC% %~1
-goto :eof
-
-:print_header
-echo %BLUE%================================%NC%
-echo %BLUE%  DNA da Força AI - Deploy%NC%
-echo %BLUE%================================%NC%
+echo %RED% %~1
 goto :eof
 
 REM Verificar se Docker está instalado
 :check_docker
 docker --version >nul 2>&1
 if errorlevel 1 (
-    call :print_error "Docker não está instalado. Instale o Docker Desktop primeiro."
+    call :print_error "Docker não está instalado. Instale o Docker primeiro."
     exit /b 1
 )
 
@@ -44,152 +41,212 @@ if errorlevel 1 (
     exit /b 1
 )
 
-call :print_message "Docker e Docker Compose encontrados"
+call :print_success "Docker e Docker Compose encontrados"
 goto :eof
 
 REM Verificar arquivo .env
-:check_env
+:check_env_file
 if not exist ".env" (
     call :print_warning "Arquivo .env não encontrado. Criando a partir do exemplo..."
-    if exist "env.example" (
-        copy env.example .env >nul
-        call :print_message "Arquivo .env criado. Configure as variáveis de ambiente antes de continuar."
-        call :print_warning "Edite o arquivo .env e configure suas chaves de API antes de executar novamente."
-        exit /b 1
-    ) else (
-        call :print_error "Arquivo env.example não encontrado."
-        exit /b 1
-    )
+    copy env.example .env >nul
+    call :print_message "Arquivo .env criado. Configure as variáveis de ambiente antes de continuar."
+    call :print_warning "Edite o arquivo .env e configure suas chaves de API antes de executar novamente."
+    exit /b 1
 )
-
 call :print_message "Arquivo .env encontrado"
 goto :eof
 
-REM Construir imagens
+REM Verificar dependências Python
+:check_python_deps
+if not exist "config\requirements.txt" (
+    call :print_error "Arquivo requirements.txt não encontrado em config/"
+    exit /b 1
+)
+call :print_message "Dependências Python verificadas"
+goto :eof
+
+REM Construir imagens Docker
 :build_images
 call :print_message "Construindo imagens Docker..."
 
-call :print_message "Construindo imagem do servidor RAG..."
+REM Construir imagem RAG
+call :print_message "Construindo imagem RAG..."
 docker build -f Dockerfile.rag -t dna-forca-rag-server .
+if errorlevel 1 (
+    call :print_error "Erro ao construir imagem RAG"
+    exit /b 1
+)
 
-call :print_message "Construindo imagem do servidor API..."
+REM Construir imagem API
+call :print_message "Construindo imagem API..."
 docker build -f Dockerfile.api -t dna-forca-api-server .
+if errorlevel 1 (
+    call :print_error "Erro ao construir imagem API"
+    exit /b 1
+)
 
-call :print_message "Imagens construídas com sucesso"
+call :print_success "Imagens construídas com sucesso"
 goto :eof
 
 REM Iniciar serviços
 :start_services
 call :print_message "Iniciando serviços..."
 
-docker-compose up -d
+REM Parar serviços existentes
+docker-compose down >nul 2>&1
 
-call :print_message "Serviços iniciados"
-call :print_message "Servidor RAG: http://localhost:8001"
-call :print_message "Servidor API: http://localhost:8000"
-call :print_message "Redis: localhost:6379"
+REM Iniciar serviços
+docker-compose up -d
+if errorlevel 1 (
+    call :print_error "Erro ao iniciar serviços"
+    exit /b 1
+)
+
+call :print_success "Serviços iniciados"
+goto :eof
+
+REM Verificar status dos serviços
+:check_status
+call :print_message "Verificando status dos serviços..."
+
+REM Aguardar um pouco para os serviços inicializarem
+timeout /t 10 /nobreak >nul
+
+REM Verificar RAG Server
+curl -f http://localhost:8001/health >nul 2>&1
+if errorlevel 1 (
+    call :print_error "RAG Server não está respondendo"
+    exit /b 1
+) else (
+    call :print_success "RAG Server está respondendo"
+)
+
+REM Verificar API Server
+curl -f http://localhost:8000/health >nul 2>&1
+if errorlevel 1 (
+    call :print_error "API Server não está respondendo"
+    exit /b 1
+) else (
+    call :print_success "API Server está respondendo"
+)
+
+call :print_success "Todos os serviços estão funcionando"
+goto :eof
+
+REM Mostrar logs
+:show_logs
+if "%~1"=="" (
+    call :print_message "Mostrando logs de todos os serviços..."
+    docker-compose logs -f
+) else (
+    call :print_message "Mostrando logs do serviço: %~1"
+    docker-compose logs -f "%~1"
+)
 goto :eof
 
 REM Parar serviços
 :stop_services
 call :print_message "Parando serviços..."
-
 docker-compose down
-
-call :print_message "Serviços parados"
-goto :eof
-
-REM Verificar status
-:check_status
-call :print_message "Verificando status dos serviços..."
-
-echo.
-echo Status dos containers:
-docker-compose ps
-
-echo.
-echo Logs do servidor RAG:
-docker-compose logs --tail=10 rag-server
-
-echo.
-echo Logs do servidor API:
-docker-compose logs --tail=10 api-server
+call :print_success "Serviços parados"
 goto :eof
 
 REM Limpar tudo
 :cleanup
-call :print_warning "Removendo todos os containers, volumes e imagens..."
-
-docker-compose down -v --rmi all
-
-call :print_message "Limpeza concluída"
+call :print_message "Limpando tudo..."
+docker-compose down -v
+docker system prune -f
+call :print_success "Limpeza concluída"
 goto :eof
 
-REM Mostrar logs
-:show_logs
-set "service=%~1"
-if "%service%"=="" set "service=all"
-
-if "%service%"=="rag" (
-    docker-compose logs -f rag-server
-) else if "%service%"=="api" (
-    docker-compose logs -f api-server
-) else (
-    docker-compose logs -f
-)
+REM Mostrar ajuda
+:show_help
+echo Script de Deploy - DNA da Força AI
+echo.
+echo Uso: %0 [COMANDO]
+echo.
+echo Comandos:
+echo   deploy     - Deploy completo (construir e iniciar)
+echo   build      - Apenas construir imagens
+echo   start      - Apenas iniciar serviços
+echo   stop       - Parar serviços
+echo   restart    - Reiniciar serviços
+echo   status     - Verificar status dos serviços
+echo   logs       - Mostrar logs (todos os serviços)
+echo   logs [service] - Mostrar logs de um serviço específico
+echo   cleanup    - Limpar tudo (parar e remover volumes)
+echo   help       - Mostrar esta ajuda
+echo.
+echo Exemplos:
+echo   %0 deploy
+echo   %0 logs rag-server
+echo   %0 status
 goto :eof
 
 REM Função principal
 :main
-call :print_header
+if "%~1"=="" goto :help
+if "%~1"=="help" goto :help
+if "%~1"=="deploy" goto :deploy
+if "%~1"=="build" goto :build
+if "%~1"=="start" goto :start
+if "%~1"=="stop" goto :stop
+if "%~1"=="restart" goto :restart
+if "%~1"=="status" goto :status
+if "%~1"=="logs" goto :logs
+if "%~1"=="cleanup" goto :cleanup
+goto :help
 
-set "command=%~1"
-if "%command%"=="" set "command=help"
+:deploy
+call :check_docker
+call :check_env_file
+call :check_python_deps
+call :build_images
+call :start_services
+call :check_status
+call :print_success "Deploy concluído com sucesso!"
+call :print_message "Servidores disponíveis em:"
+call :print_message "  - API Server: http://localhost:8000"
+call :print_message "  - RAG Server: http://localhost:8001"
+goto :eof
 
-if "%command%"=="build" (
-    call :check_docker
-    call :check_env
-    call :build_images
-) else if "%command%"=="start" (
-    call :check_docker
-    call :check_env
-    call :start_services
-) else if "%command%"=="stop" (
-    call :stop_services
-) else if "%command%"=="restart" (
-    call :stop_services
-    call :start_services
-) else if "%command%"=="status" (
-    call :check_status
-) else if "%command%"=="logs" (
-    call :show_logs %2
-) else if "%command%"=="cleanup" (
-    call :cleanup
-) else if "%command%"=="deploy" (
-    call :check_docker
-    call :check_env
-    call :build_images
-    call :start_services
-) else (
-    echo Uso: %0 [comando]
-    echo.
-    echo Comandos disponíveis:
-    echo   build     - Construir imagens Docker
-    echo   start     - Iniciar serviços
-    echo   stop      - Parar serviços
-    echo   restart   - Reiniciar serviços
-    echo   status    - Verificar status dos serviços
-    echo   logs      - Mostrar logs ^(opções: rag, api, all^)
-    echo   cleanup   - Limpar tudo ^(containers, volumes, imagens^)
-    echo   deploy    - Deploy completo ^(build + start^)
-    echo   help      - Mostrar esta ajuda
-    echo.
-    echo Exemplos:
-    echo   %0 deploy
-    echo   %0 logs rag
-    echo   %0 status
-)
+:build
+call :check_docker
+call :check_python_deps
+call :build_images
+goto :eof
 
+:start
+call :check_docker
+call :check_env_file
+call :start_services
+call :check_status
+goto :eof
+
+:stop
+call :stop_services
+goto :eof
+
+:restart
+call :stop_services
+call :start_services
+call :check_status
+goto :eof
+
+:status
+call :check_status
+goto :eof
+
+:logs
+call :show_logs "%~2"
+goto :eof
+
+:cleanup
+call :cleanup
+goto :eof
+
+:help
+call :show_help
 goto :eof
 
 REM Executar função principal

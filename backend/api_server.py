@@ -49,7 +49,7 @@ app = FastAPI(
 
 # Configure CORS
 cors_origins = os.getenv(
-    "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    "CORS_ORIGINS", "https://chatbot-educacional.vercel.app,http://localhost:3000,http://127.0.0.1:3000,https://dna-forca-frontend.vercel.app").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -66,7 +66,7 @@ app.include_router(auth_router)
 app.include_router(educational_agent_router)
 
 # RAG Server URL
-RAG_SERVER_URL = "http://localhost:8001"
+RAG_SERVER_URL = os.getenv("RAG_SERVER_URL", "http://localhost:8001")
 
 # User-specific handlers with thread locks
 user_drive_handlers = {}

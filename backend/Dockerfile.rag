@@ -27,8 +27,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código do servidor RAG
 COPY rag_system/ ./rag_system/
+COPY chat_agents/ ./chat_agents/
+COPY auth/ ./auth/
 COPY utils/ ./utils/
 COPY data/ ./data/
+COPY config/ ./config/
 
 # Criar diretórios necessários
 RUN mkdir -p /app/data/.chromadb /app/data/materials /app/logs

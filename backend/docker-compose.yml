@@ -15,6 +15,7 @@ services:
       - CHROMA_PERSIST_DIR=/app/data/.chromadb
       - MATERIALS_DIR=/app/data/materials
       - LOG_LEVEL=INFO
+      - CORS_ORIGINS=https://chatbot-educacional.vercel.app,http://localhost:3000,http://127.0.0.1:3000,https://dna-forca-frontend.vercel.app
     volumes:
       - rag_data:/app/data
       - ./data/materials:/app/data/materials:ro
@@ -43,7 +44,7 @@ services:
       - RAG_SERVER_URL=http://rag-server:8000
       - DATABASE_URL=${DATABASE_URL}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      - CORS_ORIGINS=https://chatbot-educacional.vercel.app,http://localhost:3000,http://127.0.0.1:3000,https://dna-forca-frontend.vercel.app
       - LOG_LEVEL=INFO
     volumes:
       - api_data:/app/data

@@ -4,7 +4,6 @@ Servidor RAG Independente - DNA da Força AI
 Este servidor fica sempre rodando para processamento de materiais e treinamento do modelo.
 """
 
-from chat_agents.educational_agent import router as educational_router
 import os
 import logging
 import asyncio
@@ -23,6 +22,7 @@ import json
 
 # Importar componentes RAG
 from rag_system.rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
+from chat_agents.educational_agent import router as educational_router
 from chat_agents.chat_agent import graph as chat_agent_graph
 from langchain_core.runnables import RunnableConfig
 
@@ -271,7 +271,25 @@ async def lifespan(app: FastAPI):
     logger.info(f"   - ChromaDB: {chroma_persist_dir}")
     logger.info(f"   - Materiais: {materials_dir}")
 
-    # RAG handler será inicializado quando necessário
+    # Tentar inicializar RAG handler automaticamente se OPENAI_API_KEY estiver disponível
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if openai_api_key and openai_api_key != "your_openai_api_key_here":
+        try:
+            logger.info("🔧 Inicializando RAG handler automaticamente...")
+            rag_handler = RAGHandler(
+                api_key=openai_api_key,
+                persist_dir=str(chroma_persist_dir)
+            )
+            logger.info("✅ RAG handler inicializado automaticamente")
+        except Exception as e:
+            logger.warning(
+                f"⚠️  Não foi possível inicializar RAG handler automaticamente: {e}")
+            logger.info(
+                "💡 Use a rota /initialize para inicializar manualmente")
+    else:
+        logger.info(
+            "💡 OPENAI_API_KEY não configurada. Use a rota /initialize para inicializar o RAG handler")
+
     logger.info("✅ Servidor RAG iniciado com sucesso")
 
     yield
@@ -288,71 +306,22 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configurar CORS
+# Configurar CORS para permitir o frontend no Vercel
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em produção, especificar origens específicas
+    allow_origins=[
+        "https://chatbot-educacional.vercel.app",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://dna-forca-frontend.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Importar o router corretamente
-
 # Incluir router do educational agent
 app.include_router(educational_router, prefix="/chat", tags=["educational"])
-
-# Comente ou remova a implementação direta do endpoint
-# @app.post("/chat/educational")
-# async def educational_chat(request: dict):
-#     """Enhanced educational chat with learning features"""
-#     logger.info(
-#         f"🎓 Educational chat request: {request.get('content', '')[:50]}...")
-
-#     try:
-#         # Simulate educational response
-#         response_data = {
-#             "response": f"Resposta educacional para: {request.get('content', '')}. Este é um sistema de IA educacional focado em treinamento físico e educação esportiva.",
-#             "sources": [
-#                 {
-#                     "title": "Material de Treinamento",
-#                     "source": "rag_server.py",
-#                     "chunk": "Conteúdo educacional sobre treinamento físico...",
-#                     "page": 1
-#                 }
-#             ],
-#             "follow_up_questions": [
-#                 "Como posso aplicar esse conhecimento na prática?",
-#                 "Quais são os benefícios principais?",
-#                 "Existe alguma contraindicação?"
-#             ],
-#             "learning_suggestions": [
-#                 "Considere praticar os exercícios demonstrados",
-#                 "Mantenha um diário de treino",
-#                 "Consulte um profissional se necessário"
-#             ],
-#             "related_topics": ["treinamento", "fitness", "saúde"],
-#             "educational_metadata": {
-#                 "difficulty_level": request.get('user_level', 'intermediate'),
-#                 "estimated_reading_time": 2.5,
-#                 "complexity_score": 0.6
-#             },
-#             "learning_context": {
-#                 "user_id": "default_user",
-#                 "session_id": request.get('session_id') or f"session_{int(time.time())}",
-#                 "current_topic": request.get('current_topic') or "treinamento",
-#                 "learning_objectives": request.get('learning_objectives', []),
-#                 "topics_covered": ["treinamento", "fitness"],
-#                 "difficulty_level": request.get('user_level', 'intermediate'),
-#                 "preferred_learning_style": request.get('learning_style', 'mixed')
-#             },
-#             "video_suggestions": [],
-#             "response_time": 0.1
-#         }
-
-#         return response_data
-
-#     except Exception as e:
 
 embeddingModel: str = "text-embedding-ada-002"
 
@@ -377,8 +346,8 @@ async def get_status():
         "service": "rag-server",
         "version": "1.0.0",
         "rag_initialized": rag_handler is not None,
-        "materials_directory": materials_dir,
-        "chroma_persist_dir": chroma_persist_dir,
+        "materials_directory": str(materials_dir) if materials_dir else None,
+        "chroma_persist_dir": str(chroma_persist_dir) if chroma_persist_dir else None,
         "materials_count": 0,
         "vector_store_ready": False
     }
@@ -405,7 +374,7 @@ async def process_materials(request: ProcessMaterialsRequest, background_tasks: 
         if not rag_handler:
             rag_handler = RAGHandler(
                 api_key=request.api_key,
-                persist_dir=chroma_persist_dir
+                persist_dir=str(chroma_persist_dir)
             )
             logger.info("✅ RAG handler inicializado")
 
@@ -437,12 +406,12 @@ async def process_materials_task(api_key: str, force_reprocess: bool = False):
         if not rag_handler:
             rag_handler = RAGHandler(
                 api_key=api_key,
-                persist_dir=chroma_persist_dir
+                persist_dir=str(chroma_persist_dir)
             )
 
         # Processar materiais
         success, processed_files = rag_handler.process_and_initialize(
-            materials_dir)
+            str(materials_dir))
 
         if success:
             logger.info(
@@ -498,7 +467,7 @@ async def initialize_rag(api_key: str):
 
         rag_handler = RAGHandler(
             api_key=api_key,
-            persist_dir=chroma_persist_dir
+            persist_dir=str(chroma_persist_dir)
         )
 
         logger.info("✅ RAG handler inicializado com sucesso")
