@@ -208,6 +208,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 OPENAI_API_KEY=sua_chave_openai_aqui
 GEMINI_API_KEY=sua_chave_gemini_aqui
 GOOGLE_DRIVE_API_KEY=sua_chave_google_drive_aqui
+GOOGLE_CREDENTIALS_PATH=/etc/secrets/credentials.json
 RAG_SERVER_URL=https://dna-forca-rag-server.onrender.com
 DATABASE_URL=postgresql://user:password@localhost/dbname
 PORT=8000
@@ -218,7 +219,33 @@ CORS_ORIGINS=https://dna-forca-frontend.onrender.com,https://chatbot-educacional
 LOG_LEVEL=INFO
 CHROMA_PERSIST_DIR=/app/data/.chromadb
 MATERIALS_DIR=/app/data/materials
+EMAIL_HOST=smtp.seu_provedor.com
+EMAIL_PORT=587
+EMAIL_USERNAME=seu_email@exemplo.com
+EMAIL_PASSWORD=sua_senha_ou_token_app
+EMAIL_FROM=seu_email@exemplo.com
 ```
+
+## 🔒 Configuração de Arquivos Secretos
+
+### **Configurando o arquivo credentials.json para Google Drive API**
+
+1. **No painel do Render:**
+   - Acesse seu serviço `dna-forca-api-server`
+   - Vá para a aba "Environment"
+   - Role até a seção "Secret Files"
+   - Clique em "Add Secret File"
+   - Configure:
+     - **Filename:** `credentials.json`
+     - **Contents:** Cole o conteúdo do seu arquivo `credentials.json` do Google Cloud
+     - **Mount Path:** `/etc/secrets/credentials.json`
+
+2. **Verifique a variável de ambiente:**
+   - Certifique-se de que `GOOGLE_CREDENTIALS_PATH` está configurado como `/etc/secrets/credentials.json`
+
+3. **Após o deploy:**
+   - O arquivo `credentials.json` estará disponível no caminho `/etc/secrets/credentials.json`
+   - O sistema usará este arquivo para autenticação com a API do Google Drive
 
 ## 🔍 Endpoints Disponíveis
 

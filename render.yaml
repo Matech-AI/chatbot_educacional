@@ -87,6 +87,19 @@ services:
         value: /app/data/.chromadb
       - key: MATERIALS_DIR
         value: /app/data/materials
+      # Configurações de Email
+      - key: EMAIL_HOST
+        value: smtp.gmail.com
+      - key: EMAIL_PORT
+        value: 587
+      - key: EMAIL_USERNAME
+        value: matheusbnas@gmail.com
+      - key: EMAIL_PASSWORD
+        value: yoip qkvw aozn augl
+      - key: EMAIL_FROM
+        value: matheusbnas@gmail.com
+      - key: GOOGLE_CREDENTIALS_PATH
+        value: /etc/secrets/credentials.json
     disk:
       name: api-data
       mountPath: /app/data

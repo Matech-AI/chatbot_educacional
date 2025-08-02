@@ -166,6 +166,7 @@ Crie um arquivo `.env` baseado no `env.example`:
 OPENAI_API_KEY=your_openai_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
 GOOGLE_DRIVE_API_KEY=your_google_drive_api_key_here
+GOOGLE_CREDENTIALS_PATH=/app/data/credentials.json
 
 # Configurações do servidor RAG
 RAG_SERVER_URL=http://rag-server:8000
@@ -182,7 +183,33 @@ CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 
 # Configurações de logging
 LOG_LEVEL=INFO
+
+# Configurações de Email
+EMAIL_HOST=smtp.seu_provedor.com
+EMAIL_PORT=587
+EMAIL_USERNAME=seu_email@exemplo.com
+EMAIL_PASSWORD=sua_senha_ou_token_app
+EMAIL_FROM=seu_email@exemplo.com
 ```
+
+### Configuração do Google Drive API
+
+Para o funcionamento correto da integração com o Google Drive, você precisa:
+
+1. **Arquivo de credenciais:**
+   - Coloque seu arquivo `credentials.json` do Google Cloud na pasta `data/` do projeto
+   - Certifique-se de que o caminho corresponde ao definido em `GOOGLE_CREDENTIALS_PATH`
+   - Para desenvolvimento local: `/app/data/credentials.json`
+   - Para Render: `/etc/secrets/credentials.json`
+
+2. **Montagem de volume:**
+   - O Docker Compose já configura o volume `api_data` que mapeia para `/app/data`
+   - Coloque o arquivo `credentials.json` neste volume para persistência
+
+3. **Primeira execução:**
+   - Na primeira execução, o sistema pode solicitar autenticação OAuth2
+   - Siga as instruções no console para autenticar
+   - O token será salvo como `token.json` no mesmo diretório
 
 ### Volumes Docker
 
