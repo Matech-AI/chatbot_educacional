@@ -30,6 +30,7 @@ COPY rag_system/ ./rag_system/
 COPY chat_agents/ ./chat_agents/
 COPY auth/ ./auth/
 COPY utils/ ./utils/
+COPY video_processing/ ./video_processing/
 # Remover esta linha:
 # COPY data/ ./data/
 COPY config/ ./config/
