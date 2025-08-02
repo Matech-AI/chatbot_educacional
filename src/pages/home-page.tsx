@@ -27,7 +27,12 @@ const HomePage: React.FC = () => {
 
   const checkBackendHealth = async () => {
     try {
-      const response = await fetch("/api/health");
+      // Usar a mesma URL base que é usada para outras requisições API
+      const apiBase = process.env.NODE_ENV === 'production' 
+        ? (import.meta.env.VITE_API_BASE_URL || 'https://dna-forca-api-server.onrender.com')
+        : '/api';
+      
+      const response = await fetch(`${apiBase}/health`);
       if (response.ok) {
         const data = await response.json();
         setBackendStatus(`✅ ${data.message || "Backend online"}`);

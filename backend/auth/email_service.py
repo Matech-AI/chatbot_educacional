@@ -23,6 +23,13 @@ EMAIL_CONFIGURED = all([EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASSWORD])
 # Arquivo para armazenar tokens de autenticação
 AUTH_TOKENS_FILE = Path(__file__).parent.parent / "data" / "auth_tokens.json"
 
+# Determinar a URL base com base no ambiente
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+if ENVIRONMENT == "production":
+    DEFAULT_BASE_URL = "https://dna-forca-frontend.vercel.app"
+else:
+    DEFAULT_BASE_URL = "http://localhost:3000"
+
 
 def generate_temp_password(length=10):
     """Gera uma senha temporária aleatória"""
@@ -90,8 +97,11 @@ def send_email(to_email, subject, html_content):
         return False
 
 
-def send_auth_email(user_email, username, auth_token, base_url="http://localhost:3000"):
+def send_auth_email(user_email, username, auth_token, base_url=None):
     """Envia e-mail de autenticação com link para aprovação"""
+    if base_url is None:
+        base_url = DEFAULT_BASE_URL
+        
     subject = "Confirmação de Cadastro - Sistema Educacional"
 
     # URL de autenticação
@@ -210,8 +220,11 @@ def send_temp_password_email(user_email, username, temp_password):
     return send_email(user_email, subject, html_content)
 
 
-def send_password_reset_email(user_email, username, reset_token, base_url="http://localhost:3000"):
+def send_password_reset_email(user_email, username, reset_token, base_url=None):
     """Envia e-mail com link para reset de senha"""
+    if base_url is None:
+        base_url = DEFAULT_BASE_URL
+        
     subject = "Redefinição de Senha - Sistema Educacional"
 
     # URL de reset de senha
