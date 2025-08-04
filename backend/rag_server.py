@@ -23,8 +23,8 @@ import json
 # Importar componentes RAG
 from rag_system.rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
 from chat_agents.educational_agent import router as educational_router
-from chat_agents.chat_agent import graph as chat_agent_graph
 from langchain_core.runnables import RunnableConfig
+from rag_system.enhanced_rag_handler import EnhancedRAGHandler, EducationalProcessingConfig
 
 # ========================================
 # MODELS PYDANTIC
@@ -47,7 +47,7 @@ class ChatRequest(BaseModel):
 
 
 class ProcessMaterialsRequest(BaseModel):
-    api_key: str
+    api_key: Optional[str] = None
     force_reprocess: bool = False
 
 
@@ -59,7 +59,7 @@ class ProcessResponse(BaseModel):
 class QueryRequest(BaseModel):
     question: str
     material_ids: Optional[List[str]] = None
-    config: Optional[ProcessingConfig] = None
+    config: Optional[AssistantConfigModel] = None
 
 
 class QueryResponse(BaseModel):
@@ -90,6 +90,7 @@ load_dotenv()
 rag_handler = None
 chroma_persist_dir = None
 materials_dir = None
+enhanced_rag_handler = None
 
 # Sistema de persistência para configurações do assistente
 assistant_configs_file = Path("data/assistant_configs.json")
@@ -370,17 +371,21 @@ async def process_materials(request: ProcessMaterialsRequest, background_tasks: 
     try:
         logger.info("🔄 Iniciando processamento de materiais...")
 
+        api_key = request.api_key or os.getenv("OPENAI_API_KEY")
+        if not api_key or api_key == "your_openai_api_key_here":
+            raise HTTPException(status_code=400, detail="OpenAI API key is required either in the request body or as an environment variable.")
+
         # Inicializar RAG handler se necessário
         if not rag_handler:
             rag_handler = RAGHandler(
-                api_key=request.api_key,
+                api_key=api_key,
                 persist_dir=str(chroma_persist_dir)
             )
             logger.info("✅ RAG handler inicializado")
 
         # Processar materiais em background
         background_tasks.add_task(
-            process_materials_task, request.api_key, request.force_reprocess)
+            process_materials_task, api_key, request.force_reprocess)
 
         return ProcessResponse(
             success=True,
@@ -389,10 +394,7 @@ async def process_materials(request: ProcessMaterialsRequest, background_tasks: 
 
     except Exception as e:
         logger.error(f"❌ Erro ao iniciar processamento: {e}")
-        return ProcessResponse(
-            success=False,
-            message=f"Erro ao iniciar processamento: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Erro ao iniciar processamento: {str(e)}")
 
 
 async def process_materials_task(api_key: str, force_reprocess: bool = False):
@@ -421,6 +423,78 @@ async def process_materials_task(api_key: str, force_reprocess: bool = False):
 
     except Exception as e:
         logger.error(f"❌ Erro no processamento em background: {e}")
+
+
+@app.post("/reprocess-materials", response_model=ProcessResponse)
+async def reprocess_materials(background_tasks: BackgroundTasks):
+    """Forçar o reprocessamento de todos os materiais"""
+    global rag_handler
+
+    if not rag_handler:
+        raise HTTPException(status_code=503, detail="RAG handler não inicializado. Não é possível reprocessar.")
+
+    try:
+        logger.info("🔄 Forçando o reprocessamento de materiais...")
+        
+        # Adicionar a tarefa de reprocessamento em background
+        background_tasks.add_task(process_materials_task, rag_handler.api_key, force_reprocess=True)
+
+        return ProcessResponse(
+            success=True,
+            message="Reprocessamento de materiais iniciado em background. Isso pode levar alguns minutos."
+        )
+    except Exception as e:
+        logger.error(f"❌ Erro ao iniciar o reprocessamento: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao iniciar o reprocessamento: {str(e)}")
+
+
+def initialize_enhanced_rag_handler(api_key: str):
+    """Helper to initialize the enhanced handler"""
+    global enhanced_rag_handler, chroma_persist_dir, materials_dir
+    if not enhanced_rag_handler:
+        logger.info("🔧 Initializing Enhanced RAG handler...")
+        enhanced_rag_handler = EnhancedRAGHandler(
+            api_key=api_key,
+            persist_dir=str(chroma_persist_dir),
+            materials_dir=str(materials_dir)
+        )
+        logger.info("✅ Enhanced RAG handler initialized.")
+    return enhanced_rag_handler
+
+async def reprocess_enhanced_task():
+    """Task in background for enhanced reprocessing"""
+    try:
+        logger.info("🔄 [ENHANCED] Reprocessing materials in background...")
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key or api_key == "your_openai_api_key_here":
+            logger.error("❌ [ENHANCED] OPENAI_API_KEY not found in environment variables.")
+            return
+
+        handler = initialize_enhanced_rag_handler(api_key)
+        success = handler.process_documents(force_reprocess=True)
+        if success:
+            logger.info("✅ [ENHANCED] Reprocessing completed successfully.")
+        else:
+            logger.error("❌ [ENHANCED] Error during reprocessing.")
+    except Exception as e:
+        logger.error(f"❌ [ENHANCED] Error in background task: {e}")
+
+
+@app.post("/reprocess-enhanced-materials", response_model=ProcessResponse)
+async def reprocess_enhanced_materials(background_tasks: BackgroundTasks):
+    """Force reprocessing of all materials using EnhancedRAGHandler"""
+    try:
+        logger.info("🔄 [ENHANCED] Forcing reprocessing of materials...")
+        
+        background_tasks.add_task(reprocess_enhanced_task)
+
+        return ProcessResponse(
+            success=True,
+            message="[ENHANCED] Reprocessing of materials initiated in the background. This may take several minutes."
+        )
+    except Exception as e:
+        logger.error(f"❌ [ENHANCED] Error initiating reprocessing: {e}")
+        raise HTTPException(status_code=500, detail=f"Error initiating reprocessing: {str(e)}")
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -539,83 +613,6 @@ async def chat(question: Question):
     except Exception as e:
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/chat-auth", response_model=Response)
-async def chat_auth(question: Question):
-    """Process a chat question with authentication"""
-    logger.info(f"💬 Chat request: {question.content[:50]}...")
-
-    if not rag_handler:
-        logger.error("❌ RAG handler not initialized")
-        raise HTTPException(status_code=400, detail="System not initialized")
-
-    try:
-        response = rag_handler.generate_response(question.content)
-        logger.info(
-            f"✅ Chat response generated (time: {response.get('response_time', 0):.2f}s)")
-        return response
-    except Exception as e:
-        logger.error(f"❌ Chat error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-async def stream_agent_response(message: str, thread_id: str):
-    """Generator function to stream agent responses."""
-    config = RunnableConfig(configurable={"thread_id": thread_id})
-    async for event in chat_agent_graph.astream_events(
-        {"messages": [("user", message)]},
-        config=config,
-        version="v1"
-    ):
-        kind = event["event"]
-        if kind == "on_chat_model_stream" and "chunk" in event["data"] and event["data"]["chunk"].content:
-            content = event["data"]["chunk"].content
-            data = {
-                "thread_id": thread_id,
-                "event": "stream",
-                "data": content,
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-        elif kind == "on_tool_start":
-            data = {
-                "thread_id": thread_id,
-                "event": "tool_start",
-                "data": {
-                    "name": event["name"],
-                    "input": event["data"].get("input"),
-                },
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-        elif kind == "on_tool_end":
-            data = {
-                "thread_id": thread_id,
-                "event": "tool_end",
-                "data": {
-                    "name": event["name"],
-                    "output": event["data"].get("output"),
-                },
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-
-
-@app.post("/chat/agent")
-async def chat_agent_stream(request: ChatRequest):
-    """Endpoint to stream responses from the chat agent."""
-    thread_id = request.thread_id or str(uuid4())
-    logger.info(
-        f"🤖 Agent chat request on thread {thread_id}: {request.message[:50]}...")
-
-    if not rag_handler:
-        logger.error("❌ RAG handler not initialized for agent chat")
-        raise HTTPException(
-            status_code=400, detail="System not initialized. Cannot use agent.")
-
-    return StreamingResponse(
-        stream_agent_response(request.message, thread_id),
-        media_type="text/event-stream"
-    )
-
 
 # ========================================
 # ASSISTANT CONFIGURATION ENDPOINTS

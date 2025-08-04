@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiRequestJson } from "../lib/api";
+import { EnhancedReprocessingPanel } from "./enhanced-reprocessing-panel";
 
 interface MaintenancePanelProps {
   onRefresh?: () => void;
@@ -439,6 +440,9 @@ export const MaintenancePanel: React.FC<MaintenancePanelProps> = ({
           </div>
         ))}
       </div>
+
+      {/* Enhanced Reprocessing Panel */}
+      <EnhancedReprocessingPanel onSuccess={generateSystemReport} />
 
       {/* Detailed Report */}
       {systemReport && (

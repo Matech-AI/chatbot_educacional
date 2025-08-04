@@ -23,7 +23,6 @@ from langchain_core.runnables import RunnableConfig
 
 # Import RAG handler
 from rag_system.rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
-from chat_agents.chat_agent import graph as chat_agent_graph
 from drive_sync.drive_handler import DriveHandler
 from drive_sync.drive_handler_recursive import RecursiveDriveHandler
 from auth.auth import get_current_user, User, router as auth_router
@@ -521,64 +520,6 @@ async def chat_auth(question: Question, current_user: User = Depends(get_current
     except Exception as e:
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-async def stream_agent_response(message: str, thread_id: str):
-    """Generator function to stream agent responses."""
-    config = RunnableConfig(configurable={"thread_id": thread_id})
-    async for event in chat_agent_graph.astream_events(
-        {"messages": [("user", message)]},
-        config=config,
-        version="v1"
-    ):
-        kind = event["event"]
-        if kind == "on_chat_model_stream" and "chunk" in event["data"] and event["data"]["chunk"].content:
-            content = event["data"]["chunk"].content
-            data = {
-                "thread_id": thread_id,
-                "event": "stream",
-                "data": content,
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-        elif kind == "on_tool_start":
-            data = {
-                "thread_id": thread_id,
-                "event": "tool_start",
-                "data": {
-                    "name": event["name"],
-                    "input": event["data"].get("input"),
-                },
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-        elif kind == "on_tool_end":
-            data = {
-                "thread_id": thread_id,
-                "event": "tool_end",
-                "data": {
-                    "name": event["name"],
-                    "output": event["data"].get("output"),
-                },
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-
-
-@app.post("/chat/agent")
-async def chat_agent_stream(request: ChatRequest, current_user: User = Depends(get_current_user)):
-    """Endpoint to stream responses from the chat agent."""
-    thread_id = request.thread_id or str(uuid4())
-    logger.info(
-        f"🤖 Agent chat request from {current_user.username} on thread {thread_id}: {request.message[:50]}...")
-
-    if not rag_handler:
-        logger.error("❌ RAG handler not initialized for agent chat")
-        raise HTTPException(
-            status_code=400, detail="System not initialized. Cannot use agent.")
-
-    return StreamingResponse(
-        stream_agent_response(request.message, thread_id),
-        media_type="text/event-stream"
-    )
-
 
 # ========================================
 # RECURSIVE DRIVE ENDPOINTS

@@ -37,6 +37,9 @@ docx2txt
 unstructured
 python-magic
 
+# Processamento de planilhas
+pandas
+
 # ChromaDB para vector store
 chromadb
 

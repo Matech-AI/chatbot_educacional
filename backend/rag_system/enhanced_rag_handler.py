@@ -8,6 +8,7 @@ import openai
 import hashlib
 import json
 from datetime import datetime
+import pandas as pd
 
 from langchain_chroma import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -113,11 +114,17 @@ class EnhancedRAGHandler:
         self.difficulty_cache: Dict[str, str] = {}
         self.summary_cache: Dict[str, str] = {}
         
+        # Course structure data
+        self.course_structure: Optional[pd.DataFrame] = None
+        
         # Initialize components
         self._initialize_embeddings()
         self._initialize_llm()
         self._initialize_vector_store()
         self._setup_educational_retriever()
+        
+        # Load course structure
+        self.load_course_structure()
         
         logger.info("✅ Enhanced Educational RAG Handler initialized successfully")
     
@@ -126,7 +133,7 @@ class EnhancedRAGHandler:
         try:
             self.embeddings = OpenAIEmbeddings(
                 model=self.config.embedding_model,
-                api_key=self.api_key
+                api_key=self.api_key # type: ignore
             )
             logger.info(f"✅ Embeddings initialized: {self.config.embedding_model}")
         except Exception as e:
@@ -139,8 +146,8 @@ class EnhancedRAGHandler:
             self.llm = ChatOpenAI(
                 model=self.config.model_name,
                 temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-                api_key=self.api_key
+                max_tokens=self.config.max_tokens, # type: ignore
+                api_key=self.api_key # type: ignore
             )
             logger.info(f"✅ LLM initialized: {self.config.model_name}")
         except Exception as e:
@@ -184,6 +191,31 @@ class EnhancedRAGHandler:
             )
             logger.info("✅ Educational retriever configured")
     
+    def load_course_structure(self, spreadsheet_path: str = "data/materials/Mapa de Conteúdo DNA da Força - IA.xlsx"):
+        """Load and process the course structure from a spreadsheet."""
+        try:
+            spreadsheet_file = Path(spreadsheet_path)
+            if not spreadsheet_file.exists():
+                logger.warning(f"Spreadsheet not found at {spreadsheet_path}. Skipping course structure loading.")
+                return
+
+            self.course_structure = pd.read_excel(spreadsheet_file)
+            # Data cleaning and validation
+            self.course_structure.columns = [col.strip() for col in self.course_structure.columns]
+            required_columns = ['Código', 'Módulo', 'Aula', 'Nome da Aula', 'Resumo da Aula']
+            if not all(col in self.course_structure.columns for col in required_columns):
+                logger.error("Spreadsheet is missing required columns. Please check the file.")
+                self.course_structure = None
+                return
+            
+            # Normalize 'Código' for matching
+            self.course_structure['Código_normalized'] = self.course_structure['Código'].str.strip().str.lower()
+            logger.info(f"✅ Course structure loaded successfully from {spreadsheet_path}.")
+
+        except Exception as e:
+            logger.error(f"Failed to load or process the course structure spreadsheet: {e}")
+            self.course_structure = None
+
     def _analyze_content_type(self, file_path: str) -> str:
         """Determine content type from file path"""
         path_lower = file_path.lower()
@@ -316,14 +348,17 @@ class EnhancedRAGHandler:
             return False
         
         # Check if reprocessing is needed
-        if not force_reprocess and self.vector_store._collection.count() > 0:
+        if not self.vector_store:
+            self._initialize_vector_store()
+
+        if not force_reprocess and self.vector_store and self.vector_store._collection.count() > 0:
             logger.info("📋 Documents already processed. Use force_reprocess=True to reprocess.")
             return True
         
         # Clear existing documents if reprocessing
-        if force_reprocess and self.vector_store._collection.count() > 0:
+        if force_reprocess and self.vector_store and self.vector_store._collection.count() > 0:
             logger.info("🗑️ Clearing existing documents for reprocessing...")
-            self.vector_store.delete_collection()
+            self.vector_store.delete_collection() # type: ignore
             self.vector_store = Chroma(
                 persist_directory=self.persist_dir,
                 embedding_function=self.embeddings
@@ -384,7 +419,8 @@ class EnhancedRAGHandler:
         
         # Add to vector store
         try:
-            self.vector_store.add_documents(splits)
+            if self.vector_store:
+                self.vector_store.add_documents(splits)
             logger.info(f"✅ Added {len(splits)} document chunks to vector store")
             
             # Update retriever
@@ -408,8 +444,27 @@ class EnhancedRAGHandler:
                 **doc.metadata,
                 'content_type': content_type,
                 'processed_at': datetime.now().isoformat(),
-                'enhancement_version': '1.0'
+                'enhancement_version': '1.1' # Version bump for new logic
             }
+
+            # Match with course structure if available
+            if self.course_structure is not None:
+                filename_stem = Path(source_path).stem.lower()
+                # Find a match based on the filename containing the course code
+                match = self.course_structure[self.course_structure['Código_normalized'].apply(lambda x: x in filename_stem)]
+                
+                if not match.empty:
+                    course_data = match.iloc[0]
+                    enhanced_metadata.update({
+                        'course_code': course_data['Código'],
+                        'course_module': course_data['Módulo'],
+                        'course_class': course_data['Aula'],
+                        'class_name': course_data['Nome da Aula'],
+                        'class_summary': course_data['Resumo da Aula']
+                    })
+                    logger.info(f"Matched {filename_stem} with course code {course_data['Código']}")
+                else:
+                    logger.info(f"No course match found for {filename_stem}")
             
             # Add educational analysis if enabled
             if len(doc.page_content) > 100:  # Only analyze substantial content
@@ -508,6 +563,8 @@ class EnhancedRAGHandler:
         
         try:
             # This is a simplified version - in production, you'd query the actual metadata
+            if not self.vector_store:
+                return EducationalMetadata()
             total_docs = self.vector_store._collection.count()
             
             return EducationalMetadata(
