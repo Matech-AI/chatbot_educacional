@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Button } from "../components/ui/button";
 import { BrainCircuit } from "lucide-react";
-import { apiRequestJson } from "../lib/api";
+import { ragApiRequestJson } from "../lib/api";
 
 interface EnhancedReprocessingPanelProps {
   onSuccess?: () => void;
@@ -28,7 +28,7 @@ export const EnhancedReprocessingPanel: React.FC<
     setMessage(null);
 
     try {
-      const result = await apiRequestJson(
+      const result = await ragApiRequestJson(
         "/reprocess-enhanced-materials",
         {
           method: "POST",

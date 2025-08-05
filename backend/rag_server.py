@@ -21,10 +21,9 @@ import time
 import json
 
 # Importar componentes RAG
-from rag_system.rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
+from rag_system.rag_handler import RAGHandler, RAGConfig, Source
 from chat_agents.educational_agent import router as educational_router
 from langchain_core.runnables import RunnableConfig
-from rag_system.enhanced_rag_handler import EnhancedRAGHandler, EducationalProcessingConfig
 
 # ========================================
 # MODELS PYDANTIC
@@ -47,8 +46,8 @@ class ChatRequest(BaseModel):
 
 
 class ProcessMaterialsRequest(BaseModel):
-    api_key: Optional[str] = None
     force_reprocess: bool = False
+    enable_educational_features: bool = True
 
 
 class ProcessResponse(BaseModel):
@@ -58,8 +57,7 @@ class ProcessResponse(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str
-    material_ids: Optional[List[str]] = None
-    config: Optional[AssistantConfigModel] = None
+    user_level: str = "intermediate"
 
 
 class QueryResponse(BaseModel):
@@ -90,7 +88,6 @@ load_dotenv()
 rag_handler = None
 chroma_persist_dir = None
 materials_dir = None
-enhanced_rag_handler = None
 
 # Sistema de persistência para configurações do assistente
 assistant_configs_file = Path("data/assistant_configs.json")
@@ -365,136 +362,56 @@ async def get_status():
 
 @app.post("/process-materials", response_model=ProcessResponse)
 async def process_materials(request: ProcessMaterialsRequest, background_tasks: BackgroundTasks):
-    """Processar materiais em background"""
+    """Process materials in the background with configurable educational features."""
     global rag_handler
-
-    try:
-        logger.info("🔄 Iniciando processamento de materiais...")
-
-        api_key = request.api_key or os.getenv("OPENAI_API_KEY")
-        if not api_key or api_key == "your_openai_api_key_here":
-            raise HTTPException(status_code=400, detail="OpenAI API key is required either in the request body or as an environment variable.")
-
-        # Inicializar RAG handler se necessário
-        if not rag_handler:
-            rag_handler = RAGHandler(
-                api_key=api_key,
-                persist_dir=str(chroma_persist_dir)
-            )
-            logger.info("✅ RAG handler inicializado")
-
-        # Processar materiais em background
-        background_tasks.add_task(
-            process_materials_task, api_key, request.force_reprocess)
-
-        return ProcessResponse(
-            success=True,
-            message="Processamento de materiais iniciado em background"
-        )
-
-    except Exception as e:
-        logger.error(f"❌ Erro ao iniciar processamento: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao iniciar processamento: {str(e)}")
-
-
-async def process_materials_task(api_key: str, force_reprocess: bool = False):
-    """Task em background para processar materiais"""
-    global rag_handler
-
-    try:
-        logger.info("🔄 Processando materiais em background...")
-
-        # Inicializar RAG handler se necessário
-        if not rag_handler:
-            rag_handler = RAGHandler(
-                api_key=api_key,
-                persist_dir=str(chroma_persist_dir)
-            )
-
-        # Processar materiais
-        success, processed_files = rag_handler.process_and_initialize(
-            str(materials_dir))
-
-        if success:
-            logger.info(
-                f"✅ Processamento concluído. Arquivos processados: {len(processed_files)}")
-        else:
-            logger.error("❌ Erro no processamento de materiais")
-
-    except Exception as e:
-        logger.error(f"❌ Erro no processamento em background: {e}")
-
-
-@app.post("/reprocess-materials", response_model=ProcessResponse)
-async def reprocess_materials(background_tasks: BackgroundTasks):
-    """Forçar o reprocessamento de todos os materiais"""
-    global rag_handler
-
     if not rag_handler:
-        raise HTTPException(status_code=503, detail="RAG handler não inicializado. Não é possível reprocessar.")
+        raise HTTPException(status_code=503, detail="RAG handler not initialized.")
 
     try:
-        logger.info("🔄 Forçando o reprocessamento de materiais...")
+        logger.info(f"🔄 Starting material processing with educational features: {request.enable_educational_features}")
         
-        # Adicionar a tarefa de reprocessamento em background
-        background_tasks.add_task(process_materials_task, rag_handler.api_key, force_reprocess=True)
+        # Update the handler's config for this task
+        rag_handler.config.enable_educational_features = request.enable_educational_features
+        
+        background_tasks.add_task(rag_handler.process_documents, force_reprocess=request.force_reprocess)
 
         return ProcessResponse(
             success=True,
-            message="Reprocessamento de materiais iniciado em background. Isso pode levar alguns minutos."
+            message="Material processing started in the background."
         )
     except Exception as e:
-        logger.error(f"❌ Erro ao iniciar o reprocessamento: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro ao iniciar o reprocessamento: {str(e)}")
-
-
-def initialize_enhanced_rag_handler(api_key: str):
-    """Helper to initialize the enhanced handler"""
-    global enhanced_rag_handler, chroma_persist_dir, materials_dir
-    if not enhanced_rag_handler:
-        logger.info("🔧 Initializing Enhanced RAG handler...")
-        enhanced_rag_handler = EnhancedRAGHandler(
-            api_key=api_key,
-            persist_dir=str(chroma_persist_dir),
-            materials_dir=str(materials_dir)
-        )
-        logger.info("✅ Enhanced RAG handler initialized.")
-    return enhanced_rag_handler
-
-async def reprocess_enhanced_task():
-    """Task in background for enhanced reprocessing"""
-    try:
-        logger.info("🔄 [ENHANCED] Reprocessing materials in background...")
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key or api_key == "your_openai_api_key_here":
-            logger.error("❌ [ENHANCED] OPENAI_API_KEY not found in environment variables.")
-            return
-
-        handler = initialize_enhanced_rag_handler(api_key)
-        success = handler.process_documents(force_reprocess=True)
-        if success:
-            logger.info("✅ [ENHANCED] Reprocessing completed successfully.")
-        else:
-            logger.error("❌ [ENHANCED] Error during reprocessing.")
-    except Exception as e:
-        logger.error(f"❌ [ENHANCED] Error in background task: {e}")
+        logger.error(f"❌ Error starting processing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/reprocess-enhanced-materials", response_model=ProcessResponse)
 async def reprocess_enhanced_materials(background_tasks: BackgroundTasks):
-    """Force reprocessing of all materials using EnhancedRAGHandler"""
+    """
+    Reprocess all materials using the enhanced RAG system.
+
+    This endpoint forces reprocessing of all documents with educational features enabled,
+    such as extracting key concepts, assessing difficulty, and creating summaries.
+    """
+    global rag_handler
+    if not rag_handler:
+        raise HTTPException(status_code=503, detail="RAG handler not initialized.")
+
     try:
-        logger.info("🔄 [ENHANCED] Forcing reprocessing of materials...")
-        
-        background_tasks.add_task(reprocess_enhanced_task)
+        logger.info("🚀 Starting enhanced material reprocessing...")
+
+        # Forçar a ativação de recursos educacionais para este processo
+        rag_handler.config.enable_educational_features = True
+
+        # Adicionar a tarefa de reprocessamento em segundo plano
+        background_tasks.add_task(rag_handler.process_documents, force_reprocess=True)
 
         return ProcessResponse(
             success=True,
-            message="[ENHANCED] Reprocessing of materials initiated in the background. This may take several minutes."
+            message="Enhanced material reprocessing started in the background."
         )
     except Exception as e:
-        logger.error(f"❌ [ENHANCED] Error initiating reprocessing: {e}")
-        raise HTTPException(status_code=500, detail=f"Error initiating reprocessing: {str(e)}")
+        logger.error(f"❌ Error starting enhanced reprocessing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -512,8 +429,7 @@ async def query_rag(request: QueryRequest):
         # Realizar consulta
         result = rag_handler.generate_response(
             question=request.question,
-            material_ids=request.material_ids,
-            config=request.config
+            user_level=request.user_level
         )
 
         end_time = asyncio.get_event_loop().time()
@@ -614,175 +530,6 @@ async def chat(question: Question):
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ========================================
-# ASSISTANT CONFIGURATION ENDPOINTS
-# ========================================
-
-
-@app.get("/assistant/config")
-async def get_assistant_config():
-    """Get current assistant configuration"""
-    logger.info("⚙️ Assistant config requested")
-
-    # Carregar configurações do assistente
-    load_assistant_configs()
-
-    # Se há uma configuração atual salva, retorná-la
-    if current_assistant_config and current_assistant_config in assistant_configs:
-        logger.info(f"✅ Returning current config: {current_assistant_config}")
-        return assistant_configs[current_assistant_config]
-
-    # Caso contrário, retornar configuração padrão
-    default_templates = get_default_templates()
-    default_config = default_templates["Educação Física"]
-    logger.info("✅ Returning default config")
-    return default_config
-
-
-@app.post("/assistant/config")
-async def update_assistant_config(config: AssistantConfigRequest):
-    """Update assistant configuration"""
-    logger.info("⚙️ Assistant config update")
-
-    try:
-        # Carregar configurações atuais
-        load_assistant_configs()
-
-        # Obter configuração atual
-        current_config_name = current_assistant_config or "Educação Física"
-
-        # Atualizar configuração atual
-        if current_config_name not in assistant_configs:
-            # Se não existe, criar a partir do template padrão
-            default_templates = get_default_templates()
-            assistant_configs[current_config_name] = default_templates.get(
-                current_config_name, default_templates["Educação Física"])
-
-        # Aplicar atualizações
-        current_config = assistant_configs[current_config_name]
-        for field, value in config.dict(exclude_unset=True).items():
-            if value is not None:
-                current_config[field] = value
-
-        # Salvar configurações
-        save_assistant_configs()
-
-        logger.info(f"✅ Assistant config updated for '{current_config_name}'")
-        return {
-            "status": "success",
-            "message": f"Configuração do assistente '{current_config_name}' atualizada com sucesso",
-            "config": current_config
-        }
-    except Exception as e:
-        logger.error(f"❌ Error updating assistant config: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/assistant/templates")
-async def get_assistant_templates():
-    """Get available assistant templates"""
-    logger.info("📋 Assistant templates requested")
-
-    # Carregar configurações do assistente
-    load_assistant_configs()
-
-    # Combinar templates padrão com templates personalizados
-    all_templates = get_default_templates()
-
-    # Adicionar templates personalizados
-    for template_name, template_config in assistant_configs.items():
-        if template_name not in all_templates:  # Não sobrescrever templates padrão
-            all_templates[template_name] = template_config
-
-    logger.info(f"✅ Returning {len(all_templates)} templates")
-    return all_templates
-
-
-@app.post("/assistant/config/template/{template_name}")
-async def apply_assistant_template(template_name: str):
-    """Apply a specific assistant template"""
-    logger.info(f"📋 Applying template '{template_name}'")
-
-    # Carregar configurações do assistente
-    load_assistant_configs()
-
-    # Verificar se o template existe nos templates padrão ou personalizados
-    default_templates = get_default_templates()
-    all_templates = {**default_templates, **assistant_configs}
-
-    # Debug: log dos templates disponíveis
-    logger.info(f"🔍 Available templates: {list(all_templates.keys())}")
-    logger.info(f"🔍 Requested template: '{template_name}'")
-    logger.info(f"🔍 Template exists: {template_name in all_templates}")
-
-    if template_name not in all_templates:
-        raise HTTPException(
-            status_code=404, detail=f"Template '{template_name}' não encontrado")
-
-    # Se o template não está em assistant_configs, adicioná-lo
-    if template_name not in assistant_configs:
-        assistant_configs[template_name] = all_templates[template_name]
-
-    current_assistant_config = template_name
-    save_assistant_configs()  # Salvar a configuração aplicada
-
-    logger.info(f"✅ Template '{template_name}' applied")
-    return {
-        "status": "success",
-        "message": f"Template '{template_name}' aplicado com sucesso",
-        "config": assistant_configs[template_name]
-    }
-
-
-@app.post("/assistant/config/save-template")
-async def save_assistant_template(template_name: str, config: AssistantConfigRequest):
-    """Save current configuration as a custom template"""
-    logger.info(f"💾 Saving assistant template: {template_name}")
-
-    try:
-        # Carregar configurações atuais
-        load_assistant_configs()
-
-        # Criar nova configuração baseada na atual
-        current_config_name = current_assistant_config or "Educação Física"
-        base_config = assistant_configs.get(
-            current_config_name, get_default_templates()["Educação Física"])
-
-        # Aplicar atualizações
-        new_config = base_config.copy()
-        for field, value in config.dict(exclude_unset=True).items():
-            if value is not None:
-                new_config[field] = value
-
-        # Salvar como template personalizado
-        assistant_configs[template_name] = new_config
-        save_assistant_configs()
-
-        logger.info(f"✅ Template '{template_name}' saved successfully")
-        return {
-            "status": "success",
-            "message": f"Template '{template_name}' salvo com sucesso",
-            "config": new_config
-        }
-    except Exception as e:
-        logger.error(f"❌ Error saving template: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/assistant/config/reset")
-async def reset_assistant_config():
-    """Reset assistant configuration to default"""
-    logger.info("🔄 Assistant config reset")
-
-    global current_assistant_config
-    current_assistant_config = None
-    save_assistant_configs()
-
-    logger.info("✅ Assistant config reset to default")
-    return {
-        "status": "success",
-        "message": "Configuração do assistente resetada para padrão"
-    }
 
 
 if __name__ == "__main__":

@@ -163,12 +163,13 @@ async def count_users_by_role_alt(current_user: User = Depends(get_current_user)
         "admin": 0,
         "instructor": 0,
         "student": 0,
-        "total": len(users)
     }
 
     for user in users:
         if user.role in counts:
             counts[user.role] += 1
+    
+    counts["total"] = sum(counts.values())
 
     return counts
 
@@ -456,6 +457,10 @@ async def handle_user_create(webhook_user: WebhookUser):
         return
 
     # Create user data
+    if not webhook_user.email:
+        print(f"User {webhook_user.username} has no email, skipping creation.")
+        return
+        
     user_data = UserCreate(
         username=webhook_user.username,
         email=webhook_user.email,

@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
 
 # Import RAG handler
-from rag_system.rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
+from rag_system.rag_handler import RAGHandler, RAGConfig
 from drive_sync.drive_handler import DriveHandler
 from drive_sync.drive_handler_recursive import RecursiveDriveHandler
 from auth.auth import get_current_user, User, router as auth_router
@@ -453,8 +453,8 @@ async def initialize_system(
         # Process materials and initialize RAG
         try:
             logger.info("🧠 Starting RAG processing and initialization...")
-            success, rag_messages = rag_handler.process_and_initialize(
-                "data/materials")
+            success = rag_handler.process_documents()
+            rag_messages = ["RAG processing complete."]
             messages.extend(rag_messages)
 
             if success:
@@ -527,7 +527,7 @@ async def chat_auth(question: Question, current_user: User = Depends(get_current
 
 
 @asynccontextmanager
-async def get_user_drive_handler(username: str, api_key: str = None):
+async def get_user_drive_handler(username: str, api_key: Optional[str] = None):
     """Get or create a user-specific drive handler with proper locking and auth caching"""
     # Use a global lock when creating user locks to avoid race conditions
     with user_handler_creation_lock:
@@ -641,8 +641,7 @@ async def sync_drive_recursive(
                         if rag_handler:
                             logger.info(
                                 "🧠 Re-indexing materials in RAG handler...")
-                            rag_handler.process_and_initialize(
-                                "data/materials")
+                            rag_handler.process_documents()
                             logger.info("✅ Re-indexing complete.")
 
                         # Final update with thread safety
@@ -774,7 +773,7 @@ async def recursive_drive_sync(
 
                     # Run the download operation
                     result = task_handler.download_drive_recursive(
-                        data.folder_id, max_depth=data.max_depth)
+                        data.folder_id, max_depth=data.max_depth or -1)
 
                     if result['status'] == 'success':
                         # Update progress with thread safety
@@ -790,8 +789,7 @@ async def recursive_drive_sync(
                         if rag_handler:
                             logger.info(
                                 "🧠 Re-indexing materials after recursive sync...")
-                            rag_handler.process_and_initialize(
-                                "data/materials")
+                            rag_handler.process_documents()
                             logger.info("✅ Re-indexing complete.")
 
                         # Final update with thread safety
@@ -1286,7 +1284,7 @@ async def sync_drive(
             # Re-index materials in RAG handler
             if rag_handler:
                 logger.info("🧠 Re-indexing materials after legacy sync...")
-                rag_handler.process_and_initialize("data/materials")
+                rag_handler.process_documents()
                 logger.info("✅ Re-indexing complete.")
 
             stats = drive_handler.get_download_stats()
@@ -2060,7 +2058,7 @@ async def upload_material(
         # Re-index materials in RAG handler
         if rag_handler:
             logger.info("🧠 Re-indexing materials after upload...")
-            rag_handler.process_and_initialize("data/materials")
+            rag_handler.process_documents()
             logger.info("✅ Re-indexing complete.")
 
         return {
@@ -2150,18 +2148,6 @@ def should_require_auth(filename: str) -> bool:
     return True
 
 
-def should_require_auth(filename: str) -> bool:
-    """Determina se um arquivo requer autenticação com base em regras específicas"""
-    # Exemplo: arquivos com 'public' no nome não requerem autenticação
-    if 'public' in filename.lower():
-        return False
-
-    # Exemplo: certos tipos de arquivo não requerem autenticação
-    if filename.lower().endswith(('.pdf', '.txt')):
-        return False
-
-    # Por padrão, outros arquivos requerem autenticação
-    return True
 
 
 @app.delete("/materials/{filename}")
@@ -2358,7 +2344,7 @@ async def startup_event():
         logger.info("🔑 OpenAI API key found, initializing RAG handler...")
         try:
             rag_handler = RAGHandler(api_key=openai_api_key)
-            rag_handler.process_and_initialize("data/materials")
+            rag_handler.process_documents()
             logger.info("✅ RAG handler initialized successfully.")
         except Exception as e:
             logger.error(f"❌ Failed to initialize RAG handler: {e}")

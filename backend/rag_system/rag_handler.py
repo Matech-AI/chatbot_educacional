@@ -2,710 +2,410 @@ import os
 import logging
 import openai
 import time
+import hashlib
+import json
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass, field
 from pydantic import BaseModel
+import pandas as pd
 
 from langchain_chroma import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.document_loaders.text import TextLoader
-from langchain_community.document_loaders import UnstructuredExcelLoader
-from langchain_community.document_loaders.directory import DirectoryLoader
-
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.prompts import PromptTemplate, ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
-from langchain.load import dumps, loads
-from operator import itemgetter
-
-
-# Configure enhanced logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+from langchain_community.document_loaders import (
+    PyPDFLoader,
+    TextLoader,
+    UnstructuredExcelLoader,
+    DirectoryLoader,
 )
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_core.documents import Document
+from langchain.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain.load import dumps, loads
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-
 @dataclass
-class ProcessingConfig:
-    """Configuration for document processing"""
-    chunk_size: int = 2000
-    chunk_overlap: int = 200
+class RAGConfig:
+    """Unified configuration for the RAG handler."""
+    # Text processing
+    chunk_size: int = 1500
+    chunk_overlap: int = 300
+    
+    # Model configuration
     model_name: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-ada-002"
-    temperature: float = 0.7
-    max_tokens: int = 500
-    use_rag_fusion: bool = False
+    temperature: float = 0.2
+    max_tokens: int = 800
+    
+    # Retrieval configuration
+    retrieval_search_type: str = "mmr"
+    retrieval_k: int = 6
+    retrieval_fetch_k: int = 20
+    retrieval_lambda_mult: float = 0.7
+    
+    # Educational features (can be toggled)
+    enable_educational_features: bool = True
+    generate_learning_objectives: bool = True
+    extract_key_concepts: bool = True
+    identify_prerequisites: bool = True
+    assess_difficulty_level: bool = True
+    create_summaries: bool = True
 
-
-class AssistantConfigModel(BaseModel):
-    """Data model for assistant configuration."""
-    name: str = "Assistente Padrão"
-    description: str = "Um assistente de IA geral."
-    prompt: str = "Você é um assistente de IA. Responda à pergunta com base no contexto fornecido."
-    model: str = "gpt-4o-mini"
-    temperature: float = 0.1
-    # Os campos a seguir não são usados diretamente na geração de resposta, mas fazem parte do modelo
-    chunkSize: int = 2000
-    chunkOverlap: int = 200
-    retrievalSearchType: str = "mmr"
-    embeddingModel: str = "text-embedding-ada-002"
-
-@dataclass
-class Source:
-    """Source document information"""
+class Source(BaseModel):
+    """Unified source model for RAG content."""
     title: str
     source: str
-    page: Optional[int]
+    page: Optional[int] = None
     chunk: str
-
+    content_type: str = "text"
+    difficulty_level: str = "intermediate"
+    key_concepts: List[str] = []
+    summary: str = ""
+    relevance_score: float = 0.0
+    educational_value: float = 0.0
 
 class RAGHandler:
     """
-    Handles Retrieval Augmented Generation (RAG) for the DNA da Força assistant.
-    Enhanced version with detailed logging and error handling.
+    Unified RAG handler with configurable educational enhancements.
     """
-
     def __init__(
         self,
         api_key: str,
-        config: Optional[ProcessingConfig] = None,
+        config: Optional[RAGConfig] = None,
         persist_dir: Optional[str] = None,
+        materials_dir: str = "data/materials",
     ):
-        """
-        Initialize the RAG handler.
-
-        Args:
-            api_key: OpenAI API key
-            config: Processing configuration
-            persist_dir: Directory to persist ChromaDB. Defaults to 'backend/.chromadb'
-        """
-        logger.info("🚀 Initializing RAG handler...")
-
+        logger.info("🚀 Initializing Unified RAG Handler...")
+        
         self.api_key = api_key
         openai.api_key = self.api_key
-        self.config = config or ProcessingConfig()
-
+        self.config = config or RAGConfig()
+        
+        # Setup directories
         if persist_dir:
             self.persist_dir = persist_dir
         else:
-            # Default to .chromadb inside the backend directory
-            backend_dir = Path(__file__).parent
-            self.persist_dir = str(backend_dir / ".chromadb")
-
-        # Initialize components
-        self.documents = []
-        self.chunks = []
-        self.vector_store = None
-        self.embeddings = None
-        self.chain = None
-
-        # Validate API key
-        if not api_key or len(api_key) < 10:
-            logger.error("❌ Invalid OpenAI API key provided")
-            raise ValueError("Valid OpenAI API key is required")
-
-        logger.info(f"🔑 API key validated (length: {len(api_key)})")
-        logger.info(f"⚙️ Configuration: {self.config}")
-
-        # Set up ChromaDB
-        self._setup_chromadb()
-
-        self._setup_chain()
-
-        logger.info("✅ RAG handler initialized successfully")
-
-    def update_config(self, new_config: ProcessingConfig) -> None:
-        """
-        Update the RAG handler's configuration dynamically.
-
-        Args:
-            new_config: The new processing configuration.
-        """
-        logger.info(f"🔄 Updating RAG handler configuration to: {new_config}")
-        self.config = new_config
+            backend_dir = Path(__file__).parent.parent
+            self.persist_dir = str(backend_dir / "data" / "chromadb_unified")
         
-        # Re-initialize components that depend on the configuration
+        self.materials_dir = Path(materials_dir)
+        
+        # Initialize components
+        self.embeddings: Optional[OpenAIEmbeddings] = None
+        self.llm: Optional[ChatOpenAI] = None
+        self.vector_store: Optional[Chroma] = None
+        self.retriever = None
+        
+        # Caches for educational features
+        self.concept_cache: Dict[str, List[str]] = {}
+        self.difficulty_cache: Dict[str, str] = {}
+        self.summary_cache: Dict[str, str] = {}
+        
+        self.course_structure: Optional[pd.DataFrame] = None
+        
+        self._initialize_components()
+        logger.info("✅ Unified RAG Handler initialized successfully")
+
+    def _initialize_components(self):
+        """Initialize all necessary components."""
+        self._initialize_embeddings()
+        self._initialize_llm()
+        self._initialize_vector_store()
+        self._setup_retriever()
+        self.load_course_structure()
+
+    def _initialize_embeddings(self):
         try:
-            try:
-                self.embeddings = OpenAIEmbeddings(
-                    model=self.config.embedding_model
-                )
-                self.llm = ChatOpenAI(
-                    model=self.config.model_name,
-                    temperature=self.config.temperature
-                )
-            except openai.AuthenticationError:
-                logger.error("❌ Invalid OpenAI API key provided.")
-                raise ValueError("Invalid OpenAI API key provided.")
-            logger.info("✅ Components re-initialized with new configuration")
-        except Exception as e:
-            logger.error(f"❌ Error re-initializing components with new config: {e}")
-            # Optionally, revert to old config or handle the error appropriately
-            raise
-
-    def _setup_chromadb(self) -> None:
-        """Set up ChromaDB using langchain-chroma with persistence."""
-        try:
-            logger.info("🗄️ Setting up ChromaDB with langchain-chroma...")
-            logger.info(f"📁 Persist directory: {self.persist_dir}")
-
-            # Create persist directory if it doesn't exist
-            os.makedirs(self.persist_dir, exist_ok=True)
-            logger.info("✅ Persist directory created/verified")
-
-            # Initialize embeddings
-            try:
-                self.embeddings = OpenAIEmbeddings(
-                    model=self.config.embedding_model
-                )
-            except openai.AuthenticationError:
-                logger.error("❌ Invalid OpenAI API key provided.")
-                raise ValueError("Invalid OpenAI API key provided.")
-            logger.info(
-                f"✅ OpenAI embeddings initialized with model: {self.config.embedding_model}")
-
-            # Initialize Chroma vector store
-            self.vector_store = Chroma(
-                collection_name="materials",
-                embedding_function=self.embeddings,
-                persist_directory=self.persist_dir,
+            self.embeddings = OpenAIEmbeddings(
+                model=self.config.embedding_model,
+                api_key=self.api_key
             )
-
-            existing_count = self.vector_store._collection.count()
-            logger.info(
-                f"📊 Collection 'materials' loaded with {existing_count} documents.")
-
-            logger.info("✅ ChromaDB setup completed successfully")
-
+            logger.info(f"✅ Embeddings initialized: {self.config.embedding_model}")
         except Exception as e:
-            logger.error(f"❌ Error setting up ChromaDB: {str(e)}")
-            logger.error(f"❌ Error type: {type(e).__name__}")
+            logger.error(f"❌ Failed to initialize embeddings: {e}")
             raise
 
-    def process_and_initialize(self, docs_dir: str) -> Tuple[bool, List[str]]:
-        """
-        Complete processing and initialization pipeline.
-
-        Args:
-            docs_dir: Directory containing documents
-
-        Returns:
-            Tuple of (success, status messages)
-        """
-        logger.info(
-            f"🚀 Starting complete RAG processing for directory: {docs_dir}")
-        status_messages = []
-
+    def _initialize_llm(self):
         try:
-            # Step 1: Process documents
-            success, messages = self.add_documents(docs_dir)
-            status_messages.extend(messages)
-
-            if not success:
-                logger.error("❌ Document processing failed")
-                return False, status_messages
-
-            # Step 2: Initialize if we have documents
-            if len(self.chunks) > 0:
-                logger.info("🧠 Initializing conversation chain...")
-                self._setup_chain()
-                status_messages.append("✓ Conversation chain initialized")
-                logger.info("✅ RAG system fully initialized and ready")
-                return True, status_messages
-            else:
-                logger.warning("⚠️ No documents found to process")
-                status_messages.append("⚠️ No documents found to process")
-                return False, status_messages
-
+            self.llm = ChatOpenAI(
+                model=self.config.model_name,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+                api_key=self.api_key
+            )
+            logger.info(f"✅ LLM initialized: {self.config.model_name}")
         except Exception as e:
-            error_msg = f"Error in complete initialization: {str(e)}"
-            logger.error(f"❌ {error_msg}")
-            status_messages.append(f"✗ {error_msg}")
-            return False, status_messages
+            logger.error(f"❌ Failed to initialize LLM: {e}")
+            raise
 
-    def add_documents(self, docs_dir: str) -> Tuple[bool, List[str]]:
-        """
-        Add documents from the specified directory with enhanced logging.
-
-        Args:
-            docs_dir: Directory containing documents
-
-        Returns:
-            Tuple of (success, status messages)
-        """
-        logger.info(f"📂 Processing documents from: {docs_dir}")
-        status_messages = []
-
-        # Reset document lists for this processing run
-        self.documents = []
-        self.chunks = []
-        logger.info("🧹 Cleared internal document and chunk lists for a fresh run.")
-
+    def _initialize_vector_store(self):
         try:
-            # Verify directory exists
-            docs_path = Path(docs_dir)
-            if not docs_path.exists():
-                logger.error(f"❌ Directory does not exist: {docs_dir}")
-                status_messages.append(f"✗ Directory not found: {docs_dir}")
-                return False, status_messages
-
-            logger.info(f"✅ Directory exists: {docs_path.absolute()}")
-
-            # Count files before processing
-            all_files = list(docs_path.rglob("*"))
-            doc_files = [f for f in all_files if f.is_file() and f.suffix.lower() in [
-                '.pdf', '.txt', '.docx', '.xlsx']]
-
-            logger.info(
-                f"📊 Found {len(all_files)} total files, {len(doc_files)} processable documents")
-
-            if len(doc_files) == 0:
-                logger.warning("⚠️ No processable documents found")
-                status_messages.append("⚠️ No documents found to process")
-                return False, status_messages
-
-            # List found files
-            for file in doc_files:
-                logger.info(
-                    f"📄 Found: {file.name} ({file.stat().st_size} bytes)")
-
-            # Import documents
-            status_messages.append("📥 Importing documents...")
-            self._import_documents(docs_dir)
-            status_messages.append(
-                f"✓ Imported {len(self.documents)} documents")
-            logger.info(f"✅ Imported {len(self.documents)} documents")
-
-            if len(self.documents) == 0:
-                logger.warning("⚠️ No documents were successfully imported")
-                status_messages.append(
-                    "⚠️ No documents were successfully imported")
-                return False, status_messages
-
-            # Split into chunks
-            status_messages.append("✂️ Splitting documents into chunks...")
-            self._split_documents()
-            status_messages.append(f"✓ Created {len(self.chunks)} chunks")
-            logger.info(f"✅ Created {len(self.chunks)} chunks")
-
-            # Generate embeddings and store in ChromaDB
-            status_messages.append("🧠 Generating embeddings...")
-            # self._store_embeddings()
-            status_messages.append("✓ Embeddings generated and stored")
-            logger.info("✅ Embeddings stored in ChromaDB")
-
-            return True, status_messages
-
+            os.makedirs(self.persist_dir, exist_ok=True)
+            self.vector_store = Chroma(
+                persist_directory=self.persist_dir,
+                embedding_function=self.embeddings
+            )
+            logger.info(f"✅ Vector store loaded/created at {self.persist_dir}")
         except Exception as e:
-            error_msg = f"Error processing documents: {str(e)}"
-            logger.error(f"❌ {error_msg}")
-            logger.error(f"❌ Error type: {type(e).__name__}")
-            status_messages.append(f"✗ {error_msg}")
-            return False, status_messages
+            logger.error(f"❌ Failed to initialize vector store: {e}")
+            raise
 
-    def _import_documents(self, docs_dir: str) -> None:
-        """Import documents from directory with enhanced error handling"""
-        logger.info(f"📥 Importing documents from: {docs_dir}")
+    def _setup_retriever(self):
+        if self.vector_store:
+            self.retriever = self.vector_store.as_retriever(
+                search_type=self.config.retrieval_search_type,
+                search_kwargs={
+                    "k": self.config.retrieval_k,
+                    "fetch_k": self.config.retrieval_fetch_k,
+                    "lambda_mult": self.config.retrieval_lambda_mult,
+                },
+            )
+            logger.info("✅ Retriever configured")
 
-        if not os.path.exists(docs_dir):
-            raise ValueError(f"Directory not found: {docs_dir}")
-
-        # Define loaders with error handling
-        loaders = {
-            "**/*.pdf": PyPDFLoader,
-            "**/*.txt": TextLoader,
-        }
-
-        # Try to add DOCX support
+    def load_course_structure(self, spreadsheet_path: str = "data/catalog.xlsx"):
+        """Load and process the course structure from a spreadsheet."""
         try:
-            from langchain_community.document_loaders import Docx2txtLoader
-            loaders["**/*.docx"] = Docx2txtLoader
-            logger.info("✅ DOCX support enabled")
-        except ImportError:
-            logger.warning(
-                "⚠️ DOCX support not available - install python-docx if needed")
+            spreadsheet_file = Path(spreadsheet_path)
+            if not spreadsheet_file.exists():
+                logger.warning(f"Spreadsheet not found at {spreadsheet_path}. Skipping course structure loading.")
+                return
 
-        # Try to add XLSX support
-        try:
-            from langchain_community.document_loaders import UnstructuredExcelLoader
-            loaders["**/*.xlsx"] = UnstructuredExcelLoader
-            logger.info("✅ XLSX support enabled")
-        except ImportError:
-            logger.warning(
-                "⚠️ XLSX support not available - install openpyxl if needed")
+            self.course_structure = pd.read_excel(spreadsheet_file)
+            self.course_structure.columns = [col.strip() for col in self.course_structure.columns]
+            required_columns = ['Código', 'Módulo', 'Aula', 'Nome da Aula', 'Resumo da Aula']
+            if not all(col in self.course_structure.columns for col in required_columns):
+                logger.error("Spreadsheet is missing required columns.")
+                self.course_structure = None
+                return
+            
+            self.course_structure['Código_normalized'] = self.course_structure['Código'].str.strip().str.lower()
+            logger.info(f"✅ Course structure loaded from {spreadsheet_path}.")
+        except Exception as e:
+            logger.error(f"Failed to load course structure: {e}")
+            self.course_structure = None
 
-        # Process each file type
-        for glob_pattern, loader_class in loaders.items():
-            try:
-                logger.info(f"🔍 Processing {glob_pattern} files...")
-                loader = DirectoryLoader(
-                    docs_dir,
-                    glob=glob_pattern,
-                    loader_cls=loader_class,
-                    recursive=True
-                )
+    def process_documents(self, force_reprocess: bool = False) -> bool:
+        """Process all documents with optional educational enhancements."""
+        logger.info("📚 Starting document processing...")
+        
+        if not self.materials_dir.exists():
+            logger.error(f"❌ Materials directory not found: {self.materials_dir}")
+            return False
+        
+        if not self.vector_store:
+            self._initialize_vector_store()
 
-                docs = loader.load()
-                if docs:
-                    self.documents.extend(docs)
-                    logger.info(
-                        f"✅ Loaded {len(docs)} documents from {glob_pattern}")
-                else:
-                    logger.info(f"ℹ️ No documents found for {glob_pattern}")
+        if not force_reprocess and self.vector_store._collection.count() > 0:
+            logger.info("📋 Documents already processed. Use force_reprocess=True to reprocess.")
+            return True
+        
+        if force_reprocess and self.vector_store._collection.count() > 0:
+            logger.info("🗑️ Clearing existing documents for reprocessing...")
+            ids = self.vector_store.get()["ids"]
+            if ids:
+                self.vector_store.delete(ids)
 
-            except Exception as e:
-                logger.error(f"❌ Error loading {glob_pattern}: {str(e)}")
-                continue
+        # Load documents
+        documents = self._load_all_documents()
+        if not documents:
+            logger.warning("⚠️ No documents found to process")
+            return False
 
-        # Add enhanced metadata
-        for idx, doc in enumerate(self.documents):
-            doc.metadata.update({
-                "doc_id": idx,
-                "filename": Path(doc.metadata["source"]).name,
-                "filetype": Path(doc.metadata["source"]).suffix[1:].lower(),
-                "imported_at": time.time()
-            })
+        # Enhance documents if enabled
+        if self.config.enable_educational_features:
+            logger.info("🎓 Enhancing documents with educational metadata...")
+            enhanced_documents = [self._enhance_document(doc) for doc in documents]
+        else:
+            enhanced_documents = documents
 
-        logger.info(f"✅ Total documents imported: {len(self.documents)}")
-
-    def _split_documents(self) -> None:
-        """Split documents into chunks with logging"""
-        logger.info("✂️ Splitting documents into chunks...")
-        logger.info(
-            f"⚙️ Chunk size: {self.config.chunk_size}, Overlap: {self.config.chunk_overlap}")
-
-        splitter = RecursiveCharacterTextSplitter(
+        # Split documents
+        text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.config.chunk_size,
             chunk_overlap=self.config.chunk_overlap,
-            separators=["\n\n", "\n", ".", " ", ""]
         )
+        splits = text_splitter.split_documents(enhanced_documents)
+        logger.info(f"🔪 Split into {len(splits)} chunks")
 
-        self.chunks = splitter.split_documents(self.documents)
-
-        # Add chunk IDs and enhanced metadata
-        for idx, chunk in enumerate(self.chunks):
-            chunk.metadata["chunk_id"] = idx
-            chunk.metadata["chunk_size"] = len(chunk.page_content)
-            chunk.metadata["created_at"] = time.time()
-
-        logger.info(f"✅ Documents split into {len(self.chunks)} chunks")
-
-        # Log chunk statistics
-        if self.chunks:
-            sizes = [len(chunk.page_content) for chunk in self.chunks]
-            avg_size = sum(sizes) / len(sizes)
-            logger.info(
-                f"📊 Chunk stats - Min: {min(sizes)}, Max: {max(sizes)}, Avg: {avg_size:.0f}")
-
-    def _store_embeddings(self) -> None:
-        """
-        Store document chunks in ChromaDB, ensuring no duplicates by deleting
-        existing chunks for the same source files before adding new ones.
-        """
-        logger.info("🗄️ Storing embeddings in ChromaDB...")
-
-        if not self.chunks:
-            logger.warning("⚠️ No chunks to store. Skipping embedding process.")
-            return
-
-        if not self.vector_store:
-            logger.error("❌ Vector store not initialized. Skipping embedding process.")
-            raise ValueError("Vector store not initialized")
-
-        # Get unique source file paths from the new chunks
-        source_files = list(set(chunk.metadata['source'] for chunk in self.chunks))
-        logger.info(f"🔄 Updating embeddings for {len(source_files)} source files.")
-
+        # Add to vector store
         try:
-            # Find and delete existing chunks for these source files
-            if source_files:
-                existing_chunks = self.vector_store._collection.get(
-                    where={"source": {"$in": source_files}}
-                )
-                existing_ids = existing_chunks.get('ids', [])
-
-                if existing_ids:
-                    logger.info(f"🗑️ Found {len(existing_ids)} existing chunks to remove for updated files.")
-                    self.vector_store._collection.delete(ids=existing_ids)
-                    logger.info(f"✅ Removed existing chunks.")
-                else:
-                    logger.info("ℹ️ No existing chunks found for these files. Adding new ones.")
-
-            # Add the new chunks
-            logger.info(f"📤 Storing {len(self.chunks)} new chunks...")
-            self.vector_store.add_documents(self.chunks)
-            logger.info(f"✅ Successfully stored {len(self.chunks)} new chunks.")
-
-            # Verify storage
-            count = self.vector_store._collection.count()
-            logger.info(f"📊 Collection now contains {count} documents")
-
+            if self.vector_store:
+                self.vector_store.add_documents(splits)
+            logger.info(f"✅ Added {len(splits)} document chunks to vector store")
+            self._setup_retriever()
+            return True
         except Exception as e:
-            logger.error(f"❌ Error storing embeddings: {str(e)}")
-            raise
+            logger.error(f"❌ Failed to add documents to vector store: {e}")
+            return False
 
-    def _setup_chain(self) -> None:
-        """Set up the components for the RAG-Fusion conversation chain."""
-        logger.info("🔗 Setting up RAG-Fusion components...")
-
-        try:
-            # Initialize LLM
+    def _load_all_documents(self) -> List[Document]:
+        """Load all supported document types from the materials directory."""
+        documents = []
+        file_patterns = {
+            "**/*.pdf": PyPDFLoader,
+            "**/*.txt": TextLoader,
+            "**/*.xlsx": UnstructuredExcelLoader,
+        }
+        for pattern, loader_class in file_patterns.items():
             try:
-                self.llm = ChatOpenAI(
-                    model=self.config.model_name,
-                    temperature=self.config.temperature
+                loader = DirectoryLoader(
+                    str(self.materials_dir),
+                    glob=pattern,
+                    loader_cls=loader_class,
+                    show_progress=True,
+                    use_multithreading=True,
                 )
-            except openai.AuthenticationError:
-                logger.error("❌ Invalid OpenAI API key provided.")
-                raise ValueError("Invalid OpenAI API key provided.")
-            logger.info("✅ LLM initialized")
+                documents.extend(loader.load())
+            except Exception as e:
+                logger.warning(f"⚠️ Error loading {pattern}: {e}")
+        logger.info(f"📄 Loaded {len(documents)} total documents.")
+        return documents
 
-            # RAG-Fusion: Query Generation Prompt
-            query_gen_template = """You are a helpful assistant that generates multiple search queries based on a single input query.
-Generate multiple search queries related to: {question}
-Output (4 queries):"""
-            self.query_gen_prompt = ChatPromptTemplate.from_template(
-                query_gen_template)
+    def _enhance_document(self, doc: Document) -> Document:
+        """Enhance a single document with educational metadata."""
+        source_path = doc.metadata.get('source', '')
+        content_type = self._analyze_content_type(source_path)
+        
+        enhanced_metadata = {
+            **doc.metadata,
+            'content_type': content_type,
+            'processed_at': time.time(),
+        }
 
-            # Final RAG Chain Prompt
-            answer_template = """{prompt}
+        if self.course_structure is not None:
+            filename_stem = Path(source_path).stem.lower()
+            match = self.course_structure[self.course_structure['Código_normalized'].apply(lambda x: x in filename_stem)]
+            if not match.empty:
+                course_data = match.iloc[0]
+                enhanced_metadata.update({
+                    'course_code': course_data['Código'],
+                    'class_name': course_data['Nome da Aula'],
+                })
 
-Context:
-{context}
+        if len(doc.page_content) > 100:
+            if self.config.extract_key_concepts:
+                enhanced_metadata['key_concepts'] = self._extract_key_concepts(doc.page_content)
+            if self.config.assess_difficulty_level:
+                enhanced_metadata['difficulty_level'] = self._assess_difficulty_level(doc.page_content)
+            if self.config.create_summaries:
+                enhanced_metadata['summary'] = self._create_content_summary(doc.page_content)
+        
+        return Document(page_content=doc.page_content, metadata=enhanced_metadata)
 
-Question: {question}
-"""
-            self.answer_prompt = ChatPromptTemplate.from_template(answer_template)
+    def _analyze_content_type(self, file_path: str) -> str:
+        ext = Path(file_path).suffix.lower()
+        if ext == ".pdf":
+            return "document"
+        if ext in [".xlsx", ".csv"]:
+            return "data"
+        return "text"
 
-            self.chain = True  # Mark as initialized
-            logger.info("✅ RAG-Fusion components created successfully")
-
+    def _run_llm_feature(self, text: str, cache: Dict, prompt_template: str, feature_name: str, result_parser) -> Any:
+        """Generic method to run an LLM-based feature with caching."""
+        text_hash = hashlib.md5(text.encode()).hexdigest()
+        if text_hash in cache:
+            return cache[text_hash]
+        
+        try:
+            prompt = ChatPromptTemplate.from_template(prompt_template)
+            chain = prompt | self.llm | StrOutputParser()
+            result = chain.invoke({"text": text[:2000]})
+            parsed_result = result_parser(result)
+            cache[text_hash] = parsed_result
+            return parsed_result
         except Exception as e:
-            logger.error(
-                f"❌ Error setting up conversation chain components: {str(e)}")
-            logger.error(f"❌ Error type: {type(e).__name__}")
-            self.chain = None
-            raise
+            logger.warning(f"Failed to run feature '{feature_name}': {e}")
+            return None
 
-    def generate_response(
-        self,
-        question: str,
-        material_ids: Optional[List[str]] = None,
-        config: Optional[AssistantConfigModel] = None
-    ) -> Dict[str, Any]:
-        """
-        Generate a response using the RAG system. If a config is provided,
-        it uses a temporary chain for the request.
+    def _extract_key_concepts(self, text: str) -> List[str]:
+        prompt = "Analise o seguinte texto e extraia os principais conceitos (máximo 8), separados por vírgula.\n\nTexto: {text}\n\nConceitos:"
+        return self._run_llm_feature(text, self.concept_cache, prompt, "extract_concepts", lambda r: [c.strip() for c in r.split(',') if c.strip()][:8]) or []
 
-        Args:
-            question: User question.
-            material_ids: Optional list of source material IDs to filter by.
-            config: Optional assistant configuration for this specific request.
+    def _assess_difficulty_level(self, text: str) -> str:
+        prompt = "Analise o texto e classifique o nível como 'beginner', 'intermediate', ou 'advanced'.\n\nTexto: {text}\n\nNível:"
+        level = self._run_llm_feature(text, self.difficulty_cache, prompt, "assess_difficulty", lambda r: r.strip().lower())
+        return level if level in ['beginner', 'intermediate', 'advanced'] else 'intermediate'
 
-        Returns:
-            Dictionary containing answer, sources, and response time.
-        """
-        if not self.chain or not self.vector_store:
-            logger.error("❌ System not properly initialized")
-            return {
-                "answer": "Sistema não inicializado corretamente. Execute a inicialização primeiro.",
-                "sources": [],
-                "response_time": 0
-            }
+    def _create_content_summary(self, text: str) -> str:
+        prompt = "Crie um resumo conciso (máximo 3 frases) do texto a seguir.\n\nTexto: {text}\n\nResumo:"
+        return self._run_llm_feature(text, self.summary_cache, prompt, "create_summary", lambda r: r.strip()) or ""
+
+    def generate_response(self, question: str, user_level: str = "intermediate") -> Dict[str, Any]:
+        """Generate a response using the RAG system."""
+        if not self.retriever:
+            return {"answer": "System not ready.", "sources": []}
 
         try:
-            logger.info(f"💭 Generating response for: '{question[:50]}...'")
-            if material_ids:
-                logger.info(f"🔍 Filtering by {len(material_ids)} material(s).")
-            start_time = time.time()
-
-            # Determine which LLM and prompt to use
-            if config:
-                logger.info(f"⚡ Using temporary config for this request: {config.name}")
-                # Create a temporary LLM instance for this request
-                temp_llm = ChatOpenAI(
-                    model=config.model,
-                    temperature=config.temperature
+            docs = self.retriever.get_relevant_documents(question)
+            
+            sources = []
+            for doc in docs:
+                source = Source(
+                    title=doc.metadata.get('title', Path(doc.metadata.get('source', '')).name),
+                    source=doc.metadata.get('source', ''),
+                    page=doc.metadata.get('page'),
+                    chunk=doc.page_content,
+                    content_type=doc.metadata.get('content_type', 'text'),
+                    difficulty_level=doc.metadata.get('difficulty_level', 'intermediate'),
+                    key_concepts=doc.metadata.get('key_concepts', []),
+                    summary=doc.metadata.get('summary', ''),
                 )
-                # Use the prompt from the provided config
-                final_prompt = self.answer_prompt.partial(prompt=config.prompt)
-            else:
-                # Fallback to the handler's default LLM and a generic prompt
-                temp_llm = self.llm
-                final_prompt = self.answer_prompt.partial(
-                    prompt="Você é um assistente de IA. Responda à pergunta com base no contexto fornecido."
-                )
-
-
-            # Determine retrieval strategy based on the feature flag
-            if self.config.use_rag_fusion:
-                logger.info("🔥 Using RAG-Fusion strategy.")
-                # 1. Generate multiple queries
-                query_gen_chain = (
-                    self.query_gen_prompt
-                    | self.llm
-                    | StrOutputParser()
-                    | (lambda x: [q.strip() for q in x.split("\n") if q.strip()])
-                )
-                generated_queries = query_gen_chain.invoke({"question": question})
-                logger.info(f"🔍 Generated {len(generated_queries)} queries for RAG-Fusion.")
-
-                # 2. Retrieve documents for each query
-                search_kwargs: Dict[str, Any] = {'k': 5}
-                if material_ids:
-                    search_kwargs['filter'] = {"source": {"$in": material_ids}}
-                
-                retriever = self.vector_store.as_retriever(search_kwargs=search_kwargs)
-                
-                retrieved_docs_lists = [retriever.invoke(q) for q in generated_queries]
-                
-                # 3. Rerank documents using Reciprocal Rank Fusion
-                fused_results = reciprocal_rank_fusion(retrieved_docs_lists)
-                logger.info(f"🔄 Reranked {len(fused_results)} documents.")
-                
-                # Extract documents from fused results
-                final_docs = [doc for doc, score in fused_results]
-
-            else:
-                logger.info("🌿 Using standard hybrid search strategy.")
-                # Standard retrieval
-                search_kwargs: Dict[str, Any] = {'k': 10} # Retrieve more to ensure good context
-                if material_ids:
-                    search_kwargs['filter'] = {"source": {"$in": material_ids}}
-                
-                retriever = self.vector_store.as_retriever(search_kwargs=search_kwargs)
-                final_docs = retriever.invoke(question)
-                logger.info(f"🔍 Retrieved {len(final_docs)} documents with standard search.")
-
-            # 4. Format context and extract sources from the final list of documents
-            context = "\n\n".join([doc.page_content for doc in final_docs[:5]])
-
-            unique_sources = []
-            seen_sources = set()
-            for doc in final_docs[:5]:
-                source_path = doc.metadata.get('source')
-                if source_path and source_path not in seen_sources:
-                    unique_sources.append({
-                        "title": doc.metadata.get('filename', Path(source_path).name),
-                        "source": source_path,
-                        "page": doc.metadata.get('page'),
-                        "chunk": doc.page_content
-                    })
-                    seen_sources.add(source_path)
-
-            # 5. Generate final answer using the selected LLM and prompt
-            answer_chain = final_prompt | temp_llm | StrOutputParser()
-            answer = answer_chain.invoke({"context": context, "question": question})
-
-            response_time = time.time() - start_time
-            logger.info(f"✅ Response generated in {response_time:.2f}s")
-
-            return {
-                "answer": answer,
-                "sources": unique_sources,
-                "response_time": response_time
-            }
-
+                source.educational_value = self._calculate_educational_value(source, user_level)
+                sources.append(source)
+            
+            sources.sort(key=lambda x: x.educational_value, reverse=True)
+            
+            context = "\n\n".join([s.chunk for s in sources])
+            
+            prompt_template = "Responda à pergunta com base no contexto a seguir.\n\nContexto: {context}\n\nPergunta: {question}"
+            prompt = ChatPromptTemplate.from_template(prompt_template)
+            
+            chain = prompt | self.llm | StrOutputParser()
+            answer = chain.invoke({"context": context, "question": question})
+            
+            return {"answer": answer, "sources": [s.dict() for s in sources]}
         except Exception as e:
-            logger.error(f"❌ Error generating response: {str(e)}")
-            logger.error(f"❌ Error type: {type(e).__name__}")
-            return {
-                "answer": "Ocorreu um erro ao gerar a resposta. Verifique os logs para mais detalhes.",
-                "sources": [],
-                "response_time": 0
-            }
+            logger.error(f"Error generating response: {e}")
+            return {"answer": "Error generating response.", "sources": []}
+
+    def _calculate_educational_value(self, source: Source, user_level: str) -> float:
+        """Calculate educational value score for a source."""
+        score = 0.5
+        if source.difficulty_level == user_level:
+            score += 0.3
+        if source.key_concepts:
+            score += 0.1
+        if source.summary:
+            score += 0.1
+        return min(1.0, score)
 
     def get_system_stats(self) -> Dict[str, Any]:
-        """Get system statistics for debugging"""
+        """Get system statistics for debugging."""
         try:
-            stats = {
-                "documents_loaded": len(self.documents),
-                "chunks_created": len(self.chunks),
-                "collection_count": self.vector_store._collection.count() if self.vector_store else 0,
-                "chain_initialized": self.chain is not None,
-                "retriever_available": hasattr(self, 'retriever'),
-                "config": {
-                    "model_name": self.config.model_name,
-                    "chunk_size": self.config.chunk_size,
-                    "chunk_overlap": self.config.chunk_overlap,
-                    "temperature": self.config.temperature
-                }
+            return {
+                "vector_store_count": self.vector_store._collection.count() if self.vector_store else 0,
+                "config": self.config.__dict__,
             }
-
-            if self.documents:
-                file_types = {}
-                for doc in self.documents:
-                    file_type = doc.metadata.get("filetype", "unknown")
-                    file_types[file_type] = file_types.get(file_type, 0) + 1
-                stats["file_types"] = file_types
-
-            return stats
-
         except Exception as e:
             logger.error(f"❌ Error getting system stats: {e}")
             return {"error": str(e)}
 
-    def reset(self) -> None:
-        """Reset the handler state with logging"""
+    def reset(self):
+        """Reset the handler state."""
         logger.info("🔄 Resetting RAG handler...")
-
         try:
-            self.documents = []
-            self.chunks = []
-
             if self.vector_store:
-                try:
-                    # To delete all items, get all IDs first, then delete by ID
-                    collection_items = self.vector_store._collection.get()
-                    if collection_items and collection_items['ids']:
-                        self.vector_store._collection.delete(ids=collection_items['ids'])
-                        logger.info(f"🧹 Cleared {len(collection_items['ids'])} items from collection")
-                    else:
-                        logger.info("ℹ️ Collection is already empty.")
-                except Exception as e:
-                    logger.error(f"❌ Error clearing ChromaDB collection: {e}")
-
-            self.chain = None
-            if hasattr(self, 'retriever'):
-                delattr(self, 'retriever')
-
+                ids = self.vector_store.get()["ids"]
+                if ids:
+                    self.vector_store.delete(ids)
+            self.concept_cache.clear()
+            self.difficulty_cache.clear()
+            self.summary_cache.clear()
             logger.info("✅ RAG handler reset successfully")
-
         except Exception as e:
             logger.error(f"❌ Error resetting handler: {e}")
 
-
-def reciprocal_rank_fusion(results: list[list], k=60):
-    """ Reciprocal_rank_fusion that takes multiple lists of ranked documents
-        and an optional parameter k used in the RRF formula """
-
-    # Initialize a dictionary to hold fused scores for each unique document
-    fused_scores = {}
-
-    # Iterate through each list of ranked documents
-    for docs in results:
-        # Iterate through each document in the list, with its rank (position in the list)
-        for rank, doc in enumerate(docs):
-            # Convert the document to a string format to use as a key (assumes documents can be serialized to JSON)
-            doc_str = dumps(doc)
-            # If the document is not yet in the fused_scores dictionary, add it with an initial score of 0
-            if doc_str not in fused_scores:
-                fused_scores[doc_str] = 0
-            # Retrieve the current score of the document, if any
-            previous_score = fused_scores[doc_str]
-            # Update the score of the document using the RRF formula: 1 / (rank + k)
-            fused_scores[doc_str] += 1 / (rank + k)
-
-    # Sort the documents based on their fused scores in descending order to get the final reranked results
-    reranked_results = [
-        (loads(doc), score)
-        for doc, score in sorted(fused_scores.items(), key=lambda x: x[1], reverse=True)
-    ]
-
-    # Return the reranked results as a list of tuples, each containing the document and its fused score
-    return reranked_results
+__all__ = ['RAGHandler', 'RAGConfig', 'Source']
