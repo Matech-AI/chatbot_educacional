@@ -189,8 +189,7 @@ class EnhancedRAGHandler:
         path_lower = file_path.lower()
         if '.pdf' in path_lower:
             return 'research_paper' if any(keyword in path_lower for keyword in ['study', 'research', 'journal']) else 'document'
-        elif any(ext in path_lower for ext in ['.mp4', '.avi', '.mov']):
-            return 'video'
+        # Video files are no longer supported - they will be replaced by PDF files
         elif any(ext in path_lower for ext in ['.xlsx', '.xls', '.csv']):
             return 'data'
         elif any(ext in path_lower for ext in ['.png', '.jpg', '.jpeg']):

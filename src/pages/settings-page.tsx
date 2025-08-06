@@ -321,7 +321,7 @@ const SettingsPage: React.FC = () => {
                         e.target.value
                       )
                     }
-                    placeholder=".pdf,.docx,.txt,.mp4"
+                    placeholder=".pdf,.docx,.txt,.pptx"
                   />
                 </div>
               </div>

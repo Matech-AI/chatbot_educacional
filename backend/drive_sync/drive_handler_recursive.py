@@ -578,6 +578,12 @@ class RecursiveDriveHandler:
                 logger.warning(f"⏭️ Skipping Google Apps file: {filename}")
                 return None
 
+            # Skip video files - they will be replaced by PDF files with same name
+            video_extensions = ['.mp4', '.avi', '.mov', '.webm', '.mkv', '.flv', '.wmv']
+            if any(filename.lower().endswith(ext) for ext in video_extensions) or mime_type.startswith('video/'):
+                logger.info(f"⏭️ Skipping video file: {filename} (will be replaced by PDF)")
+                return None
+
             # Download file content
             file_content = None
             download_method = None

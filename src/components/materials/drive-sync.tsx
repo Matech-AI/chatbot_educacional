@@ -12,6 +12,7 @@ import {
   Eye,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuthStore } from "../../store/auth-store";
 
 interface DriveSyncProps {
   onSync: () => void;
@@ -39,6 +40,8 @@ interface DriveFile {
 }
 
 export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
+  const { user, isAuthenticated } = useAuthStore();
+  
   // Carregar valores do localStorage se disponíveis
   const [folderInput, setFolderInput] = useState(
     localStorage.getItem("lastDriveFolderId") || "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
@@ -82,6 +85,11 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
   };
 
   const testFolderAccess = async () => {
+    if (!isAuthenticated) {
+      setError("Você precisa estar logado para testar o acesso à pasta");
+      return;
+    }
+    
     setIsTesting(true);
     setError("");
     setSuccess("");
@@ -145,6 +153,11 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
   };
 
   const handleSync = async () => {
+    if (!isAuthenticated) {
+      setError("Você precisa estar logado para sincronizar arquivos");
+      return;
+    }
+    
     try {
       setError(null);
       setSuccess(null);
@@ -243,6 +256,17 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
+      {!isAuthenticated && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="h-5 w-5 text-yellow-600" />
+            <span className="text-yellow-800 font-medium">
+              Você precisa estar logado para usar esta funcionalidade
+            </span>
+          </div>
+        </div>
+      )}
+      
       <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
         <Cloud size={20} />
         Sincronizar com Google Drive
@@ -258,7 +282,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
             value={folderInput}
             onChange={handleInputChange}
             placeholder="Ex: 1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
-            disabled={isProcessing || isLoading || isTesting}
+            disabled={!isAuthenticated || isProcessing || isLoading || isTesting}
           />
           <p className="mt-1 text-xs text-gray-500">
             Cole o ID da pasta ou a URL completa do Google Drive
@@ -275,7 +299,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="Sua API Key do Google Drive"
-            disabled={isProcessing || isLoading || isTesting}
+            disabled={!isAuthenticated || isProcessing || isLoading || isTesting}
           />
           <p className="mt-1 text-xs text-gray-500">
             Necessário para pastas privadas. Deixe em branco para pastas
@@ -289,7 +313,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
             <Switch
               checked={downloadFiles}
               onCheckedChange={setDownloadFiles}
-              disabled={isProcessing || isLoading || isTesting}
+              disabled={!isAuthenticated || isProcessing || isLoading || isTesting}
               id="download-switch"
             />
             <label 
@@ -387,7 +411,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
           <Button
             onClick={testFolderAccess}
             disabled={
-              !folderInput.trim() || isLoading || isProcessing || isTesting
+              !isAuthenticated || !folderInput.trim() || isLoading || isProcessing || isTesting
             }
             isLoading={isTesting}
             variant="outline"
@@ -400,7 +424,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
           <Button
             onClick={handleSync}
             disabled={
-              !folderInput.trim() || isLoading || isProcessing || isTesting
+              !isAuthenticated || !folderInput.trim() || isLoading || isProcessing || isTesting
             }
             isLoading={isProcessing}
             className="flex-1 flex items-center justify-center gap-2"

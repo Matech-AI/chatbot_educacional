@@ -44,7 +44,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
     language: "pt-BR",
     timezone: "America/Sao_Paulo",
     maxFileSize: 50,
-    allowedFileTypes: ".pdf,.docx,.txt,.mp4,.avi,.mov,.pptx,.webm",
+    allowedFileTypes: ".pdf,.docx,.txt,.pptx",
   },
   security: {
     sessionTimeout: 180,

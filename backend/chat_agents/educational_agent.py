@@ -22,7 +22,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
 from auth.auth import User, get_current_user
-from video_processing.video_handler import get_video_handler
+# Video processing removed - videos will be replaced by PDF files
 
 # Set environment variables
 load_dotenv()
@@ -527,7 +527,7 @@ async def educational_chat(
     try:
         # Get educational agent
         agent = get_educational_agent()
-        video_handler = get_video_handler()
+        # Video handler removed - videos will be replaced by PDF files
 
         # Prepare learning preferences
         learning_preferences = {
@@ -567,35 +567,9 @@ async def educational_chat(
                 result["related_topics"][0] if result["related_topics"] else "")
 
             if search_topic:
-                # Get all video files from materials directory
-                materials_dir = Path("data/materials")
-                video_files = []
-
-                if materials_dir.exists():
-                    for file_path in materials_dir.rglob("*"):
-                        if file_path.is_file() and any(ext in file_path.suffix.lower() for ext in ['.mp4', '.avi', '.mov', '.webm']):
-                            video_files.append(str(file_path))
-
-                # Find videos related to each topic
-                # Check top 3 related topics
-                for topic in result["related_topics"][:3]:
-                    video_result = video_handler.find_video_for_topic(
-                        topic, video_files)
-                    if video_result:
-                        video_path, timestamp = video_result
-
-                        # Get video metadata
-                        metadata = video_handler.get_video_metadata(video_path)
-
-                        video_suggestions.append({
-                            "topic": topic,
-                            "video_path": str(Path(video_path).relative_to(materials_dir)) if materials_dir.exists() else video_path,
-                            "video_title": metadata.title,
-                            "start_timestamp": timestamp,
-                            "duration": metadata.duration,
-                            "difficulty_level": metadata.difficulty_level,
-                            "description": f"Vídeo relacionado ao tópico '{topic}'"
-                        })
+                # Video files are no longer supported - they will be replaced by PDF files
+                # Video suggestions functionality has been removed
+                pass
 
         except Exception as e:
             logger.warning(f"⚠️ Error searching for video suggestions: {e}")
@@ -617,12 +591,8 @@ async def educational_chat(
             "response_time": response_time
         }
 
-        # Add video suggestions if any found
-        if video_suggestions:
-            response_data["video_suggestions"] = video_suggestions
-            if "video_content" not in response_data["learning_suggestions"]:
-                response_data["learning_suggestions"].append(
-                    f"📹 {len(video_suggestions)} vídeo(s) relacionado(s) disponível(eis) para este tópico")
+        # Video suggestions functionality has been removed
+        # Videos will be replaced by PDF files with the same name
 
         return EducationalChatResponse(**response_data)
 

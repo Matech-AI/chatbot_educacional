@@ -165,9 +165,8 @@ def get_file_type(filename: str) -> str:
     """Get file type from filename"""
     mime_type, _ = mimetypes.guess_type(filename)
     if mime_type:
-        if mime_type.startswith('video/'):
-            return 'video'
-        elif mime_type == 'application/pdf':
+        # Video files are no longer supported - they will be replaced by PDF files
+        if mime_type == 'application/pdf':
             return 'pdf'
         elif mime_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword']:
             return 'docx'
@@ -175,9 +174,8 @@ def get_file_type(filename: str) -> str:
             return 'txt'
 
     ext = Path(filename).suffix.lower()
-    if ext in ['.mp4', '.avi', '.mov', '.webm']:
-        return 'video'
-    elif ext == '.pdf':
+    # Video extensions removed - videos will be replaced by PDF files
+    if ext == '.pdf':
         return 'pdf'
     elif ext in ['.docx', '.doc']:
         return 'docx'
@@ -2081,7 +2079,7 @@ async def upload_material(
         raise HTTPException(status_code=400, detail="File has no name")
 
     allowed_extensions = {'.pdf', '.docx', '.txt',
-                          '.mp4', '.avi', '.mov', '.pptx', '.webm'}
+                          '.pptx'}
     file_ext = Path(file.filename).suffix.lower()
 
     if file_ext not in allowed_extensions:
