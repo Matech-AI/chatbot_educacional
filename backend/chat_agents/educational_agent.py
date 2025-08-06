@@ -5,6 +5,7 @@ import time
 from typing import Annotated, TypedDict, List, Dict, Any, Optional
 from datetime import datetime
 from dotenv import load_dotenv
+import pandas as pd
 from pydantic import SecretStr, BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 from pathlib import Path
@@ -99,7 +100,9 @@ class EducationalAgent:
         self.graph = None
         self.memory = MemorySaver()
         self.learning_contexts: Dict[str, LearningContext] = {}
+        self.course_catalog: Optional[pd.DataFrame] = None
 
+        self._load_course_catalog()
         self._initialize_rag()
         self._initialize_model()
         self._build_graph()
@@ -118,6 +121,19 @@ class EducationalAgent:
             logger.info("✅ RAG Query Tool initialized successfully")
         except Exception as e:
             logger.error(f"Error initializing RAG: {e}")
+
+    def _load_course_catalog(self, path: str = "data/catalog.xlsx"):
+        """Loads the course catalog from an Excel file."""
+        try:
+            if os.path.exists(path):
+                self.course_catalog = pd.read_excel(path)
+                # Normalize column names for easier access
+                self.course_catalog.columns = [col.strip().lower() for col in self.course_catalog.columns]
+                logger.info("✅ Course catalog loaded successfully.")
+            else:
+                logger.warning(f"Course catalog not found at {path}. Video suggestions will be disabled.")
+        except Exception as e:
+            logger.error(f"Error loading course catalog: {e}")
 
     def _initialize_model(self):
         """Initialize the AI model with educational focus"""
@@ -342,6 +358,33 @@ class EducationalAgent:
                 learning_context.difficulty_level
             )
 
+            # Generate video suggestions based on sources
+            video_suggestions = []
+            if sources and self.course_catalog is not None:
+                video_codes = set()
+                for source in sources:
+                    # Extract video code like M01A01 from the source filename
+                    filename = Path(source.get("source", "")).stem
+                    if filename:
+                        # Handle cases where filename might not have '_'
+                        parts = filename.split('_')
+                        if parts:
+                            video_codes.add(parts[0].upper())
+                
+                for code in video_codes:
+                    # Ensure column name is correct
+                    if 'código' in self.course_catalog.columns:
+                        match = self.course_catalog[self.course_catalog['código'] == code]
+                        if not match.empty:
+                            video_info = match.iloc[0]
+                            video_suggestions.append({
+                                "topic": video_info.get('nome da aula', 'N/A'),
+                                "video_code": code,
+                                "summary": video_info.get('resumo da aula', ''),
+                                "module": video_info.get('módulo', 0),
+                                "class": video_info.get('aula', 0)
+                            })
+
             return {
                 "response": response_content,
                 "sources": sources,
@@ -349,7 +392,8 @@ class EducationalAgent:
                 "learning_suggestions": [],
                 "related_topics": [],
                 "educational_metadata": {},
-                "learning_context": learning_context.dict()
+                "learning_context": learning_context.dict(),
+                "video_suggestions": video_suggestions
             }
 
         except Exception as e:
@@ -411,53 +455,13 @@ async def educational_chat(
         )
 
 
-        # Search for relevant videos based on the topic
-        video_suggestions = []
-        try:
-            # Extract main topic from related topics or content
-            search_topic = request.current_topic or (
-                result["related_topics"][0] if result["related_topics"] else "")
-
-            if search_topic:
-                # Get all video files from materials directory
-                materials_dir = Path("data/materials")
-                video_files = []
-
-                if materials_dir.exists():
-                    for file_path in materials_dir.rglob("*"):
-                        if file_path.is_file() and any(ext in file_path.suffix.lower() for ext in ['.mp4', '.avi', '.mov', '.webm']):
-                            video_files.append(str(file_path))
-
-                # Find videos related to each topic
-                # Check top 3 related topics
-                for topic in result["related_topics"][:3]:
-                    video_result = video_handler.find_video_for_topic(
-                        topic, video_files)
-                    if video_result:
-                        video_path, timestamp = video_result
-
-                        # Get video metadata
-                        metadata = video_handler.get_video_metadata(video_path)
-
-                        video_suggestions.append({
-                            "topic": topic,
-                            "video_path": str(Path(video_path).relative_to(materials_dir)) if materials_dir.exists() else video_path,
-                            "video_title": metadata.title,
-                            "start_timestamp": timestamp,
-                            "duration": metadata.duration,
-                            "difficulty_level": metadata.difficulty_level,
-                            "description": f"Vídeo relacionado ao tópico '{topic}'"
-                        })
-
-        except Exception as e:
-            logger.warning(f"⚠️ Error searching for video suggestions: {e}")
-
         response_time = time.time() - start_time
-
+        
+        video_suggestions = result.get("video_suggestions", [])
         logger.info(
             f"✅ Educational response generated in {response_time:.2f}s with {len(video_suggestions)} video suggestions")
 
-        # Add video suggestions to the response
+        # Construct the final response
         response_data = {
             "response": result["response"],
             "sources": result["sources"],
@@ -466,16 +470,10 @@ async def educational_chat(
             "related_topics": result["related_topics"],
             "educational_metadata": result["educational_metadata"],
             "learning_context": result["learning_context"],
+            "video_suggestions": video_suggestions,
             "response_time": response_time
         }
-
-        # Add video suggestions if any found
-        if video_suggestions:
-            response_data["video_suggestions"] = video_suggestions
-            if "video_content" not in response_data["learning_suggestions"]:
-                response_data["learning_suggestions"].append(
-                    f"📹 {len(video_suggestions)} vídeo(s) relacionado(s) disponível(eis) para este tópico")
-
+        
         return EducationalChatResponse(**response_data)
 
     except Exception as e:
