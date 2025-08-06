@@ -62,7 +62,7 @@ class RecursiveDriveHandler:
         logger.info(
             f"🚀 Initialized RecursiveDriveHandler with materials directory: {self.materials_dir}")
 
-    def authenticate(self, credentials_path: str = 'data/credentials.json', api_key: str = None) -> bool:
+    def authenticate(self, credentials_path: str = 'data/credentials.json', api_key: Optional[str] = None) -> bool:
         """Main authentication method that tries multiple approaches in order"""
         logger.info("🚀 Starting Google Drive authentication process...")
 
@@ -143,7 +143,7 @@ class RecursiveDriveHandler:
         logger.error("❌ All authentication methods failed")
         return False
 
-    def authenticate_with_api_key(self, api_key: str) -> bool:
+    def authenticate_with_api_key(self, api_key: Optional[str]) -> bool:
         """Authenticate with Google Drive using API Key (for public files)"""
         try:
             logger.info("🔑 Attempting authentication with API Key...")
@@ -275,7 +275,7 @@ class RecursiveDriveHandler:
                             auth_url, _ = flow.authorization_url(
                                 access_type='offline', prompt='consent')
                             print(f"Please go to this URL: {auth_url}")
-                            creds = flow.run_console()
+                            creds = flow.run_console()  # type: ignore
                             logger.info("✅ Console authentication successful")
                         except Exception as console_error:
                             logger.error(
@@ -341,10 +341,14 @@ class RecursiveDriveHandler:
             logger.error(f"❌ Public access failed: {str(e)}")
             return False
 
-    def get_folder_structure(self, folder_id: str, current_path: str = "", max_depth: int = None, current_depth: int = 0) -> Dict[str, Any]:
+    def get_folder_structure(self, folder_id: str, current_path: str = "", max_depth: Optional[int] = None, current_depth: int = 0) -> Dict[str, Any]:
         """Get complete folder structure recursively with optional depth limit"""
         logger.info(
             f"📁 Analyzing folder structure: {folder_id} at path: {current_path}")
+
+        if not self.service:
+            logger.error("Drive service not initialized. Please authenticate first.")
+            raise Exception("Drive service not initialized.")
 
         # Verificar flag de cancelamento
         if self.cancel_flag:
@@ -450,7 +454,7 @@ class RecursiveDriveHandler:
             "cleared_entries": len(self.file_hashes)
         }
 
-    def analyze_folder_recursive(self, folder_id: str, max_depth: int = None) -> Dict[str, Any]:
+    def analyze_folder_recursive(self, folder_id: str, max_depth: Optional[int] = None) -> Dict[str, Any]:
         """Analyze a Google Drive folder recursively and return detailed information"""
         logger.info(f"📊 Starting recursive analysis of folder: {folder_id}")
         
@@ -522,7 +526,7 @@ class RecursiveDriveHandler:
                 'statistics': self.download_stats
             }
 
-    def sync_folder_recursive(self, folder_id: str, max_depth: int = None) -> Dict[str, Any]:
+    def sync_folder_recursive(self, folder_id: str, max_depth: Optional[int] = None) -> Dict[str, Any]:
         """Sync a Google Drive folder recursively (background task)"""
         logger.info(f"🔄 Starting recursive sync of folder: {folder_id}")
         try:
@@ -774,12 +778,12 @@ class RecursiveDriveHandler:
 
         return processed_files
 
-    async def download_drive_recursive_async(self, root_folder_id: str, max_depth: int = None) -> Dict[str, Any]:
+    async def download_drive_recursive_async(self, root_folder_id: str, max_depth: Optional[int] = None) -> Dict[str, Any]:
         """Versão assíncrona do download recursivo"""
         # Implementação assíncrona usando asyncio
-        # ...
+        return {}
 
-    def download_drive_recursive(self, root_folder_id: str, max_depth: int = None) -> Dict[str, Any]:
+    def download_drive_recursive(self, root_folder_id: str, max_depth: Optional[int] = None) -> Dict[str, Any]:
         """Main method to download entire Drive folder structure recursively"""
         logger.info(
             f"🚀 Starting recursive download of folder: {root_folder_id}")

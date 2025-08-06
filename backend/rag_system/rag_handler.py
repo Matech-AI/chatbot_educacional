@@ -175,14 +175,14 @@ class RAGHandler:
                 return
 
             self.course_structure = pd.read_excel(spreadsheet_file)
-            self.course_structure.columns = [col.strip() for col in self.course_structure.columns]
-            required_columns = ['Código', 'Módulo', 'Aula', 'Nome da Aula', 'Resumo da Aula']
+            self.course_structure.columns = [col.strip().lower() for col in self.course_structure.columns]
+            required_columns = ['código', 'módulo', 'aula', 'nome da aula', 'resumo da aula']
             if not all(col in self.course_structure.columns for col in required_columns):
-                logger.error("Spreadsheet is missing required columns.")
+                logger.error(f"Spreadsheet is missing required columns. Found: {self.course_structure.columns}")
                 self.course_structure = None
                 return
             
-            self.course_structure['Código_normalized'] = self.course_structure['Código'].str.strip().str.lower()
+            self.course_structure['código_normalized'] = self.course_structure['código'].str.strip().str.lower()
             logger.info(f"✅ Course structure loaded from {spreadsheet_path}.")
         except Exception as e:
             logger.error(f"Failed to load course structure: {e}")
@@ -276,15 +276,10 @@ class RAGHandler:
             'processed_at': time.time(),
         }
 
-        if self.course_structure is not None:
-            filename_stem = Path(source_path).stem.lower()
-            match = self.course_structure[self.course_structure['Código_normalized'].apply(lambda x: x in filename_stem)]
-            if not match.empty:
-                course_data = match.iloc[0]
-                enhanced_metadata.update({
-                    'course_code': course_data['Código'],
-                    'class_name': course_data['Nome da Aula'],
-                })
+        # Get course info from catalog and add it to metadata
+        course_info = self._get_course_info(source_path)
+        if course_info:
+            enhanced_metadata.update(course_info)
 
         # if len(doc.page_content) > 100:
         #     if self.config.extract_key_concepts:
@@ -295,6 +290,32 @@ class RAGHandler:
         #         enhanced_metadata['summary'] = self._create_content_summary(doc.page_content)
         
         return Document(page_content=doc.page_content, metadata=enhanced_metadata)
+
+    def _get_course_info(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """Extracts course information from the catalog based on the file name."""
+        if self.course_structure is None:
+            return None
+
+        try:
+            filename_stem = Path(file_path).stem
+            # Extract the code (e.g., M01A01) from the filename
+            video_code = filename_stem.split(' ')[0].strip().lower()
+
+            match = self.course_structure[self.course_structure['código_normalized'] == video_code]
+            
+            if not match.empty:
+                course_data = match.iloc[0].to_dict()
+                return {
+                    "course_code": course_data.get('código'),
+                    "module": course_data.get('módulo'),
+                    "class_number": course_data.get('aula'),
+                    "class_name": course_data.get('nome da aula'),
+                    "summary": course_data.get('resumo da aula')
+                }
+        except Exception as e:
+            logger.debug(f"Could not extract course info for {file_path}: {e}")
+        
+        return None
 
     def _analyze_content_type(self, file_path: str) -> str:
         ext = Path(file_path).suffix.lower()

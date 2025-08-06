@@ -45,3 +45,4 @@ backend/.env
 
 # ChromaDB
 .chromadb/
+backend/data/*

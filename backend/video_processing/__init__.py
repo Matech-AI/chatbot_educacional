@@ -7,14 +7,12 @@ metadados e integração com Google Drive para vídeos.
 """
 
 from .video_handler import (
-    VideoContentAnalyzer, DriveVideoHandler, VideoMetadata, VideoTimestamp,
-    get_video_handler
+    VideoContentAnalyzer, DriveVideoHandler, VideoMetadata, VideoTimestamp
 )
 
 __all__ = [
     'VideoContentAnalyzer',
     'DriveVideoHandler', 
     'VideoMetadata',
-    'VideoTimestamp',
-    'get_video_handler'
+    'VideoTimestamp'
 ] 

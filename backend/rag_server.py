@@ -22,9 +22,9 @@ import json
 
 # Importar componentes RAG
 from rag_system.rag_handler import RAGHandler, RAGConfig, Source
-from chat_agents.educational_agent import router as educational_router
-from langchain_core.runnables import RunnableConfig
-
+import chromadb
+from chromadb.config import Settings
+from chat_agents.educational_agent import router as educational_agent_router
 # ========================================
 # MODELS PYDANTIC
 # ========================================
@@ -318,11 +318,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Incluir router do educational agent
-app.include_router(educational_router, prefix="/chat", tags=["educational"])
-
-embeddingModel: str = "text-embedding-ada-002"
-
+app.include_router(educational_agent_router, prefix="/chat")
 
 @app.get("/health")
 async def health_check():

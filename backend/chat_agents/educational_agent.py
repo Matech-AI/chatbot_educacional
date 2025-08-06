@@ -33,7 +33,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/chat", tags=["educational_chat"])
+router = APIRouter(tags=["educational_chat"])
 
 
 class LearningContext(BaseModel):
@@ -71,8 +71,6 @@ class EducationalState(TypedDict):
 
 class EducationalChatRequest(BaseModel):
     content: str
-    user_level: str = "intermediate"  # beginner, intermediate, advanced
-    learning_style: str = "mixed"  # visual, auditory, kinesthetic, mixed
     session_id: Optional[str] = None
     current_topic: Optional[str] = None
     learning_objectives: List[str] = []
@@ -216,7 +214,8 @@ class EducationalAgent:
         base_prompt += """
 
         IMPORTANTE: 
-        - Sempre baseie suas respostas no conteúdo dos materiais de estudo quando disponível
+        - Sempre baseie suas respostas no conteúdo dos materiais de estudo quando disponível utilizando a tool
+          name: str = "search_educational_materials"
         - Se não houver informação suficiente nos materiais, indique claramente
         - Gere perguntas de acompanhamento que ajudem o aluno a explorar mais profundamente
         - Mantenha o foco educacional e pedagógico em todas as interações
@@ -436,12 +435,9 @@ async def educational_chat(
     try:
         # Get educational agent
         agent = get_educational_agent()
-        video_handler = get_video_handler()
 
         # Prepare learning preferences
         learning_preferences = {
-            "difficulty_level": request.user_level,
-            "learning_style": request.learning_style,
             "current_topic": request.current_topic,
             "learning_objectives": request.learning_objectives
         }
