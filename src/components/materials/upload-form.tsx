@@ -141,7 +141,7 @@ export const UploadForm: React.FC<UploadFormProps> = ({
               ref={fileInputRef}
               onChange={(e) => handleFilesChange(e.target.files)}
               className="hidden"
-              accept=".pdf,.docx,.txt,.mp4,.webm,.mov"
+              accept=".pdf,.docx,.txt,.pptx"
             />
             
             <AnimatePresence mode="wait">

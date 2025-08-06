@@ -259,7 +259,9 @@ class RAGHandler:
                     show_progress=True,
                     use_multithreading=True,
                 )
-                documents.extend(loader.load())
+                loaded_docs = loader.load()
+                # Filter documents to include only those ending with '_resumo'
+                documents.extend([doc for doc in loaded_docs if Path(doc.metadata.get('source', '')).stem.endswith('_resumo')])
             except Exception as e:
                 logger.warning(f"⚠️ Error loading {pattern}: {e}")
         logger.info(f"📄 Loaded {len(documents)} total documents.")

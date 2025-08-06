@@ -84,7 +84,6 @@ class EducationalChatResponse(BaseModel):
     related_topics: List[str] = []
     educational_metadata: Dict[str, Any] = {}
     learning_context: Dict[str, Any] = {}
-    video_suggestions: List[Dict[str, Any]] = []
     response_time: float = 0.0
 
 
@@ -357,33 +356,6 @@ class EducationalAgent:
                 learning_context.difficulty_level
             )
 
-            # Generate video suggestions based on sources
-            video_suggestions = []
-            if sources and self.course_catalog is not None:
-                video_codes = set()
-                for source in sources:
-                    # Extract video code like M01A01 from the source filename
-                    filename = Path(source.get("source", "")).stem
-                    if filename:
-                        # Handle cases where filename might not have '_'
-                        parts = filename.split('_')
-                        if parts:
-                            video_codes.add(parts[0].upper())
-                
-                for code in video_codes:
-                    # Ensure column name is correct
-                    if 'código' in self.course_catalog.columns:
-                        match = self.course_catalog[self.course_catalog['código'] == code]
-                        if not match.empty:
-                            video_info = match.iloc[0]
-                            video_suggestions.append({
-                                "topic": video_info.get('nome da aula', 'N/A'),
-                                "video_code": code,
-                                "summary": video_info.get('resumo da aula', ''),
-                                "module": video_info.get('módulo', 0),
-                                "class": video_info.get('aula', 0)
-                            })
-
             return {
                 "response": response_content,
                 "sources": sources,
@@ -392,7 +364,6 @@ class EducationalAgent:
                 "related_topics": [],
                 "educational_metadata": {},
                 "learning_context": learning_context.dict(),
-                "video_suggestions": video_suggestions
             }
 
         except Exception as e:
@@ -453,9 +424,8 @@ async def educational_chat(
 
         response_time = time.time() - start_time
         
-        video_suggestions = result.get("video_suggestions", [])
         logger.info(
-            f"✅ Educational response generated in {response_time:.2f}s with {len(video_suggestions)} video suggestions")
+            f"✅ Educational response generated in {response_time:.2f}s")
 
         # Construct the final response
         response_data = {
@@ -466,7 +436,6 @@ async def educational_chat(
             "related_topics": result["related_topics"],
             "educational_metadata": result["educational_metadata"],
             "learning_context": result["learning_context"],
-            "video_suggestions": video_suggestions,
             "response_time": response_time
         }
         

@@ -140,7 +140,7 @@ def get_default_system_settings():
             "language": "pt-BR",
             "timezone": "America/Sao_Paulo",
             "maxFileSize": 50,
-            "allowedFileTypes": ".pdf,.docx,.txt,.mp4,.avi,.mov,.pptx,.webm",
+            "allowedFileTypes": ".pdf,.docx,.txt,.pptx",
         },
         "security": {
             "sessionTimeout": 180,
@@ -268,9 +268,8 @@ def get_file_type(filename: str) -> str:
     """Get file type from filename"""
     mime_type, _ = mimetypes.guess_type(filename)
     if mime_type:
-        if mime_type.startswith('video/'):
-            return 'video'
-        elif mime_type == 'application/pdf':
+        # Video files are no longer supported - they will be replaced by PDF files
+        if mime_type == 'application/pdf':
             return 'pdf'
         elif mime_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword']:
             return 'docx'
@@ -278,9 +277,8 @@ def get_file_type(filename: str) -> str:
             return 'txt'
 
     ext = Path(filename).suffix.lower()
-    if ext in ['.mp4', '.avi', '.mov', '.webm']:
-        return 'video'
-    elif ext == '.pdf':
+    # Video extensions removed - videos will be replaced by PDF files
+    if ext == '.pdf':
         return 'pdf'
     elif ext in ['.docx', '.doc']:
         return 'docx'
@@ -394,7 +392,7 @@ def root():
     return {
         "message": "🚀 DNA da Força API v1.4 - Complete Recursive Drive Integration",
         "status": "ok",
-        "version": "1.4.0",
+        "version": "1.7.0",
         "features": [
             "auth", "chat", "upload", "materials",
             "recursive_drive_sync", "maintenance",
@@ -422,7 +420,7 @@ async def health():
 
     status = {
         "status": "ok",
-        "version": "1.4.0",
+        "version": "1.7.0",
         "rag_initialized": rag_status,
         "drive_authenticated": drive_handler.service is not None,
         "materials_count": materials_count,
@@ -465,7 +463,7 @@ async def get_status():
         "drive_handler_initialized": drive_handler is not None,
         "drive_authenticated": drive_handler.service is not None if drive_handler else False,
         "uptime": "Running",
-        "version": "1.4.0",
+        "version": "1.7.0",
         "timestamp": datetime.now().isoformat(),
         "message": "Sistema funcionando com funcionalidades recursivas completas."
     }
@@ -939,16 +937,26 @@ async def recursive_drive_analysis(
                 raise HTTPException(
                     status_code=400, detail="Could not authenticate with Google Drive")
 
+            # Reset stats before analysis
+            user_handler.reset()
+
             # Get folder structure without downloading
             folder_structure = user_handler.get_folder_structure(
                 data.folder_id, max_depth=data.max_depth)
 
+            # Get stats from the analysis
             stats = user_handler.get_download_stats()
+
+            # Add root folder name to the response
+            root_folder_name = folder_structure.get(
+                'name', 'Unknown') if folder_structure else 'Unknown'
+
         return {
             "status": "success",
             "message": f"Analyzed folder structure with {stats['total_folders']} folders and {stats['total_files']} files",
             "statistics": stats,
-            "folder_structure": folder_structure
+            "folder_structure": folder_structure,
+            "root_folder": root_folder_name
         }
     except HTTPException:
         raise
@@ -956,6 +964,41 @@ async def recursive_drive_analysis(
         logger.error(f"❌ Recursive drive analysis error: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Drive analysis error: {str(e)}")
+
+
+@app.post("/recursive-drive-force-redownload")
+async def recursive_drive_force_redownload(
+    current_user: User = Depends(get_current_user)
+):
+    """Force redownload of all files by clearing cache and rescanning existing files"""
+    logger.info(
+        f"🔄 Force redownload requested by: {current_user.username}")
+
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        # Use user-specific handler for better concurrency
+        async with get_user_drive_handler(current_user.username) as user_handler:
+            if not user_handler.service:
+                raise HTTPException(
+                    status_code=400, detail="Could not authenticate with Google Drive")
+
+            # Force redownload by clearing cache and rescanning
+            result = user_handler.force_redownload_all()
+
+        return {
+            "status": "success",
+            "message": "Force redownload mode activated",
+            "existing_files_count": result.get("existing_files_count", 0),
+            "details": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Force redownload error: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Force redownload error: {str(e)}")
 
 
 @app.post("/recursive-drive-sync")
@@ -1869,7 +1912,7 @@ async def generate_system_report(current_user: User = Depends(get_current_user))
             "timestamp": datetime.now().isoformat(),
             "generated_by": current_user.username,
             "system_info": {
-                "version": "1.4.0",
+                "version": "1.7.0",
                 "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
                 "platform": os.name
             },
@@ -2287,7 +2330,7 @@ async def upload_material(
         raise HTTPException(status_code=400, detail="File has no name")
 
     allowed_extensions = {'.pdf', '.docx', '.txt',
-                          '.mp4', '.avi', '.mov', '.pptx', '.webm'}
+                          '.pptx'}
     file_ext = Path(file.filename).suffix.lower()
 
     if file_ext not in allowed_extensions:

@@ -75,7 +75,10 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
   const [success, setSuccess] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [isForceRedownload, setIsForceRedownload] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [testResult, setTestResult] = useState<any>(null);
   const [syncResult, setSyncResult] = useState<RecursiveSyncResult | null>(
     null
   );
@@ -125,6 +128,60 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes}m ${remainingSeconds.toFixed(1)}s`;
+  };
+
+  const testFolderAccess = async () => {
+    try {
+      setError(null);
+      setSuccess(null);
+      setIsTesting(true);
+      setTestResult(null);
+
+      const folderId =
+        extractFolderIdFromUrl(folderInput.trim()) || folderInput.trim();
+
+      if (!folderId || !validateDriveFolderId(folderId)) {
+        setError("ID da pasta inválido");
+        setIsTesting(false);
+        return;
+      }
+
+      // Salvar valores no localStorage
+      localStorage.setItem("lastDriveFolderId", folderId);
+      if (apiKey) localStorage.setItem("lastDriveApiKey", apiKey);
+      localStorage.setItem("lastDriveMaxDepth", maxDepth.toString());
+
+      // Definir uma mensagem de status inicial
+      setSuccess("🔍 Testando acesso à pasta...");
+
+      // Testar acesso básico à pasta
+      const result = await apiRequestJson("/test-drive-folder", {
+        method: "POST",
+        body: JSON.stringify({
+          folder_id: folderId,
+          api_key: apiKey || undefined,
+        }),
+      });
+
+      setTestResult(result);
+
+      if (result.accessible) {
+        setSuccess(
+          "✅ Pasta acessível! Clique em 'Analisar Estrutura' para ver detalhes completos."
+        );
+        setTimeout(() => setSuccess(""), 3000);
+      } else {
+        setError("❌ Não foi possível acessar a pasta");
+        setTimeout(() => setError(""), 4000);
+      }
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Erro desconhecido";
+      setError(`Erro ao testar acesso: ${errorMessage}`);
+      console.error("Erro no teste:", err);
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   const analyzeFolder = async () => {
@@ -201,7 +258,7 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
       console.log("Iniciando sincronização recursiva:", folderId);
 
       // Substituir a chamada fetch direta pela função da API
-      const result = await apiRequestJson("/api/drive/sync-recursive", {
+      const result = await apiRequestJson("/drive/sync-recursive", {
         method: "POST",
         body: JSON.stringify({
           folder_id: folderId,
@@ -357,10 +414,41 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
     }
   };
 
+  const handleForceRedownload = async () => {
+    setIsForceRedownload(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      console.log("Forçando re-download de todos os arquivos...");
+
+      const result = await apiRequestJson("/recursive-drive-force-redownload", {
+        method: "POST",
+      });
+
+      if (result.status === "success") {
+        setSuccess(
+          `Modo de re-download forçado ativado! Encontrados ${result.existing_files_count} arquivos existentes.`
+        );
+        // Limpar resultados anteriores
+        setAnalysisResult(null);
+        setSyncResult(null);
+      } else {
+        setError("Erro ao ativar modo de re-download forçado");
+      }
+    } catch (error) {
+      console.error("Erro ao forçar re-download:", error);
+      setError("Erro ao ativar modo de re-download forçado");
+    } finally {
+      setIsForceRedownload(false);
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setError(null);
     setSuccess(null);
     setAnalysisResult(null);
+    setTestResult(null);
     setSyncResult(null);
     setFolderStructure(null);
     setFolderInput(e.target.value);
@@ -454,6 +542,40 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
           </div>
         </div>
 
+        {/* Test Result */}
+        <AnimatePresence>
+          {testResult && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="bg-blue-50 border border-blue-200 rounded-md p-3"
+            >
+              <div className="flex items-start gap-2">
+                <Info
+                  size={16}
+                  className="text-blue-600 mt-0.5 flex-shrink-0"
+                />
+                <div className="text-sm">
+                  <p className="font-medium text-blue-800">
+                    Informações da Pasta: {testResult.folder_name || "Sem nome"}
+                  </p>
+                  <div className="mt-1 space-y-1 text-blue-700">
+                    <p>• Arquivos encontrados: {testResult.file_count ?? 0}</p>
+                    <p>• Acesso público: {testResult.public ? "Sim" : "Não"}</p>
+                    {(testResult.files_sample || []).length > 0 && (
+                      <p>
+                        • Exemplos:{" "}
+                        {(testResult.files_sample || []).slice(0, 3).join(", ")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Analysis Results */}
         <AnimatePresence>
           {analysisResult && (
@@ -471,19 +593,19 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-700">
-                    {analysisResult.statistics.total_folders}
+                    {analysisResult.statistics?.total_folders || 0}
                   </div>
                   <div className="text-sm text-blue-600">Pastas</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-700">
-                    {analysisResult.statistics.total_files}
+                    {analysisResult.statistics?.total_files || 0}
                   </div>
                   <div className="text-sm text-blue-600">Arquivos</div>
                 </div>
                 <div className="text-center">
                   <div className="text-lg font-semibold text-blue-700">
-                    {analysisResult.root_folder}
+                    {analysisResult.root_folder || "N/A"}
                   </div>
                   <div className="text-sm text-blue-600">Pasta Raiz</div>
                 </div>
@@ -605,22 +727,66 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
         {/* Action Buttons */}
         <div className="flex gap-3">
           <Button
+            onClick={testFolderAccess}
+            disabled={
+              !folderInput.trim() ||
+              isLoading ||
+              isProcessing ||
+              isAnalyzing ||
+              isTesting
+            }
+            isLoading={isTesting}
+            variant="outline"
+            className="flex-1 flex items-center justify-center gap-2"
+          >
+            <Eye size={18} />
+            <span>{isTesting ? "Testando..." : "Testar Acesso"}</span>
+          </Button>
+
+          <Button
             onClick={analyzeFolder}
             disabled={
-              !folderInput.trim() || isLoading || isProcessing || isAnalyzing
+              !folderInput.trim() ||
+              isLoading ||
+              isProcessing ||
+              isAnalyzing ||
+              isTesting
             }
             isLoading={isAnalyzing}
             variant="outline"
             className="flex-1 flex items-center justify-center gap-2"
           >
-            <Eye size={18} />
+            <BarChart3 size={18} />
             <span>{isAnalyzing ? "Analisando..." : "Analisar Estrutura"}</span>
+          </Button>
+
+          <Button
+            onClick={handleForceRedownload}
+            disabled={
+              isLoading ||
+              isProcessing ||
+              isAnalyzing ||
+              isTesting ||
+              isForceRedownload
+            }
+            isLoading={isForceRedownload}
+            variant="outline"
+            className="flex-1 flex items-center justify-center gap-2"
+          >
+            <Zap size={18} />
+            <span>
+              {isForceRedownload ? "Ativando..." : "Forçar Re-download"}
+            </span>
           </Button>
 
           <Button
             onClick={handleRecursiveSync}
             disabled={
-              !folderInput.trim() || isLoading || isProcessing || isAnalyzing
+              !folderInput.trim() ||
+              isLoading ||
+              isProcessing ||
+              isAnalyzing ||
+              isTesting
             }
             isLoading={isProcessing}
             className="flex-1 flex items-center justify-center gap-2"
@@ -637,9 +803,9 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
 
           <Button
             onClick={handleCancelSync}
-            variant="destructive"
+            variant="danger"
             className="flex-1 flex items-center justify-center gap-2"
-            disabled={!isProcessing && !isAnalyzing}
+            disabled={!isProcessing && !isAnalyzing && !isTesting}
           >
             <X size={18} />
             <span>Cancelar</span>
@@ -656,9 +822,11 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
             <li>✅ Navega automaticamente por todas as subpastas</li>
             <li>✅ Mantém a estrutura hierárquica de pastas localmente</li>
             <li>✅ Detecta e evita arquivos duplicados por conteúdo</li>
+            <li>✅ Verifica arquivos existentes antes de baixar</li>
             <li>✅ Relatório detalhado de estatísticas e tempo</li>
             <li>✅ Análise prévia sem download para planejamento</li>
             <li>✅ Controle de profundidade máxima para segurança</li>
+            <li>✅ Opção de forçar re-download quando necessário</li>
           </ul>
         </div>
 
@@ -670,7 +838,16 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
           <ol className="list-decimal list-inside space-y-1 ml-2">
             <li>Cole o ID ou URL da pasta raiz do Google Drive</li>
             <li>Configure a API Key se necessário (para pastas privadas)</li>
-            <li>Use "Analisar Estrutura" para ver o que será baixado</li>
+            <li>
+              Use "Testar Acesso" para verificar se a pasta está acessível
+            </li>
+            <li>
+              Use "Analisar Estrutura" para ver detalhes completos da estrutura
+            </li>
+            <li>
+              Use "Forçar Re-download" se quiser baixar arquivos novamente
+              (ignora duplicatas)
+            </li>
             <li>Execute "Sincronizar Recursivamente" para baixar tudo</li>
           </ol>
           <p className="mt-2">

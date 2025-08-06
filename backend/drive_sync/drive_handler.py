@@ -758,9 +758,20 @@ class DriveHandler:
             return None
 
     def process_folder(self, folder_id: str, download_all: bool = False) -> List[Dict[str, Any]]:
-        """Process files in a Google Drive folder (non-recursive)"""
+        """Process files in a Google Drive folder (non-recursive) with folder structure preservation"""
         logger.info(
             f"📂 Processing folder: {folder_id}, download_all={download_all}")
+
+        # Get folder info to determine the base folder name
+        folder_name = "Unknown"
+        try:
+            if self.service:
+                folder_info = self.service.files().get(
+                    fileId=folder_id, fields="id,name").execute()
+                folder_name = folder_info.get('name', 'Unknown')
+        except Exception as e:
+            logger.warning(f"Could not get folder info for {folder_id}: {e}")
+            folder_name = f'folder_{folder_id[:8]}'
 
         # Get files in folder
         # Changed from list_folder_contents to list_folder_contents_with_pagination
@@ -769,7 +780,7 @@ class DriveHandler:
             logger.warning("⚠️ No files found in folder")
             return []
 
-        logger.info(f"📊 Found {len(files)} files in folder")
+        logger.info(f"📊 Found {len(files)} files in folder: {folder_name}")
 
         # Process files in batches
         processed_files = []
@@ -797,9 +808,10 @@ class DriveHandler:
                     continue
 
                 if download_all:
-                    # Download the file
+                    # Download the file with folder structure preservation
                     logger.info(f"⬇️ Downloading file: {file_name}")
-                    file_info = self.download_file(file_id, file_name)
+                    file_info = self.download_file_with_folder_structure(
+                        file_id, file_name, folder_name)
                     if file_info:
                         batch_results.append(file_info)
                         logger.info(f"✅ Successfully processed: {file_name}")
@@ -829,6 +841,178 @@ class DriveHandler:
 
         return processed_files
 
+    def download_file_with_folder_structure(self, file_id: str, filename: str = None, folder_name: str = "") -> Optional[Dict[str, Any]]:
+        """Download a single file with folder structure preservation"""
+        try:
+            logger.info(f"📥 Starting download for file ID: {file_id}")
+
+            # Get file metadata if service is available
+            file_metadata = None
+            if self.service:
+                file_metadata = self.get_file_metadata(file_id)
+
+            if file_metadata:
+                filename = filename or file_metadata.get(
+                    'name', f"file_{file_id}")
+                mime_type = file_metadata.get('mimeType', '')
+                file_size = int(file_metadata.get('size', 0)
+                                ) if file_metadata.get('size') else 0
+
+                logger.info(
+                    f"📁 File: {filename} ({mime_type}) - {file_size} bytes")
+
+                # Skip large files (opcional, ajuste o limite conforme necessário)
+                if file_size > 100 * 1024 * 1024:  # 100 MB
+                    logger.warning(
+                        f"⚠️ Skipping large file: {filename} ({file_size / (1024 * 1024):.2f} MB)")
+                    self.download_stats['errors'] += 1
+                    return None
+            else:
+                filename = filename or f"file_{file_id}"
+                mime_type = ''
+                file_size = 0
+                logger.info(
+                    f"📁 Downloading: {filename} (metadata unavailable)")
+
+            # Skip Google Apps files
+            if mime_type.startswith('application/vnd.google-apps'):
+                logger.warning(f"⏭️ Skipping Google Apps file: {filename}")
+                return None
+
+            file_content = None
+            download_method = None
+
+            # Method 1: Standard API download (if service available)
+            if self.service:
+                try:
+                    logger.info("🔄 Attempting API download...")
+                    request = self.service.files().get_media(fileId=file_id)
+                    file = io.BytesIO()
+                    downloader = MediaIoBaseDownload(file, request)
+
+                    done = False
+                    while not done:
+                        status, done = downloader.next_chunk()
+                        if status:
+                            progress = int(status.progress() * 100)
+                            logger.info(f"📥 Download progress: {progress}%")
+
+                    file_content = file.getvalue()
+                    download_method = "api_download"
+                    logger.info(
+                        f"✅ Downloaded via API: {len(file_content)} bytes")
+
+                except HttpError as api_error:
+                    logger.warning(
+                        f"⚠️ API download failed: HTTP {api_error.resp.status}")
+                    if api_error.resp.status == 403:
+                        logger.info("🔄 Trying public access methods...")
+
+            # Method 2: Public access methods (fallback)
+            if not file_content:
+                logger.info("🔄 Attempting public download methods...")
+                public_result = self.try_public_file_access(file_id)
+
+                if public_result:
+                    file_content = public_result['content']
+                    download_method = public_result['method']
+                    logger.info(
+                        f"✅ Downloaded via {download_method}: {len(file_content)} bytes")
+
+            # Check for duplicates and save file if download was successful
+            if file_content:
+                # Verificar duplicados
+                is_duplicate, duplicate_info = self.is_duplicate_file(
+                    filename, file_content)
+                if is_duplicate:
+                    logger.info(
+                        f"⏭️ Skipping duplicate file: {filename} - {duplicate_info}")
+                    self.download_stats['skipped_duplicates'] += 1
+                    return None
+
+                # Registrar hash do arquivo
+                file_hash = self.calculate_file_hash(file_content)
+
+                # Salvar arquivo com estrutura de pastas
+                result = self._save_downloaded_file_with_folder_structure(
+                    file_content, filename, file_id, mime_type,
+                    file_metadata or {}, download_method, folder_name
+                )
+
+                if result:
+                    # Registrar arquivo processado
+                    self.processed_files[filename] = file_id
+                    self.file_hashes[file_hash] = result['path']
+                    self.download_stats['downloaded_files'] += 1
+
+                return result
+            else:
+                logger.error(f"❌ All download methods failed for: {filename}")
+                self.download_stats['errors'] += 1
+                return None
+
+        except Exception as e:
+            logger.error(f"❌ Error downloading file {file_id}: {str(e)}")
+            self.download_stats['errors'] += 1
+            return None
+
+    def _save_downloaded_file_with_folder_structure(self, file_content: bytes, filename: str, file_id: str,
+                                                    mime_type: str, metadata: Dict, method: str, folder_name: str = "") -> Dict[str, Any]:
+        """Save downloaded file to disk with folder structure preservation"""
+        logger.info(f"💾 Saving file: {filename} in folder: {folder_name}")
+
+        # Ensure filename has proper extension
+        if not Path(filename).suffix and mime_type:
+            extension = self._get_extension_from_mime_type(mime_type)
+            if extension:
+                filename += extension
+                logger.info(f"📝 Added extension: {filename}")
+
+        # Sanitize filename for filesystem compatibility
+        safe_filename = self.sanitize_filename(filename)
+
+        # Create folder structure if folder_name is provided
+        if folder_name:
+            folder_path = self.materials_dir / folder_name
+            folder_path.mkdir(parents=True, exist_ok=True)
+            file_path = folder_path / safe_filename
+            logger.info(f"📁 Created folder structure: {folder_path}")
+        else:
+            file_path = self.materials_dir / safe_filename
+
+        # Avoid overwriting - add number suffix if file exists
+        counter = 1
+        original_path = file_path
+        while file_path.exists():
+            stem = original_path.stem
+            suffix = original_path.suffix
+            if folder_name:
+                file_path = folder_path / f"{stem}_{counter}{suffix}"
+            else:
+                file_path = self.materials_dir / f"{stem}_{counter}{suffix}"
+            counter += 1
+            logger.info(f"📝 File exists, using new name: {file_path.name}")
+
+        # Write file
+        with open(file_path, 'wb') as f:
+            f.write(file_content)
+
+        logger.info(f"💾 Successfully saved: {file_path}")
+        logger.info(f"📊 Final file size: {file_path.stat().st_size} bytes")
+
+        return {
+            'id': file_id,
+            'name': file_path.name,
+            'title': filename,
+            'path': str(file_path),
+            'size': len(file_content),
+            'type': file_path.suffix[1:].lower() if file_path.suffix else 'unknown',
+            'mime_type': mime_type,
+            'download_method': method,
+            'created_time': metadata.get('createdTime'),
+            'modified_time': metadata.get('modifiedTime')
+        }
+
     def _get_extension_from_mime_type(self, mime_type: str) -> str:
         """Get file extension from MIME type"""
         mime_to_ext = {
@@ -836,10 +1020,7 @@ class DriveHandler:
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
             'application/msword': '.doc',
             'text/plain': '.txt',
-            'video/mp4': '.mp4',
-            'video/avi': '.avi',
-            'video/quicktime': '.mov',
-            'video/webm': '.webm',
+            # Video extensions removed - videos will be replaced by PDF files
             'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
             'application/vnd.ms-powerpoint': '.ppt',
             'image/jpeg': '.jpg',
@@ -915,3 +1096,24 @@ class DriveHandler:
             "message": "File hashes cache cleared successfully",
             "cleared_entries": len(self.file_hashes)
         }
+
+    def sanitize_filename(self, filename: str) -> str:
+        """Sanitize filename for filesystem compatibility"""
+        # Replace invalid characters
+        invalid_chars = '<>:"/\\|?*'
+        for char in invalid_chars:
+            filename = filename.replace(char, '_')
+
+        # Trim whitespace and dots
+        filename = filename.strip(' .')
+
+        # Ensure not empty
+        if not filename:
+            filename = 'unnamed_file'
+
+        # Limit length
+        if len(filename) > 255:
+            name, ext = os.path.splitext(filename)
+            filename = name[:250] + ext
+
+        return filename

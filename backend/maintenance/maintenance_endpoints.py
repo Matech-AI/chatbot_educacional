@@ -194,7 +194,7 @@ async def generate_system_report(current_user: User = Depends(get_current_user))
             "timestamp": datetime.now().isoformat(),
             "generated_by": current_user.username,
             "system_info": {
-                "version": "1.4.0",
+                "version": "1.7.0",
                 "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
                 "platform": os.name
             },

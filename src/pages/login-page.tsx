@@ -374,8 +374,8 @@ const LoginPage: React.FC = () => {
 
           {/* Footer */}
           <div className="px-6 py-4 text-center text-xs text-gray-500 border-t border-gray-200">
-            <p>DNA da Força - Assistente de Treinamento</p>
-            <p className="mt-1">Desenvolvido por Matheus Bernardes</p>
+            <p>DNA da Força v1.7 - Assistente de Treinamento</p>
+            <p className="mt-1">Desenvolvido pela Matech AI</p>
           </div>
         </div>
       </motion.div>
