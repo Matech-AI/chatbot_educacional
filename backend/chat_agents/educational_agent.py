@@ -17,7 +17,7 @@ from langchain_core.tools.retriever import create_retriever_tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
-from rag_system.rag_handler import RAGHandler
+from rag_system.rag_handler import RAGHandler, RAGQueryTool
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
@@ -29,7 +29,7 @@ load_dotenv()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["educational_chat"])
@@ -64,7 +64,7 @@ class EducationalResponse(BaseModel):
 class EducationalState(TypedDict):
     messages: Annotated[list, add_messages]
     learning_context: LearningContext
-    sources_retrieved: List[Document]
+    sources: List[Dict[str, Any]]
     educational_metadata: Dict[str, Any]
 
 
@@ -94,7 +94,7 @@ class EducationalAgent:
 
     def __init__(self):
         self.rag_handler = None
-        self.retriever_tool = None
+        self.rag_tool: Optional[RAGQueryTool] = None
         self.model = None
         self.graph = None
         self.memory = MemorySaver()
@@ -114,25 +114,8 @@ class EducationalAgent:
 
         try:
             self.rag_handler = RAGHandler(api_key=openai_api_key)
-            if self.rag_handler.vector_store:
-                # Enhanced retriever with more results for educational context
-                retriever = self.rag_handler.vector_store.as_retriever(
-                    search_type="mmr",  # Maximum Marginal Relevance for diversity
-                    search_kwargs={
-                        "k": 8,  # More sources for comprehensive answers
-                        "fetch_k": 20,  # Broader initial search
-                        "lambda_mult": 0.7  # Balance between relevance and diversity
-                    }
-                )
-
-                self.retriever_tool = create_retriever_tool(
-                    retriever,
-                    "search_training_materials",
-                    "Search training materials for comprehensive information about fitness, exercise science, and strength training. Returns detailed content with multiple perspectives."
-                )
-                logger.info("✅ Enhanced RAG system initialized successfully")
-            else:
-                logger.warning("Vector store not available")
+            self.rag_tool = RAGQueryTool(rag_handler=self.rag_handler)
+            logger.info("✅ RAG Query Tool initialized successfully")
         except Exception as e:
             logger.error(f"Error initializing RAG: {e}")
 
@@ -228,149 +211,46 @@ class EducationalAgent:
     def _build_graph(self):
         """Build the educational conversation graph"""
 
-        # Define tools
         tools = []
-        if self.retriever_tool:
-            tools.append(self.retriever_tool)
+        if self.rag_tool:
+            tools.append(self.rag_tool)
 
         tool_node = ToolNode(tools)
+
         if not self.model:
             raise ValueError("Model not initialized")
+        
         model_with_tools = self.model.bind_tools(tools)
 
-        def educational_agent(state: EducationalState):
-            """Enhanced agent with educational focus"""
+        def agent_node(state: EducationalState):
+            """The primary agent node that decides what to do."""
             learning_context = state.get("learning_context")
             if not learning_context:
-                # Create default context
-                learning_context = LearningContext(
-                    user_id="default",
-                    session_id="default"
-                )
+                learning_context = LearningContext(user_id="default", session_id="default")
 
-            # Generate contextual system prompt
-            system_prompt = SystemMessage(
-                content=self._get_educational_system_prompt(learning_context)
-            )
-
+            system_prompt = SystemMessage(content=self._get_educational_system_prompt(learning_context))
+            
             messages = [system_prompt] + state["messages"]
+            
             response = model_with_tools.invoke(messages)
-
-            # Analyze response for educational metadata
-            content = response.content if isinstance(
-                response.content, str) else ""
-            educational_metadata = self._analyze_educational_content(
-                content,
-                learning_context
-            )
-
-            return {
-                "messages": [response],
-                "educational_metadata": educational_metadata
-            }
-
-        def process_retrieval(state: EducationalState):
-            """Process retrieved sources for educational enhancement"""
-            sources = state.get("sources_retrieved", [])
-            learning_context = state.get("learning_context")
-
-            if sources and learning_context:
-                # Analyze sources for learning opportunities
-                learning_opportunities = self._identify_learning_opportunities(
-                    sources, learning_context)
-
-                return {
-                    "educational_metadata": {
-                        **state.get("educational_metadata", {}),
-                        "learning_opportunities": learning_opportunities
-                    }
-                }
-
-            return {}
+            
+            return {"messages": [response]}
 
         # Build graph
         builder = StateGraph(EducationalState)
-        builder.add_node("agent", educational_agent)
+        builder.add_node("agent", agent_node)
         builder.add_node("tools", tool_node)
-        builder.add_node("process_retrieval", process_retrieval)
 
         builder.add_edge(START, "agent")
-        builder.add_conditional_edges("agent", tools_condition)
-        builder.add_edge("tools", "process_retrieval")
-        builder.add_edge("process_retrieval", "agent")
+        builder.add_conditional_edges(
+            "agent",
+            tools_condition,
+        )
+        builder.add_edge("tools", "agent")
 
         self.graph = builder.compile(checkpointer=self.memory)
-        logger.info("✅ Educational graph compiled successfully")
+        logger.info("✅ Educational graph compiled successfully with RAG tool")
 
-    def _analyze_educational_content(self, content: str, learning_context: LearningContext) -> Dict[str, Any]:
-        """Analyze response content for educational value"""
-
-        # Simple analysis - in production, could use more sophisticated NLP
-        metadata = {
-            "estimated_reading_time": len(content.split()) / 200,  # minutes
-            "complexity_score": self._assess_complexity(content),
-            "topics_mentioned": self._extract_topics(content),
-            "learning_opportunities": []
-        }
-
-        return metadata
-
-    def _assess_complexity(self, text: str) -> float:
-        """Simple complexity assessment based on text features"""
-        words = text.split()
-        avg_word_length = sum(len(word)
-                              for word in words) / len(words) if words else 0
-        long_words = sum(1 for word in words if len(word) > 6)
-        long_word_ratio = long_words / len(words) if words else 0
-
-        # Simple complexity score (0-1)
-        complexity = min(1.0, (avg_word_length / 10)
-                         * 0.5 + long_word_ratio * 0.5)
-        return complexity
-
-    def _extract_topics(self, text: str) -> List[str]:
-        """Extract main topics from text"""
-        # Keywords related to fitness training
-        fitness_keywords = [
-            "treino", "exercício", "musculação", "força", "resistência", "cardio",
-            "hipertrofia", "definição", "periodização", "volume", "intensidade",
-            "técnica", "biomecânica", "anatomia", "fisiologia", "nutrição",
-            "recuperação", "sono", "suplementação", "lesão", "prevenção"
-        ]
-
-        text_lower = text.lower()
-        found_topics = [
-            keyword for keyword in fitness_keywords if keyword in text_lower]
-        return found_topics
-
-    def _identify_learning_opportunities(self, sources: List[Document], learning_context: LearningContext) -> List[str]:
-        """Identify learning opportunities from retrieved sources"""
-        opportunities = []
-
-        # Analyze source diversity
-        source_types = set()
-        for source in sources:
-            if hasattr(source, 'metadata') and 'source' in source.metadata:
-                source_path = source.metadata['source']
-                if '.pdf' in source_path:
-                    source_types.add('research_paper')
-                elif '.mp4' in source_path:
-                    source_types.add('video')
-                elif '.xlsx' in source_path or '.xls' in source_path:
-                    source_types.add('data')
-
-        if len(source_types) > 1:
-            opportunities.append(
-                "Multiple content types available for different learning styles")
-
-        if 'video' in source_types:
-            opportunities.append("Visual learners: Video content available")
-
-        if 'research_paper' in source_types:
-            opportunities.append(
-                "Deep dive: Scientific papers available for advanced study")
-
-        return opportunities
 
     def get_learning_context(self, user_id: str, session_id: str) -> LearningContext:
         """Get or create learning context for user/session"""
@@ -423,74 +303,59 @@ class EducationalAgent:
                    learning_preferences: Optional[Dict] = None) -> Dict[str, Any]:
         """Main chat interface with educational enhancements"""
 
-        # Get or update learning context
         learning_context = self.get_learning_context(user_id, session_id)
-
         if learning_preferences:
-            self.update_learning_context(
-                user_id, session_id, **learning_preferences)
+            self.update_learning_context(user_id, session_id, **learning_preferences)
 
-        # Prepare initial state
-        config = RunnableConfig(
-            configurable={"thread_id": f"{user_id}_{session_id}"})
-
+        config = RunnableConfig(configurable={"thread_id": f"{user_id}_{session_id}"})
+        
         initial_state = {
             "messages": [HumanMessage(content=message)],
             "learning_context": learning_context,
-            "sources_retrieved": [],
-            "educational_metadata": {}
         }
 
-        # Run conversation graph
         try:
             if not self.graph:
                 raise ValueError("Graph not initialized")
-            result = self.graph.invoke(initial_state, config)
 
-            # Extract response and metadata
-            assistant_message = result["messages"][-1]
-            educational_metadata = result.get("educational_metadata", {})
+            final_state = self.graph.invoke(initial_state, config)
+            
+            assistant_message = final_state["messages"][-1]
+            response_content = assistant_message.content
+            
+            sources = []
+            if self.rag_tool and assistant_message.tool_calls:
+                tool_call = assistant_message.tool_calls[0]
+                if tool_call['name'] == self.rag_tool.name:
+                    for msg in reversed(final_state["messages"]):
+                        if msg.type == "tool":
+                            tool_output = msg.content
+                            try:
+                                # The tool output is a dictionary, not a JSON string
+                                sources = tool_output.get("sources", [])
+                            except Exception as e:
+                                logger.warning(f"Could not extract sources from tool output: {e}")
+                            break
 
-            # Generate educational enhancements
             follow_up_questions = self.generate_follow_up_questions(
                 learning_context.current_topic or "treinamento",
                 learning_context.difficulty_level
             )
 
-            # Extract sources from retrieved documents
-            sources = []
-            if "sources_retrieved" in result:
-                for doc in result["sources_retrieved"]:
-                    if hasattr(doc, 'metadata'):
-                        sources.append({
-                            "title": doc.metadata.get("title", "Material de Estudo"),
-                            "source": doc.metadata.get("source", ""),
-                            "chunk": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
-                            "page": doc.metadata.get("page")
-                        })
-
-            # Update learning context based on response
-            topics_mentioned = educational_metadata.get("topics_mentioned", [])
-            if topics_mentioned:
-                learning_context.topics_covered.extend(topics_mentioned)
-                # Most relevant topic
-                learning_context.current_topic = topics_mentioned[0]
-
             return {
-                "response": assistant_message.content,
+                "response": response_content,
                 "sources": sources,
-                # Limit to 3 questions
                 "follow_up_questions": follow_up_questions[:3],
-                "learning_suggestions": educational_metadata.get("learning_opportunities", []),
-                "related_topics": topics_mentioned,
-                "educational_metadata": educational_metadata,
+                "learning_suggestions": [],
+                "related_topics": [],
+                "educational_metadata": {},
                 "learning_context": learning_context.dict()
             }
 
         except Exception as e:
-            logger.error(f"Error in educational chat: {e}")
+            logger.error(f"Error in educational chat: {e}", exc_info=True)
             return {
-                "response": "Desculpe, ocorreu um erro durante nossa conversa educacional. Pode tentar novamente?",
+                "response": "Desculpe, ocorreu um erro durante nossa conversa educacional.",
                 "sources": [],
                 "follow_up_questions": [],
                 "learning_suggestions": [],
@@ -545,19 +410,6 @@ async def educational_chat(
             learning_preferences=learning_preferences
         )
 
-        # Add RAG sources to the result
-        if agent.rag_handler and agent.rag_handler.vector_store:
-            retriever = agent.rag_handler.vector_store.as_retriever()
-            docs = retriever.invoke(request.content)
-            sources = []
-            for doc in docs:
-                sources.append({
-                    "title": doc.metadata.get("title", "Material de Estudo"),
-                    "source": doc.metadata.get("source", ""),
-                    "chunk": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
-                    "page": doc.metadata.get("page")
-                })
-            result["sources"] = sources
 
         # Search for relevant videos based on the topic
         video_suggestions = []

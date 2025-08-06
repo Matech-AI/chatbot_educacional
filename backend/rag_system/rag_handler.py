@@ -5,9 +5,10 @@ import time
 import hashlib
 import json
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Tuple, Optional, Any, Type
 from dataclasses import dataclass, field
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr, Field
+from langchain_core.tools import BaseTool
 import pandas as pd
 
 from langchain_chroma import Chroma
@@ -25,7 +26,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain.load import dumps, loads
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -90,7 +91,7 @@ class RAGHandler:
             self.persist_dir = persist_dir
         else:
             backend_dir = Path(__file__).parent.parent
-            self.persist_dir = str(backend_dir / "data" / "chromadb_unified")
+            self.persist_dir = str(backend_dir / "data" / "chromadb")
         
         self.materials_dir = Path(materials_dir)
         
@@ -122,7 +123,7 @@ class RAGHandler:
         try:
             self.embeddings = OpenAIEmbeddings(
                 model=self.config.embedding_model,
-                api_key=self.api_key
+                api_key=SecretStr(self.api_key)
             )
             logger.info(f"✅ Embeddings initialized: {self.config.embedding_model}")
         except Exception as e:
@@ -134,8 +135,7 @@ class RAGHandler:
             self.llm = ChatOpenAI(
                 model=self.config.model_name,
                 temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-                api_key=self.api_key
+                api_key=SecretStr(self.api_key)
             )
             logger.info(f"✅ LLM initialized: {self.config.model_name}")
         except Exception as e:
@@ -199,15 +199,16 @@ class RAGHandler:
         if not self.vector_store:
             self._initialize_vector_store()
 
-        if not force_reprocess and self.vector_store._collection.count() > 0:
-            logger.info("📋 Documents already processed. Use force_reprocess=True to reprocess.")
-            return True
-        
-        if force_reprocess and self.vector_store._collection.count() > 0:
-            logger.info("🗑️ Clearing existing documents for reprocessing...")
-            ids = self.vector_store.get()["ids"]
-            if ids:
-                self.vector_store.delete(ids)
+        if self.vector_store:
+            if not force_reprocess and self.vector_store._collection.count() > 0:
+                logger.info("📋 Documents already processed. Use force_reprocess=True to reprocess.")
+                return True
+            
+            if force_reprocess and self.vector_store._collection.count() > 0:
+                logger.info("🗑️ Clearing existing documents for reprocessing...")
+                ids = self.vector_store.get()["ids"]
+                if ids:
+                    self.vector_store.delete(ids)
 
         # Load documents
         documents = self._load_all_documents()
@@ -285,13 +286,13 @@ class RAGHandler:
                     'class_name': course_data['Nome da Aula'],
                 })
 
-        if len(doc.page_content) > 100:
-            if self.config.extract_key_concepts:
-                enhanced_metadata['key_concepts'] = self._extract_key_concepts(doc.page_content)
-            if self.config.assess_difficulty_level:
-                enhanced_metadata['difficulty_level'] = self._assess_difficulty_level(doc.page_content)
-            if self.config.create_summaries:
-                enhanced_metadata['summary'] = self._create_content_summary(doc.page_content)
+        # if len(doc.page_content) > 100:
+        #     if self.config.extract_key_concepts:
+        #         enhanced_metadata['key_concepts'] = self._extract_key_concepts(doc.page_content)
+        #     if self.config.assess_difficulty_level:
+        #         enhanced_metadata['difficulty_level'] = self._assess_difficulty_level(doc.page_content)
+        #     if self.config.create_summaries:
+        #         enhanced_metadata['summary'] = self._create_content_summary(doc.page_content)
         
         return Document(page_content=doc.page_content, metadata=enhanced_metadata)
 
@@ -311,6 +312,8 @@ class RAGHandler:
         
         try:
             prompt = ChatPromptTemplate.from_template(prompt_template)
+            if not self.llm:
+                raise ValueError("LLM not initialized")
             chain = prompt | self.llm | StrOutputParser()
             result = chain.invoke({"text": text[:2000]})
             parsed_result = result_parser(result)
@@ -336,13 +339,25 @@ class RAGHandler:
     def generate_response(self, question: str, user_level: str = "intermediate") -> Dict[str, Any]:
         """Generate a response using the RAG system."""
         if not self.retriever:
+            logger.error("Retriever not initialized.")
             return {"answer": "System not ready.", "sources": []}
 
         try:
+            logger.info(f"🔍 Retrieving documents for question: '{question}'")
             docs = self.retriever.get_relevant_documents(question)
-            
+            logger.info(f"📄 Found {len(docs)} relevant documents.")
+
+            if not docs:
+                logger.warning("No documents found for the question.")
+                return {"answer": "No relevant information found.", "sources": []}
+
             sources = []
-            for doc in docs:
+            for i, doc in enumerate(docs):
+                logger.info(f"  - Document {i+1}:")
+                logger.info(f"    - Source: {doc.metadata.get('source', 'N/A')}")
+                logger.info(f"    - Page: {doc.metadata.get('page', 'N/A')}")
+                logger.info(f"    - Chunk Content: {doc.page_content}") # Log the full chunk content
+                
                 source = Source(
                     title=doc.metadata.get('title', Path(doc.metadata.get('source', '')).name),
                     source=doc.metadata.get('source', ''),
@@ -355,21 +370,56 @@ class RAGHandler:
                 )
                 source.educational_value = self._calculate_educational_value(source, user_level)
                 sources.append(source)
-            
+
             sources.sort(key=lambda x: x.educational_value, reverse=True)
             
             context = "\n\n".join([s.chunk for s in sources])
+            logger.info(f"📝 Generated context with {len(sources)} sources.")
+            logger.info(f"Full context for LLM:\n{context}")
             
-            prompt_template = "Responda à pergunta com base no contexto a seguir.\n\nContexto: {context}\n\nPergunta: {question}"
+            prompt_template = """
+            Você é um Professor de Educação Física e Treinamento Esportivo especializado em força e condicionamento físico.
+
+            SEUS OBJETIVOS EDUCACIONAIS:
+            1. Ensinar conceitos de forma clara e progressiva
+            2. Adaptar explicações ao nível do aluno ({user_level})
+            3. Fornecer exemplos práticos e aplicáveis
+            4. Citar as fontes consultadas no contexto
+
+            METODOLOGIA DE ENSINO:
+            - Use analogias e exemplos do dia a dia
+            - Divida conceitos complexos em partes menores
+            - Relacione teoria com prática
+            - **Cite as fontes de onde a informação foi extraída (ex: "Conforme a Aula 3, página 7...")**
+
+            ESTRUTURA DAS RESPOSTAS:
+            1. **Resposta Principal**: Explicação clara e didática da pergunta: {question}
+            2. **Fontes e Evidências**: Referências dos materiais consultados no {context}
+
+            IMPORTANTE:
+            - Sempre baseie suas respostas no conteúdo dos materiais de estudo fornecidos no {context}
+            - Se não houver informação suficiente nos materiais, indique claramente
+            """
             prompt = ChatPromptTemplate.from_template(prompt_template)
-            
+
+            if not self.llm:
+                raise ValueError("LLM not initialized")
+
             chain = prompt | self.llm | StrOutputParser()
-            answer = chain.invoke({"context": context, "question": question})
-            
-            return {"answer": answer, "sources": [s.dict() for s in sources]}
+            answer = chain.invoke({
+                "context": context,
+                "question": question,
+                "user_level": user_level
+            })
+
+            logger.info(f"🤖 LLM Answer: {answer}")
+
+            final_sources = [s.dict() for s in sources]
+            logger.info(f"✅ Successfully generated response with {len(final_sources)} sources.")
+            return {"answer": answer, "sources": final_sources}
         except Exception as e:
-            logger.error(f"Error generating response: {e}")
-            return {"answer": "Error generating response.", "sources": []}
+            logger.error(f"❌ Error generating response: {e}", exc_info=True)
+            return {"answer": "An error occurred while generating the response.", "sources": []}
 
     def _calculate_educational_value(self, source: Source, user_level: str) -> float:
         """Calculate educational value score for a source."""
@@ -408,4 +458,32 @@ class RAGHandler:
         except Exception as e:
             logger.error(f"❌ Error resetting handler: {e}")
 
-__all__ = ['RAGHandler', 'RAGConfig', 'Source']
+class RAGQueryToolInput(BaseModel):
+    """Input schema for the RAG Query Tool."""
+    query: str = Field(description="The user's question to be answered using the RAG system.")
+    user_level: str = Field(default="intermediate", description="The user's knowledge level (e.g., 'beginner', 'intermediate', 'advanced').")
+
+class RAGQueryTool(BaseTool):
+    """A tool to query the RAG system for educational content."""
+    name: str = "search_educational_materials"
+    description: str = "Searches and retrieves information from educational materials to answer questions about fitness, exercise science, and strength training."
+    args_schema = RAGQueryToolInput
+    rag_handler: RAGHandler
+
+    def _run(self, query: str, user_level: str = "intermediate") -> Dict[str, Any]:
+        """Execute the RAG query."""
+        logger.info(f"Tool '{self.name}' invoked with query: '{query}' and user_level: '{user_level}'")
+        try:
+            result = self.rag_handler.generate_response(question=query, user_level=user_level)
+            return result
+        except Exception as e:
+            logger.error(f"Error executing RAGQueryTool: {e}", exc_info=True)
+            return {"answer": "An error occurred while searching the materials.", "sources": []}
+
+    async def _arun(self, query: str, user_level: str = "intermediate") -> Dict[str, Any]:
+        """Asynchronously execute the RAG query."""
+        # For simplicity, we call the synchronous version. For a fully async implementation,
+        # the underlying methods in RAGHandler would also need to be async.
+        return self._run(query, user_level)
+
+__all__ = ['RAGHandler', 'RAGConfig', 'Source', 'RAGQueryTool']
