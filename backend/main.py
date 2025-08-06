@@ -48,7 +48,7 @@ load_dotenv()
 app = FastAPI(
     title="DNA da Força AI API",
     description="Sistema educacional com IA para treinamento físico - Versão Recursiva Completa",
-    version="1.4.0"
+    version="1.7.0"
 )
 
 # Configure CORS
@@ -99,7 +99,7 @@ user_auth_status = {}  # Armazenar status de autenticação por usuário
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
-logger.info("🚀 DNA da Força API v1.4.0 - Complete Recursive Drive Integration")
+logger.info("🚀 DNA da Força API v1.7.0 - Complete Recursive Drive Integration")
 
 # ========================================
 # MODELS
@@ -290,9 +290,9 @@ def format_bytes(bytes_value: int) -> str:
 def root():
     """Root endpoint"""
     return {
-        "message": "🚀 DNA da Força API v1.4 - Complete Recursive Drive Integration",
+        "message": "🚀 DNA da Força API v1.7 - Complete Recursive Drive Integration",
         "status": "ok",
-        "version": "1.4.0",
+        "version": "1.7.0",
         "features": [
             "auth", "chat", "upload", "materials",
             "recursive_drive_sync", "maintenance",
@@ -309,7 +309,7 @@ def health():
 
     status = {
         "status": "ok",
-        "version": "1.4.0",
+        "version": "1.7.0",
         "rag_initialized": rag_handler is not None,
         "drive_authenticated": drive_handler.service is not None,
         "materials_count": materials_count,
@@ -338,7 +338,7 @@ async def get_status():
         "drive_handler_initialized": drive_handler is not None,
         "drive_authenticated": drive_handler.service is not None if drive_handler else False,
         "uptime": "Running",
-        "version": "1.4.0",
+        "version": "1.7.0",
         "timestamp": datetime.now().isoformat(),
         "message": "Sistema funcionando com funcionalidades recursivas completas."
     }
@@ -1637,7 +1637,7 @@ async def generate_system_report(current_user: User = Depends(get_current_user))
             "timestamp": datetime.now().isoformat(),
             "generated_by": current_user.username,
             "system_info": {
-                "version": "1.4.0",
+                "version": "1.7.0",
                 "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
                 "platform": os.name
             },

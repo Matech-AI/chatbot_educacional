@@ -20,18 +20,25 @@ const HomePage: React.FC = () => {
   const [backendStatus, setBackendStatus] = useState<string>("Verificando...");
   const [isOnline, setIsOnline] = useState(false);
 
+  const canManage = user?.role === "admin" || user?.role === "instructor";
+
   useEffect(() => {
     fetchMaterials();
-    checkBackendHealth();
-  }, [fetchMaterials]);
+    // Verificar backend apenas se for admin ou instrutor
+    if (canManage) {
+      checkBackendHealth();
+    }
+  }, [fetchMaterials, canManage]);
 
   const checkBackendHealth = async () => {
     try {
       // Usar a mesma URL base que é usada para outras requisições API
-      const apiBase = process.env.NODE_ENV === 'production' 
-        ? (import.meta.env.VITE_API_BASE_URL || 'https://dna-forca-api-server.onrender.com')
-        : '/api';
-      
+      const apiBase =
+        process.env.NODE_ENV === "production"
+          ? import.meta.env.VITE_API_BASE_URL ||
+            "https://dna-forca-api-server.onrender.com"
+          : "/api";
+
       const response = await fetch(`${apiBase}/health`);
       if (response.ok) {
         const data = await response.json();
@@ -46,8 +53,6 @@ const HomePage: React.FC = () => {
       setIsOnline(false);
     }
   };
-
-  const canManage = user?.role === "admin" || user?.role === "instructor";
 
   const quickActions = [
     {
@@ -91,12 +96,17 @@ const HomePage: React.FC = () => {
       icon: <BookOpen size={20} />,
       color: "text-blue-600",
     },
-    {
-      label: "Status do Sistema",
-      value: isOnline ? "Online" : "Offline",
-      icon: <TrendingUp size={20} />,
-      color: isOnline ? "text-green-600" : "text-red-600",
-    },
+    // Status do Sistema apenas para Admin e Instrutor
+    ...(canManage
+      ? [
+          {
+            label: "Status do Sistema",
+            value: isOnline ? "Online" : "Offline",
+            icon: <TrendingUp size={20} />,
+            color: isOnline ? "text-green-600" : "text-red-600",
+          },
+        ]
+      : []),
     {
       label: "Último Login",
       value: "Agora",
@@ -160,26 +170,28 @@ const HomePage: React.FC = () => {
         ))}
       </motion.div>
 
-      {/* Backend Status */}
-      <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ delay: 0.2 }}
-        className="bg-white rounded-lg border border-gray-200 p-4 mb-8 shadow-sm"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-medium text-gray-900">Status do Backend</h3>
-            <p className="text-sm text-gray-600">{backendStatus}</p>
+      {/* Backend Status - Apenas para Admin e Instrutor */}
+      {canManage && (
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.2 }}
+          className="bg-white rounded-lg border border-gray-200 p-4 mb-8 shadow-sm"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-medium text-gray-900">Status do Backend</h3>
+              <p className="text-sm text-gray-600">{backendStatus}</p>
+            </div>
+            <button
+              onClick={checkBackendHealth}
+              className="text-blue-600 text-sm hover:text-blue-800 font-medium"
+            >
+              Verificar novamente
+            </button>
           </div>
-          <button
-            onClick={checkBackendHealth}
-            className="text-blue-600 text-sm hover:text-blue-800 font-medium"
-          >
-            Verificar novamente
-          </button>
-        </div>
-      </motion.div>
+        </motion.div>
+      )}
 
       {/* Quick Actions */}
       <motion.div
@@ -288,8 +300,8 @@ const HomePage: React.FC = () => {
         transition={{ delay: 0.5 }}
         className="mt-12 text-center text-sm text-gray-500"
       >
-        <p>DNA da Força v1.4 - Sistema de Assistente Educacional</p>
-        <p className="mt-1">Desenvolvido por Matech AI</p>
+        <p>DNA da Força v1.7 - Assistente de Treinamento</p>
+        <p className="mt-1">Desenvolvido pela Matech AI</p>
       </motion.div>
     </div>
   );

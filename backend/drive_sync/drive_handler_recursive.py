@@ -347,7 +347,8 @@ class RecursiveDriveHandler:
             f"📁 Analyzing folder structure: {folder_id} at path: {current_path}")
 
         if not self.service:
-            logger.error("Drive service not initialized. Please authenticate first.")
+            logger.error(
+                "Drive service not initialized. Please authenticate first.")
             raise Exception("Drive service not initialized.")
 
         # Verificar flag de cancelamento
@@ -454,10 +455,26 @@ class RecursiveDriveHandler:
             "cleared_entries": len(self.file_hashes)
         }
 
-    def analyze_folder_recursive(self, folder_id: str, max_depth: Optional[int] = None) -> Dict[str, Any]:
+    def force_redownload_all(self):
+        """Force redownload of all files by clearing cache and scanning existing files"""
+        logger.info(
+            "🔄 Force redownload mode: clearing cache and rescanning existing files...")
+        self.clear_file_hashes_cache()
+        # Rescan existing files to rebuild cache
+        existing_hashes = self.scan_existing_files()
+        self.file_hashes.update(existing_hashes)
+        logger.info(
+            f"✅ Force redownload mode activated. Found {len(existing_hashes)} existing files")
+        return {
+            "status": "success",
+            "message": "Force redownload mode activated",
+            "existing_files_count": len(existing_hashes)
+        }
+
+    def analyze_folder_recursive(self, folder_id: str, max_depth: int = None) -> Dict[str, Any]:
         """Analyze a Google Drive folder recursively and return detailed information"""
         logger.info(f"📊 Starting recursive analysis of folder: {folder_id}")
-        
+
         # Reset stats for analysis
         self.download_stats = {
             'total_folders': 0,
@@ -472,31 +489,32 @@ class RecursiveDriveHandler:
 
         try:
             # Get the complete folder structure
-            folder_structure = self.get_folder_structure(folder_id, max_depth=max_depth)
-            
+            folder_structure = self.get_folder_structure(
+                folder_id, max_depth=max_depth)
+
             analysis_time = time.time() - start_time
-            
+
             # Calculate additional statistics
             total_size = 0
             file_types = {}
-            
+
             def analyze_structure_recursive(structure):
                 nonlocal total_size, file_types
-                
+
                 # Analyze files in current folder
                 for file_info in structure.get('files', []):
                     file_size = file_info.get('size', 0)
                     total_size += file_size
-                    
+
                     mime_type = file_info.get('mimeType', 'unknown')
                     file_types[mime_type] = file_types.get(mime_type, 0) + 1
-                
+
                 # Analyze subfolders
                 for subfolder in structure.get('subfolders', {}).values():
                     analyze_structure_recursive(subfolder)
-            
+
             analyze_structure_recursive(folder_structure)
-            
+
             analysis_result = {
                 'status': 'success',
                 'folder_id': folder_id,
@@ -512,12 +530,14 @@ class RecursiveDriveHandler:
                 'folder_structure': folder_structure,
                 'analysis_timestamp': time.time()
             }
-            
-            logger.info(f"✅ Recursive analysis completed in {analysis_time:.2f}s")
-            logger.info(f"📊 Found {self.download_stats['total_folders']} folders and {self.download_stats['total_files']} files")
-            
+
+            logger.info(
+                f"✅ Recursive analysis completed in {analysis_time:.2f}s")
+            logger.info(
+                f"📊 Found {self.download_stats['total_folders']} folders and {self.download_stats['total_files']} files")
+
             return analysis_result
-            
+
         except Exception as e:
             logger.error(f"❌ Error in recursive analysis: {str(e)}")
             return {
@@ -531,7 +551,8 @@ class RecursiveDriveHandler:
         logger.info(f"🔄 Starting recursive sync of folder: {folder_id}")
         try:
             result = self.download_drive_recursive(folder_id, max_depth)
-            logger.info(f"✅ Recursive sync completed: {result.get('status', 'unknown')}")
+            logger.info(
+                f"✅ Recursive sync completed: {result.get('status', 'unknown')}")
             return result
         except Exception as e:
             logger.error(f"❌ Error in recursive sync: {str(e)}")
@@ -554,6 +575,82 @@ class RecursiveDriveHandler:
             return True, f"Content duplicate of: {self.file_hashes[file_hash]}"
 
         # Check by filename (more lenient - just warn)
+        if filename in self.processed_files:
+            logger.warning(f"⚠️ Filename duplicate detected: {filename}")
+
+        return False, ""
+
+    def scan_existing_files(self) -> Dict[str, str]:
+        """Scan existing files in materials directory and calculate their hashes"""
+        logger.info(f"🔍 Scanning existing files in: {self.materials_dir}")
+
+        existing_hashes = {}
+
+        if not self.materials_dir.exists():
+            logger.info(
+                "📁 Materials directory does not exist, no existing files to scan")
+            return existing_hashes
+
+        try:
+            # Recursively scan all files in the materials directory
+            for file_path in self.materials_dir.rglob("*"):
+                if file_path.is_file():
+                    try:
+                        # Calculate hash of existing file
+                        with open(file_path, 'rb') as f:
+                            file_content = f.read()
+                            file_hash = self.calculate_file_hash(file_content)
+
+                        # Store hash -> relative path mapping
+                        relative_path = str(
+                            file_path.relative_to(self.materials_dir))
+                        existing_hashes[file_hash] = relative_path
+
+                        # Also store filename -> file_id mapping for processed_files
+                        self.processed_files[file_path.name] = f"existing_{file_hash[:8]}"
+
+                        logger.debug(
+                            f"📄 Found existing file: {relative_path} (hash: {file_hash[:16]}...)")
+
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️ Could not process existing file {file_path}: {e}")
+                        continue
+
+            logger.info(f"✅ Scanned {len(existing_hashes)} existing files")
+            return existing_hashes
+
+        except Exception as e:
+            logger.error(f"❌ Error scanning existing files: {e}")
+            return existing_hashes
+
+    def is_file_already_downloaded(self, filename: str, file_content: bytes, folder_path: str) -> Tuple[bool, str]:
+        """Check if file is already downloaded by content hash or path"""
+        file_hash = self.calculate_file_hash(file_content)
+
+        # Check by hash first (exact content match)
+        if file_hash in self.file_hashes:
+            existing_path = self.file_hashes[file_hash]
+            return True, f"Content duplicate of: {existing_path}"
+
+        # Check if file exists at expected path
+        expected_path = self.materials_dir / folder_path / filename
+        if expected_path.exists():
+            try:
+                with open(expected_path, 'rb') as f:
+                    existing_content = f.read()
+                    existing_hash = self.calculate_file_hash(existing_content)
+
+                if existing_hash == file_hash:
+                    return True, f"File already exists at: {expected_path.relative_to(self.materials_dir)}"
+                else:
+                    logger.warning(
+                        f"⚠️ File exists but content differs: {expected_path}")
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ Could not read existing file {expected_path}: {e}")
+
+        # Check by filename (just log warning)
         if filename in self.processed_files:
             logger.warning(f"⚠️ Filename duplicate detected: {filename}")
 
@@ -583,9 +680,11 @@ class RecursiveDriveHandler:
                 return None
 
             # Skip video files - they will be replaced by PDF files with same name
-            video_extensions = ['.mp4', '.avi', '.mov', '.webm', '.mkv', '.flv', '.wmv']
+            video_extensions = ['.mp4', '.avi', '.mov',
+                                '.webm', '.mkv', '.flv', '.wmv']
             if any(filename.lower().endswith(ext) for ext in video_extensions) or mime_type.startswith('video/'):
-                logger.info(f"⏭️ Skipping video file: {filename} (will be replaced by PDF)")
+                logger.info(
+                    f"⏭️ Skipping video file: {filename} (will be replaced by PDF)")
                 return None
 
             # Download file content
@@ -642,9 +741,9 @@ class RecursiveDriveHandler:
                 self.download_stats['errors'] += 1
                 return None
 
-            # Check for duplicates
-            is_duplicate, duplicate_info = self.is_duplicate_file(
-                filename, file_content)
+            # Check for duplicates using enhanced duplicate detection
+            is_duplicate, duplicate_info = self.is_file_already_downloaded(
+                filename, file_content, folder_path)
             if is_duplicate:
                 logger.info(
                     f"⏭️ Skipping duplicate file: {filename} ({duplicate_info})")
@@ -802,9 +901,13 @@ class RecursiveDriveHandler:
             'skipped_duplicates': 0,
             'errors': 0
         }
-        self.processed_files.clear()
-        self.file_hashes.clear()
         self.cancel_flag = False  # Garantir que começamos com o flag desativado
+
+        # Scan existing files to avoid re-downloading
+        logger.info("🔍 Scanning existing files to avoid duplicates...")
+        existing_hashes = self.scan_existing_files()
+        self.file_hashes.update(existing_hashes)
+        logger.info(f"📊 Found {len(existing_hashes)} existing files to skip")
 
         start_time = time.time()
 
@@ -999,7 +1102,7 @@ class RecursiveDriveHandler:
         """Reset handler state"""
         logger.info("🔄 Resetting RecursiveDriveHandler...")
         self.processed_files.clear()
-        self.file_hashes.clear()
+        # Don't clear file_hashes to preserve existing file information
         self.download_stats = {
             'total_folders': 0,
             'total_files': 0,

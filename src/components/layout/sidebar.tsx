@@ -185,8 +185,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
         </Button>
 
         <div className="mt-4 text-center text-xs text-gray-500">
-          <p>DNA da Força v1.4</p>
-          <p className="mt-1">Desenvolvido por Matech AI</p>
+                  <p>DNA da Força v1.7</p>
+        <p className="mt-1">Desenvolvido pela Matech AI</p>
         </div>
       </div>
     </div>
