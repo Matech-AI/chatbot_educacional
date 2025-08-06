@@ -41,6 +41,9 @@ python-magic
 # ChromaDB para vector store
 chromadb
 
+# Processamento de planilhas
+pandas
+
 # Google Drive API
 google-auth-oauthlib
 google-auth-httplib2
