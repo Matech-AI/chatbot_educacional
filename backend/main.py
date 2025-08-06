@@ -22,8 +22,7 @@ from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
 
 # Import RAG handler
-from rag_system.rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel
-from chat_agents.chat_agent import graph as chat_agent_graph
+from rag_system.rag_handler import RAGHandler, RAGConfig
 from drive_sync.drive_handler import DriveHandler
 from drive_sync.drive_handler_recursive import RecursiveDriveHandler
 from auth.auth import get_current_user, User, router as auth_router
@@ -33,10 +32,11 @@ from chat_agents.educational_agent import router as educational_agent_router
 import threading
 import asyncio
 from contextlib import asynccontextmanager
+from fastapi import APIRouter
 
 # Configure enhanced logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -68,6 +68,9 @@ app.include_router(user_management_router)
 app.include_router(auth_router)
 # Se necessário, inclua outros routers:
 app.include_router(educational_agent_router)
+
+# Crie um novo APIRouter para os endpoints do Drive
+drive_router = APIRouter()
 
 # Initialize handlers
 rag_handler = None
@@ -452,8 +455,8 @@ async def initialize_system(
         # Process materials and initialize RAG
         try:
             logger.info("🧠 Starting RAG processing and initialization...")
-            success, rag_messages = rag_handler.process_and_initialize(
-                "data/materials")
+            success = rag_handler.process_documents()
+            rag_messages = ["RAG processing complete."]
             messages.extend(rag_messages)
 
             if success:
@@ -494,8 +497,19 @@ async def chat(question: Question):
         )
 
     try:
-        response = rag_handler.generate_response(question.content)
-        return response
+        start_time = time.time()
+        response_data = rag_handler.generate_response(question.content)
+        end_time = time.time()
+        
+        # Adicionar o tempo de resposta ao dicionário de resposta
+        response_data['response_time'] = end_time - start_time
+        
+        # Criar e retornar um objeto Response
+        return Response(
+            answer=response_data.get("answer", ""),
+            sources=response_data.get("sources", []),
+            response_time=response_data.get("response_time", 0.0)
+        )
     except Exception as e:
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -520,71 +534,13 @@ async def chat_auth(question: Question, current_user: User = Depends(get_current
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-async def stream_agent_response(message: str, thread_id: str):
-    """Generator function to stream agent responses."""
-    config = RunnableConfig(configurable={"thread_id": thread_id})
-    async for event in chat_agent_graph.astream_events(
-        {"messages": [("user", message)]},
-        config=config,
-        version="v1"
-    ):
-        kind = event["event"]
-        if kind == "on_chat_model_stream" and "chunk" in event["data"] and event["data"]["chunk"].content:
-            content = event["data"]["chunk"].content
-            data = {
-                "thread_id": thread_id,
-                "event": "stream",
-                "data": content,
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-        elif kind == "on_tool_start":
-            data = {
-                "thread_id": thread_id,
-                "event": "tool_start",
-                "data": {
-                    "name": event["name"],
-                    "input": event["data"].get("input"),
-                },
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-        elif kind == "on_tool_end":
-            data = {
-                "thread_id": thread_id,
-                "event": "tool_end",
-                "data": {
-                    "name": event["name"],
-                    "output": event["data"].get("output"),
-                },
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-
-
-@app.post("/chat/agent")
-async def chat_agent_stream(request: ChatRequest, current_user: User = Depends(get_current_user)):
-    """Endpoint to stream responses from the chat agent."""
-    thread_id = request.thread_id or str(uuid4())
-    logger.info(
-        f"🤖 Agent chat request from {current_user.username} on thread {thread_id}: {request.message[:50]}...")
-
-    if not rag_handler:
-        logger.error("❌ RAG handler not initialized for agent chat")
-        raise HTTPException(
-            status_code=400, detail="System not initialized. Cannot use agent.")
-
-    return StreamingResponse(
-        stream_agent_response(request.message, thread_id),
-        media_type="text/event-stream"
-    )
-
-
 # ========================================
 # RECURSIVE DRIVE ENDPOINTS
 # ========================================
 
 
 @asynccontextmanager
-async def get_user_drive_handler(username: str, api_key: str = None):
+async def get_user_drive_handler(username: str, api_key: Optional[str] = None):
     """Get or create a user-specific drive handler with proper locking and auth caching"""
     # Use a global lock when creating user locks to avoid race conditions
     with user_handler_creation_lock:
@@ -631,7 +587,7 @@ async def get_user_drive_handler(username: str, api_key: str = None):
             pass
 
 
-@app.post("/drive/sync-recursive")
+@drive_router.post("/sync-recursive")
 async def sync_drive_recursive(
     data: RecursiveSync,
     background_tasks: BackgroundTasks,
@@ -698,8 +654,7 @@ async def sync_drive_recursive(
                         if rag_handler:
                             logger.info(
                                 "🧠 Re-indexing materials in RAG handler...")
-                            rag_handler.process_and_initialize(
-                                "data/materials")
+                            rag_handler.process_documents()
                             logger.info("✅ Re-indexing complete.")
 
                         # Final update with thread safety
@@ -744,7 +699,7 @@ async def sync_drive_recursive(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/recursive-drive-analysis")
+@drive_router.post("/recursive-drive-analysis")
 async def recursive_drive_analysis(
     data: DriveSync,
     current_user: User = Depends(get_current_user)
@@ -782,7 +737,7 @@ async def recursive_drive_analysis(
             status_code=500, detail=f"Drive analysis error: {str(e)}")
 
 
-@app.post("/recursive-drive-sync")
+@drive_router.post("/recursive-drive-sync")
 async def recursive_drive_sync(
     data: DriveSync,
     background_tasks: BackgroundTasks,
@@ -831,7 +786,7 @@ async def recursive_drive_sync(
 
                     # Run the download operation
                     result = task_handler.download_drive_recursive(
-                        data.folder_id, max_depth=data.max_depth)
+                        data.folder_id, max_depth=data.max_depth or -1)
 
                     if result['status'] == 'success':
                         # Update progress with thread safety
@@ -847,8 +802,7 @@ async def recursive_drive_sync(
                         if rag_handler:
                             logger.info(
                                 "🧠 Re-indexing materials after recursive sync...")
-                            rag_handler.process_and_initialize(
-                                "data/materials")
+                            rag_handler.process_documents()
                             logger.info("✅ Re-indexing complete.")
 
                         # Final update with thread safety
@@ -898,7 +852,7 @@ async def recursive_drive_sync(
             status_code=500, detail=f"Drive sync error: {str(e)}")
 
 
-@app.get("/drive/analyze-folder")
+@drive_router.get("/analyze-folder")
 async def analyze_folder(
     folder_id: str,
     api_key: Optional[str] = None,
@@ -930,7 +884,7 @@ async def analyze_folder(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/drive/download-progress")
+@drive_router.get("/download-progress")
 async def get_download_progress(
     download_id: Optional[str] = None,
     current_user: User = Depends(get_current_user)
@@ -974,7 +928,7 @@ async def get_download_progress(
         }
 
 
-@app.post("/drive/cancel-download")
+@drive_router.post("/cancel-download")
 async def cancel_download(
     download_id: str,
     current_user: User = Depends(get_current_user)
@@ -1013,7 +967,7 @@ async def cancel_download(
     return {"status": "cancelled", "download_id": download_id}
 
 
-@app.get("/drive/folder-stats")
+@drive_router.get("/folder-stats")
 async def get_folder_stats(current_user: User = Depends(get_current_user)):
     """Get detailed folder statistics"""
     try:
@@ -1127,7 +1081,7 @@ async def get_drive_stats_detailed(current_user: User = Depends(get_current_user
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/drive/test-connection")
+@drive_router.get("/test-connection")
 async def test_drive_connection(
     api_key: Optional[str] = None,
     current_user: User = Depends(get_current_user)
@@ -1194,7 +1148,7 @@ async def test_drive_connection(
         }
 
 
-@app.post("/drive/clear-cache")
+@drive_router.post("/clear-cache")
 async def clear_drive_cache(current_user: User = Depends(get_current_user)):
     """Clear drive handler cache and reset state"""
     if current_user.role != "admin":
@@ -1343,7 +1297,7 @@ async def sync_drive(
             # Re-index materials in RAG handler
             if rag_handler:
                 logger.info("🧠 Re-indexing materials after legacy sync...")
-                rag_handler.process_and_initialize("data/materials")
+                rag_handler.process_documents()
                 logger.info("✅ Re-indexing complete.")
 
             stats = drive_handler.get_download_stats()
@@ -2117,7 +2071,7 @@ async def upload_material(
         # Re-index materials in RAG handler
         if rag_handler:
             logger.info("🧠 Re-indexing materials after upload...")
-            rag_handler.process_and_initialize("data/materials")
+            rag_handler.process_documents()
             logger.info("✅ Re-indexing complete.")
 
         return {
@@ -2207,18 +2161,6 @@ def should_require_auth(filename: str) -> bool:
     return True
 
 
-def should_require_auth(filename: str) -> bool:
-    """Determina se um arquivo requer autenticação com base em regras específicas"""
-    # Exemplo: arquivos com 'public' no nome não requerem autenticação
-    if 'public' in filename.lower():
-        return False
-
-    # Exemplo: certos tipos de arquivo não requerem autenticação
-    if filename.lower().endswith(('.pdf', '.txt')):
-        return False
-
-    # Por padrão, outros arquivos requerem autenticação
-    return True
 
 
 @app.delete("/materials/{filename}")
@@ -2397,6 +2339,9 @@ async def sync_drive_simple(
 # STARTUP EVENT
 # ========================================
 
+# Inclua o router do Drive no aplicativo principal com um prefixo
+app.include_router(drive_router, prefix="/drive", tags=["drive"])
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -2415,7 +2360,7 @@ async def startup_event():
         logger.info("🔑 OpenAI API key found, initializing RAG handler...")
         try:
             rag_handler = RAGHandler(api_key=openai_api_key)
-            rag_handler.process_and_initialize("data/materials")
+            rag_handler.process_documents()
             logger.info("✅ RAG handler initialized successfully.")
         except Exception as e:
             logger.error(f"❌ Failed to initialize RAG handler: {e}")
@@ -2443,4 +2388,4 @@ if __name__ == "__main__":
     import uvicorn
     logger.info(
         "🚀 DNA da Força Backend v1.4 - Complete Recursive Drive Integration")
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="debug")

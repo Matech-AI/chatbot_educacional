@@ -25,6 +25,7 @@ from drive_sync.drive_handler_recursive import RecursiveDriveHandler
 from auth.auth import get_current_user, User, router as auth_router
 from auth.auth import get_optional_current_user
 from auth.user_management import router as user_management_router
+# Educational agent router is now part of the RAG server
 from chat_agents.educational_agent import router as educational_agent_router
 import threading
 import asyncio
@@ -62,7 +63,7 @@ app.add_middleware(
 app.include_router(user_management_router)
 # Inclua o router de autenticação para endpoints públicos como redefinição de senha
 app.include_router(auth_router)
-# Se necessário, inclua outros routers:
+# The educational agent router is now exposed via the RAG server
 app.include_router(educational_agent_router)
 
 # RAG Server URL
@@ -180,6 +181,15 @@ class Response(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     thread_id: Optional[str] = None
+
+
+class EducationalChatRequest(BaseModel):
+    content: str
+    user_level: str = "intermediate"
+    learning_style: str = "mixed"
+    session_id: Optional[str] = None
+    current_topic: Optional[str] = None
+    learning_objectives: List[str] = []
 
 
 class MaterialUpload(BaseModel):
@@ -688,13 +698,63 @@ async def chat_agent_stream(request: ChatRequest, current_user: User = Depends(g
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/chat/educational")
+async def chat_educational_proxy(request: EducationalChatRequest):
+    """Proxy for educational chat to the RAG server"""
+    logger.info(
+        f"🎓 Proxying educational chat request: {request.content[:50]}...")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{RAG_SERVER_URL}/chat/educational", json=request.dict()) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data
+                else:
+                    error_detail = await response.text()
+                    logger.error(f"❌ RAG server error: {error_detail}")
+                    raise HTTPException(
+                        status_code=response.status, detail=f"RAG server error: {error_detail}")
+    except aiohttp.ClientError as e:
+        logger.error(f"❌ Connection error to RAG server: {str(e)}")
+        raise HTTPException(status_code=503, detail="RAG server unavailable")
+    except Exception as e:
+        logger.error(f"❌ Educational chat proxy error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/chat/session/{session_id}/context")
+async def get_session_context_proxy(session_id: str):
+    """Proxy for getting session context to the RAG server"""
+    logger.info(
+        f"🔄 Proxying get session context request for session: {session_id}...")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{RAG_SERVER_URL}/chat/session/{session_id}/context") as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data
+                else:
+                    error_detail = await response.text()
+                    logger.error(f"❌ RAG server error: {error_detail}")
+                    raise HTTPException(
+                        status_code=response.status, detail=f"RAG server error: {error_detail}")
+    except aiohttp.ClientError as e:
+        logger.error(f"❌ Connection error to RAG server: {str(e)}")
+        raise HTTPException(status_code=503, detail="RAG server unavailable")
+    except Exception as e:
+        logger.error(f"❌ Get session context proxy error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ========================================
 # RECURSIVE DRIVE ENDPOINTS
 # ========================================
 
 
 @asynccontextmanager
-async def get_user_drive_handler(username: str, api_key: str = None):
+async def get_user_drive_handler(username: str, api_key: Optional[str] = None):
     """Get or create a user-specific drive handler with proper locking and auth caching"""
     # Use a global lock when creating user locks to avoid race conditions
     with user_handler_creation_lock:
@@ -1033,7 +1093,7 @@ async def analyze_folder(
                 raise HTTPException(
                     status_code=400, detail="Authentication failed")
 
-                structure = user_handler.get_folder_structure(folder_id)
+            structure = user_handler.get_folder_structure(folder_id)
             stats = user_handler.get_download_stats()
 
             return {
@@ -1076,8 +1136,8 @@ async def get_download_progress(
                 "download_progress": download_progress
             }
 
-            # For regular users, only show their downloads
-            user_downloads = {}
+        # For regular users, only show their downloads
+        user_downloads = {}
         user_active_downloads = []
 
         for dl_id, progress in download_progress.items():
@@ -2234,7 +2294,7 @@ async def upload_material(
             detail=f"File type not allowed. Supported: {', '.join(allowed_extensions)}"
         )
 
-        materials_dir = Path("data/materials")
+    materials_dir = Path("data/materials")
     materials_dir.mkdir(parents=True, exist_ok=True)
 
     file_path = materials_dir / file.filename
@@ -2342,20 +2402,6 @@ async def download_material(filename: str, download: bool = False, current_user:
         headers={
             'Content-Disposition': f'attachment; filename="{Path(normalized_filename).name}"'} if force_download else None
     )
-
-
-def should_require_auth(filename: str) -> bool:
-    """Determina se um arquivo requer autenticação com base em regras específicas"""
-    # Exemplo: arquivos com 'public' no nome não requerem autenticação
-    if 'public' in filename.lower():
-        return False
-
-    # Exemplo: certos tipos de arquivo não requerem autenticação
-    if filename.lower().endswith(('.pdf', '.txt')):
-        return False
-
-    # Por padrão, outros arquivos requerem autenticação
-    return True
 
 
 def should_require_auth(filename: str) -> bool:

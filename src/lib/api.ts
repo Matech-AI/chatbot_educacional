@@ -1,7 +1,11 @@
 // API utility functions - FIXED VERSION
-const API_BASE = process.env.NODE_ENV === 'production' 
+const API_BASE = process.env.NODE_ENV === 'production'
   ? (import.meta.env.VITE_API_BASE_URL || 'https://dna-forca-api-server.onrender.com')
   : '/api';  // Usar /api para que o proxy do Vite funcione
+
+const RAG_API_BASE = process.env.NODE_ENV === 'production'
+  ? (import.meta.env.VITE_RAG_API_BASE_URL || 'https://dna-forca-rag-server.onrender.com')
+  : 'http://localhost:8001'; // RAG server runs on a different port
 
 // Get auth token from memory (localStorage not supported in Claude artifacts)
 const AUTH_TOKEN_KEY = 'token';
@@ -99,6 +103,41 @@ export async function apiRequestJson<T = any>(
     return response.json();
   } catch (error) {
     console.error(`API request failed: ${endpoint}`, error);
+    throw error;
+  }
+}
+
+// API request to RAG server with JSON response
+export async function ragApiRequestJson<T = any>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const url = `${RAG_API_BASE}${endpoint}`;
+
+  const config: RequestInit = {
+    ...options,
+    headers: createHeaders(options.headers as Record<string, string>),
+  };
+
+  // Add JSON content type for POST/PUT requests
+  if (['POST', 'PUT', 'PATCH'].includes(config.method?.toUpperCase() || '')) {
+    config.headers = {
+      ...config.headers,
+      'Content-Type': 'application/json',
+    };
+  }
+
+  try {
+    const response = await fetch(url, config);
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorData}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error(`RAG API request failed: ${endpoint}`, error);
     throw error;
   }
 }

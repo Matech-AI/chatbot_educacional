@@ -6,13 +6,10 @@ incluindo processamento de documentos, embeddings, busca semântica
 e geração de respostas baseadas em contexto.
 """
 
-from .rag_handler import RAGHandler, ProcessingConfig, AssistantConfigModel, Source
-from .enhanced_rag_handler import EnhancedRAGHandler
+from .rag_handler import RAGHandler, RAGConfig, Source
 
 __all__ = [
     'RAGHandler',
-    'ProcessingConfig',
-    'AssistantConfigModel',
+    'RAGConfig',
     'Source',
-    'EnhancedRAGHandler'
 ]

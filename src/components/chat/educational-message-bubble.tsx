@@ -25,7 +25,7 @@ interface EducationalSource {
   title: string;
   source: string;
   chunk: string;
-  page?: number;
+  page?: number | null;
 }
 
 interface VideoSuggestion {
@@ -42,7 +42,7 @@ interface EducationalMessageBubbleProps {
   message: {
     id: string;
     content: string;
-    role: 'user' | 'assistant';
+    role: 'user' | 'assistant' | 'system';
     timestamp: Date;
     sources?: EducationalSource[];
     follow_up_questions?: string[];
@@ -69,7 +69,6 @@ export const EducationalMessageBubble: React.FC<EducationalMessageBubbleProps> =
   onSourceClick,
   onVideoPlay,
 }) => {
-  const [showSources, setShowSources] = useState(false);
   const [showEducationalFeatures, setShowEducationalFeatures] = useState(false);
   const [showVideos, setShowVideos] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<VideoSuggestion | null>(null);
@@ -196,26 +195,14 @@ export const EducationalMessageBubble: React.FC<EducationalMessageBubbleProps> =
             </div>
           )}
 
-          {/* Sources Section */}
+          {/* RAG Context Section */}
           {!isUser && message.sources && message.sources.length > 0 && (
-            <div className="mt-2">
-              <button
-                onClick={() => setShowSources(!showSources)}
-                className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
-              >
-                <BookOpen size={14} />
-                <span>Fontes ({message.sources.length})</span>
-                {showSources ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-
-              <AnimatePresence>
-                {showSources && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="mt-2 space-y-2 overflow-hidden"
-                  >
+            <div className="mt-4 pt-3 border-t border-gray-200">
+                <div className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-2">
+                    <BookOpen size={14} />
+                    <span>Contexto do RAG ({message.sources.length})</span>
+                </div>
+                <div className="space-y-2">
                     {message.sources.map((source, index) => (
                       <div
                         key={index}
@@ -231,17 +218,15 @@ export const EducationalMessageBubble: React.FC<EducationalMessageBubbleProps> =
                               {source.page && `Página ${source.page} • `}
                               {source.source.split('/').pop()}
                             </div>
-                            <div className="text-sm text-gray-700 mt-2 line-clamp-2">
+                            <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">
                               {source.chunk}
-                            </div>
+                            </p>
                           </div>
                           <ExternalLink size={14} className="text-gray-400 flex-shrink-0 ml-2" />
                         </div>
                       </div>
                     ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                </div>
             </div>
           )}
 

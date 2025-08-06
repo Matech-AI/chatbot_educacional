@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { Message } from '../../types';
-import { MessageBubble } from './message-bubble';
+import { EducationalMessageBubble } from './educational-message-bubble';
 import { motion } from 'framer-motion';
 
 interface ChatHistoryProps {
@@ -55,9 +55,9 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
   return (
     <div className="h-full overflow-y-auto px-4 py-6">
       {messages.map(message => (
-        <MessageBubble 
-          key={message.id} 
-          message={message} 
+        <EducationalMessageBubble
+          key={message.id}
+          message={message}
         />
       ))}
       
