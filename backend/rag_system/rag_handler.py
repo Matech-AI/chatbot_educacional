@@ -166,6 +166,10 @@ class RAGHandler:
             )
             logger.info("✅ Retriever configured")
 
+    def get_retriever(self):
+        """Get the retriever instance."""
+        return self.retriever
+
     def load_course_structure(self, spreadsheet_path: str = "data/catalog.xlsx"):
         """Load and process the course structure from a spreadsheet."""
         try:

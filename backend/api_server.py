@@ -706,7 +706,7 @@ async def chat_educational_proxy(request: EducationalChatRequest):
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{RAG_SERVER_URL}/chat/educational", json=request.dict()) as response:
+            async with session.post(f"{RAG_SERVER_URL}/chat/educational", json=request.model_dump()) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data
@@ -2882,7 +2882,7 @@ async def update_system_settings(settings: SystemSettings, current_user: User = 
     try:
         # Atualizar configurações globais
         global system_settings
-        system_settings = settings.dict()
+        system_settings = settings.model_dump()
 
         # Salvar configurações
         save_system_settings()

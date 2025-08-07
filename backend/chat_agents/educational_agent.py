@@ -61,9 +61,9 @@ class EducationalResponse(BaseModel):
 
 class EducationalState(TypedDict):
     messages: Annotated[list, add_messages]
-    learning_context: LearningContext
-    sources: List[Dict[str, Any]]
-    educational_metadata: Dict[str, Any]
+    documents: List[Document]
+    formatted_documents: str
+    response: str
 
 
 class EducationalChatRequest(BaseModel):
@@ -210,45 +210,51 @@ class EducationalAgent:
     def _build_graph(self):
         """Build the educational conversation graph"""
 
-        tools = []
-        if self.rag_tool:
-            tools.append(self.rag_tool)
+        def retriever_node(state: EducationalState):
+            if not self.rag_handler:
+                raise ValueError("RAG handler not initialized")
+            retriever = self.rag_handler.retriever
+            if not retriever:
+                logger.warning("Retriever not available, returning empty documents.")
+                return {"documents": []}
+            documents = retriever.invoke(state["messages"][-1].content)
+            return {"documents": documents}
 
-        tool_node = ToolNode(tools)
+        def format_documents_node(state: EducationalState):
+            formatted_docs = "\n\n".join(doc.page_content for doc in state["documents"])
+            return {"formatted_documents": formatted_docs}
 
-        if not self.model:
-            raise ValueError("Model not initialized")
-        
-        model_with_tools = self.model.bind_tools(tools)
+        def chatbot_node(state: EducationalState):
+            prompt_rag = f"""Você é um assistente útil que responde à perguntas do usuário com base no contexto fornecido.
+Leia atentamente a dúvida do usuário e observe o contexto retornado de um banco vetorial de pesquisa utilizado como fonte de informação:
 
-        def agent_node(state: EducationalState):
-            """The primary agent node that decides what to do."""
-            learning_context = state.get("learning_context")
-            if not learning_context:
-                learning_context = LearningContext(user_id="default", session_id="default")
+<contexto>
+{state["formatted_documents"]}
+</contexto>
 
-            system_prompt = SystemMessage(content=self._get_educational_system_prompt(learning_context))
-            
-            messages = [system_prompt] + state["messages"]
-            
-            response = model_with_tools.invoke(messages)
-            
-            return {"messages": [response]}
+Caso você não saiba, responda que não tem informações sobre isso. Não invente informações."""
 
-        # Build graph
-        builder = StateGraph(EducationalState)
-        builder.add_node("agent", agent_node)
-        builder.add_node("tools", tool_node)
+            if not self.model:
+                raise ValueError("Model not initialized")
 
-        builder.add_edge(START, "agent")
-        builder.add_conditional_edges(
-            "agent",
-            tools_condition,
-        )
-        builder.add_edge("tools", "agent")
+            response = self.model.invoke([
+                SystemMessage(content=prompt_rag),
+                HumanMessage(content=state["messages"][-1].content)
+            ])
+            return {"response": response.content}
 
-        self.graph = builder.compile(checkpointer=self.memory)
-        logger.info("✅ Educational graph compiled successfully with RAG tool")
+        graph = StateGraph(EducationalState)
+        graph.add_node("retriever", retriever_node)
+        graph.add_node("format_documents", format_documents_node)
+        graph.add_node("chatbot", chatbot_node)
+
+        graph.add_edge(START, "retriever")
+        graph.add_edge("retriever", "format_documents")
+        graph.add_edge("format_documents", "chatbot")
+        graph.add_edge("chatbot", END)
+
+        self.graph = graph.compile()
+        logger.info("✅ Educational graph compiled successfully")
 
 
     def get_learning_context(self, user_id: str, session_id: str) -> LearningContext:
@@ -310,7 +316,6 @@ class EducationalAgent:
         
         initial_state = {
             "messages": [HumanMessage(content=message)],
-            "learning_context": learning_context,
         }
 
         try:
@@ -319,22 +324,8 @@ class EducationalAgent:
 
             final_state = self.graph.invoke(initial_state, config)
             
-            assistant_message = final_state["messages"][-1]
-            response_content = assistant_message.content
-            
-            sources = []
-            if self.rag_tool and assistant_message.tool_calls:
-                tool_call = assistant_message.tool_calls[0]
-                if tool_call['name'] == self.rag_tool.name:
-                    for msg in reversed(final_state["messages"]):
-                        if msg.type == "tool":
-                            tool_output = msg.content
-                            try:
-                                # The tool output is a dictionary, not a JSON string
-                                sources = tool_output.get("sources", [])
-                            except Exception as e:
-                                logger.warning(f"Could not extract sources from tool output: {e}")
-                            break
+            response_content = final_state["response"]
+            sources = [doc.metadata for doc in final_state.get("documents", [])]
 
             follow_up_questions = self.generate_follow_up_questions(
                 "treinamento", "intermediate"
