@@ -40,11 +40,8 @@ class LearningContext(BaseModel):
     """Track learning context and progress for each user"""
     user_id: str
     session_id: str
-    current_topic: Optional[str] = None
     learning_objectives: List[str] = []
     topics_covered: List[str] = []
-    difficulty_level: str = "beginner"  # beginner, intermediate, advanced
-    preferred_learning_style: str = "mixed"  # visual, auditory, kinesthetic, mixed
     knowledge_gaps: List[str] = []
     follow_up_questions: List[str] = []
 
@@ -72,7 +69,6 @@ class EducationalState(TypedDict):
 class EducationalChatRequest(BaseModel):
     content: str
     session_id: Optional[str] = None
-    current_topic: Optional[str] = None
     learning_objectives: List[str] = []
 
 
@@ -192,17 +188,6 @@ class EducationalAgent:
 
         ADAPTAÇÃO AO ALUNO:
         """
-
-        # Customize based on learning context
-        if learning_context.difficulty_level == "beginner":
-            base_prompt += "\n- Use linguagem simples e defina termos técnicos\n- Comece com conceitos fundamentais\n- Use muitos exemplos práticos"
-        elif learning_context.difficulty_level == "intermediate":
-            base_prompt += "\n- Pode usar termos técnicos com explicações breves\n- Faça conexões entre conceitos\n- Inclua nuances e considerações especiais"
-        else:  # advanced
-            base_prompt += "\n- Use linguagem técnica apropriada\n- Discuta controvérsias e debates atuais\n- Explore implicações avançadas"
-
-        if learning_context.current_topic:
-            base_prompt += f"\n\nTÓPICO ATUAL DE FOCO: {learning_context.current_topic}"
 
         if learning_context.learning_objectives:
             base_prompt += f"\n\nOBJETIVOS DE APRENDIZAGEM: {', '.join(learning_context.learning_objectives)}"
@@ -352,8 +337,7 @@ class EducationalAgent:
                             break
 
             follow_up_questions = self.generate_follow_up_questions(
-                learning_context.current_topic or "treinamento",
-                learning_context.difficulty_level
+                "treinamento", "intermediate"
             )
 
             return {
@@ -409,7 +393,6 @@ async def educational_chat(
 
         # Prepare learning preferences
         learning_preferences = {
-            "current_topic": request.current_topic,
             "learning_objectives": request.learning_objectives
         }
 
@@ -463,8 +446,8 @@ async def get_session_context(
             "learning_context": context.dict(),
             "summary": {
                 "topics_covered": len(context.topics_covered),
-                "current_focus": context.current_topic,
-                "difficulty_level": context.difficulty_level,
+                "current_focus": None,
+                "difficulty_level": "intermediate",
                 "objectives_count": len(context.learning_objectives)
             }
         }
@@ -486,24 +469,52 @@ async def get_learning_path(
     try:
         agent = get_educational_agent()
 
-        # This would use enhanced RAG if available
-        learning_path = [
-            {"step": 1, "title": f"Fundamentos de {topic}",
-                "description": "Conceitos básicos e terminologia"},
-            {"step": 2, "title": f"Aplicação prática de {topic}",
-                "description": "Como aplicar na prática"},
-            {"step": 3, "title": f"Progressão em {topic}",
-                "description": "Níveis avançados e variações"},
-            {"step": 4, "title": f"Troubleshooting {topic}",
-                "description": "Solucionando problemas comuns"}
-        ]
+        if not agent.rag_handler:
+            raise HTTPException(
+                status_code=503, detail="RAG handler not initialized")
+
+        # Generate a prompt to ask the model for a learning path
+        prompt = f"""
+        Crie um caminho de aprendizado detalhado para o tópico '{topic}' para um aluno de nível {user_level}.
+        O caminho de aprendizado deve conter de 3 a 5 etapas.
+        Para cada etapa, forneça:
+        - 'step': um número sequencial.
+        - 'title': um título claro e conciso.
+        - 'description': uma breve descrição do que será aprendido.
+        - 'estimated_time': uma estimativa de tempo (ex: '2-3 horas', '1 semana').
+        - 'difficulty': o nível de dificuldade (easy, medium, hard).
+
+        Retorne a resposta em formato JSON.
+        """
+
+        # Use the RAG handler to generate the learning path
+        response = await agent.chat(
+            message=prompt,
+            user_id="system_learning_path",
+            session_id=f"lp_{topic.replace(' ', '_')}",
+            learning_preferences={"difficulty_level": user_level}
+        )
+
+        # Extract the learning path from the response
+        try:
+            # The response content should be a JSON string
+            learning_path_data = json.loads(response["response"])
+            learning_path = learning_path_data.get("learning_path", [])
+        except (json.JSONDecodeError, KeyError):
+            # Fallback to a simple structure if parsing fails
+            learning_path = [
+                {"step": 1, "title": f"Introdução a {topic}",
+                    "description": "Visão geral e conceitos chave.", "estimated_time": "1 hora", "difficulty": "easy"},
+                {"step": 2, "title": f"Aplicações de {topic}",
+                    "description": "Exemplos práticos e estudos de caso.", "estimated_time": "3 horas", "difficulty": "medium"}
+            ]
 
         return {
             "topic": topic,
             "user_level": user_level,
             "learning_path": learning_path,
-            "estimated_time": "2-4 semanas",
-            "prerequisites": [],
+            "estimated_time": "1-2 semanas",
+            "prerequisites": ["Conhecimento básico de treinamento"],
             "resources_available": True
         }
 
@@ -522,8 +533,6 @@ if __name__ == "__main__":
             user_id="test_user",
             session_id="test_session",
             learning_preferences={
-                "difficulty_level": "intermediate",
-                "current_topic": "hipertrofia",
                 "learning_objectives": ["entender hipertrofia", "aplicar técnicas"]
             }
         )

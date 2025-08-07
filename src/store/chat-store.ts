@@ -18,6 +18,7 @@ interface ChatState {
   clearMessages: (sessionId: string) => void;
   setCurrentUser: (userId: string) => void; // Função para definir o usuário atual
   clearUserData: () => void; // Função para limpar dados quando usuário faz logout
+  archiveOldSessions: () => void;
 }
 
 // Function to send message to AI backend
@@ -122,6 +123,7 @@ export const useChatStore = create<ChatState>()(persist((set, get) => ({
       activeSessionId: id
     }));
     
+    get().archiveOldSessions();
     return id;
   },
   
@@ -294,7 +296,7 @@ export const useChatStore = create<ChatState>()(persist((set, get) => ({
       const updatedState = get();
       const session = updatedState.sessions.find(s => s.id === sessionId);
       if (session && session.messages.length === 2) { // User + AI response
-        const title = content.length > 30 ? content.substring(0, 30) + '...' : content;
+        const title = content.split(' ').slice(0, 2).join(' ');
         get().renameSession(sessionId, title);
       }
       
@@ -339,7 +341,29 @@ export const useChatStore = create<ChatState>()(persist((set, get) => ({
           : session
       )
     }));
-  }
+  },
+  
+  archiveOldSessions: () => {
+    set(state => {
+      if (!state.currentUserId) return {};
+
+      const userSessions = state.sessions
+        .filter(session => session.userId === state.currentUserId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      if (userSessions.length > 4) {
+        const sessionsToArchive = userSessions.slice(4);
+        const updatedSessions = state.sessions.map(session => {
+          if (sessionsToArchive.some(s => s.id === session.id)) {
+            return { ...session, archived: true };
+          }
+          return session;
+        });
+        return { sessions: updatedSessions };
+      }
+      return {};
+    });
+  },
 }), {
   name: 'chat-storage',
   version: 2, // Incrementar versão para forçar migração
@@ -402,7 +426,8 @@ export const useChatActions = () => {
     sendMessage,
     clearMessages,
     setCurrentUser,
-    clearUserData
+    clearUserData,
+    archiveOldSessions: useChatStore(state => state.archiveOldSessions),
   };
 };
 
@@ -418,8 +443,11 @@ export const useSessionMessages = (sessionId: string | null) => {
 // Hook para pegar apenas as sessões do usuário atual
 export const useUserChatSessions = () => {
   const sessions = useChatStore(state => 
-    state.currentUserId 
-      ? state.sessions.filter(session => session.userId === state.currentUserId)
+    state.currentUserId
+      ? state.sessions
+          .filter((session) => session.userId === state.currentUserId && !session.archived)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 4)
       : []
   );
   const activeSessionId = useChatStore(state => state.activeSessionId);

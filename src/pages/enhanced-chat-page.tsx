@@ -14,7 +14,7 @@ import {
   useChatStore,
 } from "../store/chat-store";
 import { EducationalMessageBubble } from "../components/chat/educational-message-bubble";
-import { EnhancedChatInput } from "../components/chat/enhanced-chat-input";
+import { ChatInput } from "../components/chat/chat-input";
 import { LearningPathExplorer } from "../components/chat/learning-path-explorer";
 import { Button } from "../components/ui/button";
 import { BackButton } from "../components/ui/back-button";
@@ -46,9 +46,6 @@ interface EducationalMessage {
 }
 
 interface LearningPreferences {
-  user_level: "beginner" | "intermediate" | "advanced";
-  learning_style: "visual" | "auditory" | "kinesthetic" | "mixed";
-  current_topic?: string;
   learning_objectives: string[];
 }
 
@@ -75,9 +72,6 @@ const EnhancedChatPage: React.FC = () => {
   const [showLearningPath, setShowLearningPath] = useState(false);
   const [currentExplorationTopic, setCurrentExplorationTopic] =
     useState<string>("");
-  const [userLevel, setUserLevel] = useState<
-    "beginner" | "intermediate" | "advanced"
-  >("intermediate");
 
   // References
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -146,8 +140,7 @@ const EnhancedChatPage: React.FC = () => {
   }, [educationalMessages.length]);
 
   const handleSendMessage = async (
-    content: string,
-    preferences?: LearningPreferences
+    content: string
   ) => {
     if (!content.trim() || isLoading) return;
 
@@ -181,11 +174,8 @@ const EnhancedChatPage: React.FC = () => {
     try {
       const response = await api.educationalChat({
         content,
-        user_level: preferences?.user_level || userLevel,
-        learning_style: preferences?.learning_style || "mixed",
         session_id: activeSessionId || undefined,
-        current_topic: preferences?.current_topic,
-        learning_objectives: preferences?.learning_objectives || [],
+        learning_objectives: [],
       });
 
       // Replace loading message with actual response
@@ -513,12 +503,11 @@ const EnhancedChatPage: React.FC = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Enhanced Input */}
-        <EnhancedChatInput
+        {/* Chat Input */}
+        <ChatInput
           onSendMessage={handleSendMessage}
-          onTopicExplore={handleTopicExplore}
-          isLoading={isLoading}
-          sessionContext={sessionContext?.summary}
+          isDisabled={isLoading}
+          placeholder="Digite sua pergunta sobre treinamento..."
         />
       </div>
 
@@ -544,10 +533,10 @@ const EnhancedChatPage: React.FC = () => {
                 </button>
               </div>
 
-              {currentExplorationTopic ? (
+              {currentExplorationTopic || currentSession?.title ? (
                 <LearningPathExplorer
-                  topic={currentExplorationTopic}
-                  userLevel={userLevel}
+                  topic={currentExplorationTopic || currentSession?.title || ""}
+                  userLevel="intermediate"
                   onStepExplore={(step) => {
                     handleSendMessage(`Explique mais sobre: ${step.title}`);
                   }}

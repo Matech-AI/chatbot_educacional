@@ -527,6 +527,68 @@ async def chat(question: Question):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/chat/explore-topic")
+async def explore_topic(request: dict):
+    """Explore a topic with the educational agent"""
+    try:
+        topic = request.get("topic")
+        user_level = request.get("user_level", "intermediate")
+        if not topic:
+            raise HTTPException(status_code=400, detail="Topic is required")
+
+        from chat_agents.educational_agent import get_educational_agent
+        agent = get_educational_agent()
+
+        if not agent.rag_handler:
+            raise HTTPException(
+                status_code=503, detail="RAG handler not initialized in Educational Agent.")
+
+        # This would ideally be a more sophisticated method in the agent
+        # For now, we can simulate a response or use a simple RAG query
+        response = agent.rag_handler.generate_response(
+            question=f"Explique o tópico '{topic}' para um aluno de nível {user_level}.",
+            user_level=user_level
+        )
+        return response
+
+    except Exception as e:
+        logger.error(f"❌ Error exploring topic: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/chat/learning-path/{topic}")
+async def get_learning_path(topic: str, user_level: str = "intermediate"):
+    """Get a learning path for a topic"""
+    try:
+        from chat_agents.educational_agent import get_educational_agent
+        agent = get_educational_agent()
+
+        # This would ideally be a more sophisticated method in the agent
+        # For now, we can simulate a response or use a simple RAG query
+        learning_path = [
+            {"step": 1, "title": f"Fundamentos de {topic}",
+                "description": "Conceitos básicos e terminologia"},
+            {"step": 2, "title": f"Aplicação prática de {topic}",
+                "description": "Como aplicar na prática"},
+            {"step": 3, "title": f"Progressão em {topic}",
+                "description": "Níveis avançados e variações"},
+            {"step": 4, "title": f"Troubleshooting {topic}",
+                "description": "Solucionando problemas comuns"}
+        ]
+
+        return {
+            "topic": topic,
+            "user_level": user_level,
+            "learning_path": learning_path,
+            "estimated_time": "2-4 semanas",
+            "prerequisites": [],
+            "resources_available": True
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error getting learning path: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import argparse

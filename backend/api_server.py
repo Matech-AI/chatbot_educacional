@@ -748,6 +748,54 @@ async def get_session_context_proxy(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/chat/explore-topic")
+async def explore_topic_proxy(request: Request):
+    """Proxy for exploring a topic to the RAG server"""
+    try:
+        data = await request.json()
+        logger.info(f"🗺️ Proxying explore topic request: {data.get('topic')}...")
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{RAG_SERVER_URL}/chat/explore-topic", json=data) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_detail = await response.text()
+                    logger.error(f"❌ RAG server error: {error_detail}")
+                    raise HTTPException(
+                        status_code=response.status, detail=f"RAG server error: {error_detail}")
+    except aiohttp.ClientError as e:
+        logger.error(f"❌ Connection error to RAG server: {str(e)}")
+        raise HTTPException(status_code=503, detail="RAG server unavailable")
+    except Exception as e:
+        logger.error(f"❌ Explore topic proxy error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/chat/learning-path/{topic}")
+async def get_learning_path_proxy(topic: str, user_level: str = "intermediate"):
+    """Proxy for getting learning path to the RAG server"""
+    logger.info(
+        f"🛤️ Proxying learning path request for topic: {topic}, level: {user_level}...")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{RAG_SERVER_URL}/chat/learning-path/{topic}?user_level={user_level}") as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_detail = await response.text()
+                    logger.error(f"❌ RAG server error: {error_detail}")
+                    raise HTTPException(
+                        status_code=response.status, detail=f"RAG server error: {error_detail}")
+    except aiohttp.ClientError as e:
+        logger.error(f"❌ Connection error to RAG server: {str(e)}")
+        raise HTTPException(status_code=503, detail="RAG server unavailable")
+    except Exception as e:
+        logger.error(f"❌ Get learning path proxy error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ========================================
 # RECURSIVE DRIVE ENDPOINTS
 # ========================================

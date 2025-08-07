@@ -39,6 +39,7 @@ export interface ChatSession {
   createdAt: Date;
   updatedAt: Date;
   userId: string; // ID do usuário que criou a conversa
+  archived?: boolean;
 }
 
 export interface Material {
