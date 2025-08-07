@@ -2,12 +2,13 @@ import os
 import json
 import logging
 import time
-from typing import Annotated, TypedDict, List, Dict, Any, Optional
+from typing import Annotated, TypedDict, List, Dict, Any, Optional, AsyncGenerator
 from datetime import datetime
 from dotenv import load_dotenv
 import pandas as pd
-from pydantic import SecretStr, BaseModel
+from pydantic import SecretStr, BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pathlib import Path
 from langchain_core.runnables import RunnableConfig
 
@@ -44,6 +45,12 @@ class LearningPathStep(BaseModel):
     estimated_time: str
     difficulty: str
     completed: bool = False
+
+
+class LearningPath(BaseModel):
+    """A structured learning path with a list of steps."""
+    learning_path: List[LearningPathStep] = Field(
+        description="The list of steps in the learning path.")
 
 
 class LearningContext(BaseModel):
@@ -98,6 +105,27 @@ class EducationalChatResponse(BaseModel):
     educational_metadata: Dict[str, Any] = {}
     learning_context: Dict[str, Any] = {}
     response_time: float = 0.0
+
+
+# Models for streaming events
+class StreamSources(BaseModel):
+    type: str = "sources"
+    data: List[Dict[str, Any]]
+
+
+class StreamChunk(BaseModel):
+    type: str = "chunk"
+    content: str
+
+
+class StreamFinal(BaseModel):
+    type: str = "final_data"
+    follow_up_questions: List[str]
+
+
+class StreamError(BaseModel):
+    type: str = "error"
+    content: str
 
 
 class EducationalAgent:
@@ -241,7 +269,7 @@ class EducationalAgent:
             formatted_docs = "\n\n".join(doc.page_content for doc in state["documents"])
             return {"formatted_documents": formatted_docs}
 
-        def chatbot_node(state: EducationalState):
+        async def chatbot_node(state: EducationalState):
             prompt_rag = f"""Você é um assistente útil que responde à perguntas do usuário com base no contexto fornecido.
 Leia atentamente a dúvida do usuário e observe o contexto retornado de um banco vetorial de pesquisa utilizado como fonte de informação:
 
@@ -254,7 +282,7 @@ Caso você não saiba, responda que não tem informações sobre isso. Não inve
             if not self.model:
                 raise ValueError("Model not initialized")
 
-            response = self.model.invoke([
+            response = await self.model.ainvoke([
                 SystemMessage(content=prompt_rag),
                 HumanMessage(content=state["messages"][-1].content)
             ])
@@ -339,7 +367,7 @@ Caso você não saiba, responda que não tem informações sobre isso. Não inve
             if not self.graph:
                 raise ValueError("Graph not initialized")
 
-            final_state = self.graph.invoke(initial_state, config)
+            final_state = await self.graph.ainvoke(initial_state, config)
             
             response_content = final_state["response"]
             sources = [doc.metadata for doc in final_state.get("documents", [])]
@@ -369,6 +397,62 @@ Caso você não saiba, responda que não tem informações sobre isso. Não inve
                 "educational_metadata": {},
                 "learning_context": learning_context.model_dump()
             }
+
+
+    async def stream_chat(
+        self,
+        message: str,
+        user_id: str = "default",
+        session_id: str = "default",
+        learning_preferences: Optional[Dict] = None
+    ) -> AsyncGenerator[str, None]:
+        """Streams the educational chat response."""
+
+        learning_context = self.get_learning_context(user_id, session_id)
+        if learning_preferences:
+            self.update_learning_context(
+                user_id, session_id, **learning_preferences)
+
+        # 1. Retrieve documents
+        if not self.rag_handler or not self.rag_handler.retriever:
+            yield StreamError(content="RAG handler not initialized").model_dump_json()
+            return
+
+        retriever = self.rag_handler.retriever
+        documents = retriever.invoke(message)
+        formatted_docs = "\n\n".join(doc.page_content for doc in documents)
+
+        sources = [doc.metadata for doc in documents]
+        yield StreamSources(data=sources).model_dump_json()
+
+        # 2. Create prompt
+        prompt_rag = f"""Você é um assistente útil que responde à perguntas do usuário com base no contexto fornecido.
+Leia atentamente a dúvida do usuário e observe o contexto retornado de um banco vetorial de pesquisa utilizado como fonte de informação:
+
+<contexto>
+{formatted_docs}
+</contexto>
+
+Caso você não saiba, responda que não tem informações sobre isso. Não invente informações."""
+
+        if not self.model:
+            yield StreamError(content="Model not initialized").model_dump_json()
+            return
+
+        messages = [
+            SystemMessage(content=prompt_rag),
+            HumanMessage(content=message)
+        ]
+
+        # 3. Stream response
+        async for chunk in self.model.astream(messages):
+            if chunk.content and isinstance(chunk.content, str):
+                yield StreamChunk(content=chunk.content).model_dump_json()
+
+        # 4. Follow-up questions (can be sent at the end)
+        follow_up = self.generate_follow_up_questions(
+            "treinamento", "intermediate")
+        yield StreamFinal(follow_up_questions=follow_up).model_dump_json()
 
 
 # Global instance
@@ -438,6 +522,36 @@ async def educational_chat(
             status_code=500, detail=f"Educational chat error: {str(e)}")
 
 
+@router.post("/educational/stream")
+async def educational_chat_stream(
+    request: EducationalChatRequest,
+):
+    """Enhanced educational chat with streaming response."""
+    agent = get_educational_agent()
+    current_user = User(id="default", username="default", role="student",
+                        created_at=datetime.utcnow(), updated_at=datetime.utcnow())
+
+    async def event_stream():
+        learning_preferences = {
+            "learning_objectives": request.learning_objectives
+        }
+
+        try:
+            async for chunk in agent.stream_chat(
+                message=request.content,
+                user_id=current_user.username,
+                session_id=request.session_id or f"session_{int(time.time())}",
+                learning_preferences=learning_preferences
+            ):
+                yield f"data: {chunk}\n\n"
+        except Exception as e:
+            logger.error(f"Stream error: {e}")
+            error_message = StreamError(content=str(e)).model_dump_json()
+            yield f"data: {error_message}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @router.get("/session/{session_id}/context")
 async def get_session_context(
     session_id: str
@@ -500,7 +614,7 @@ async def get_learning_path(
         ]
         return {"topic": topic, "learning_path": [step.model_dump() for step in learning_path]}
 
-    # 2. Generate learning path with LLM using the context
+    # 2. Generate learning path with LLM using structured output
     prompt = f"""
     Você é um designer instrucional. Com base no CONTEÚDO fornecido, crie um caminho de aprendizado detalhado e estruturado para o tópico '{topic}' para um aluno de nível '{user_level}'.
 
@@ -509,47 +623,28 @@ async def get_learning_path(
     {context}
     ---
 
-    INSTRUÇÕES:
-    1. Crie um caminho de aprendizado com 3 a 5 etapas lógicas e progressivas.
-    2. Cada etapa deve ser diretamente relacionada ao conteúdo fornecido.
-    3. Para cada etapa, forneça:
-       - 'step': um número sequencial.
-       - 'title': um título claro e conciso para a etapa.
-       - 'description': uma breve descrição do que será aprendido, baseada no conteúdo.
-       - 'estimated_time': uma estimativa de tempo (ex: '1-2 horas', '30 minutos').
-       - 'difficulty': o nível de dificuldade (easy, medium, hard).
-    4. A resposta DEVE ser um objeto JSON contendo uma chave "learning_path" que é uma lista de objetos, cada um representando uma etapa.
-
-    Exemplo de formato de saída:
-    {{
-      "learning_path": [
-        {{
-          "step": 1,
-          "title": "Título da Etapa 1",
-          "description": "Descrição da etapa 1.",
-          "estimated_time": "1 hora",
-          "difficulty": "easy"
-        }}
-      ]
-    }}
+    Crie um caminho de aprendizado com 3 a 5 etapas lógicas e progressivas. Cada etapa deve ser diretamente relacionada ao conteúdo fornecido.
     """
 
     try:
         if not agent.model:
             raise ValueError("Model not initialized")
-        response = agent.model.invoke(prompt)
-        response_content = response.content
-        if not isinstance(response_content, str):
-            raise TypeError("Response content is not a string.")
-        # The response content should be a JSON string
-        learning_path_data = json.loads(response_content)
-        path_steps_data = learning_path_data.get("learning_path", [])
-        learning_path = [LearningPathStep(
-            **step_data) for step_data in path_steps_data]
 
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        logger.error(f"Error parsing learning path from LLM response: {e}")
-        # Fallback for parsing errors
+        # Use structured output to guarantee a valid Pydantic object
+        structured_llm = agent.model.with_structured_output(LearningPath)
+        response = structured_llm.invoke(prompt)
+
+        # Ensure the response is of the correct type
+        if isinstance(response, LearningPath):
+            learning_path = response.learning_path
+        else:
+            # Handle cases where the structured output fails
+            raise TypeError(
+                f"Expected a LearningPath object, but got {type(response)}")
+
+    except Exception as e:
+        logger.error(f"Error generating structured learning path: {e}")
+        # Fallback for any LLM or structuring errors
         learning_path = [
             LearningPathStep(step=1, title=f"Introdução a {topic}",
                              description="Visão geral e conceitos chave.", estimated_time="1 hora", difficulty="easy"),
