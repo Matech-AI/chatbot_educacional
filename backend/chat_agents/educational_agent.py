@@ -36,6 +36,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["educational_chat"])
 
 
+class LearningPathStep(BaseModel):
+    """Represents a single step in a learning path."""
+    step: int
+    title: str
+    description: str
+    estimated_time: str
+    difficulty: str
+    completed: bool = False
+
+
 class LearningContext(BaseModel):
     """Track learning context and progress for each user"""
     user_id: str
@@ -44,6 +54,13 @@ class LearningContext(BaseModel):
     topics_covered: List[str] = []
     knowledge_gaps: List[str] = []
     follow_up_questions: List[str] = []
+    learning_path: List[LearningPathStep] = []
+
+
+class AddTopicRequest(BaseModel):
+    session_id: str
+    topic_title: str
+    topic_description: str
 
 
 class EducationalResponse(BaseModel):
@@ -338,7 +355,7 @@ Caso você não saiba, responda que não tem informações sobre isso. Não inve
                 "learning_suggestions": [],
                 "related_topics": [],
                 "educational_metadata": {},
-                "learning_context": learning_context.dict(),
+                "learning_context": learning_context.model_dump(),
             }
 
         except Exception as e:
@@ -350,7 +367,7 @@ Caso você não saiba, responda que não tem informações sobre isso. Não inve
                 "learning_suggestions": [],
                 "related_topics": [],
                 "educational_metadata": {},
-                "learning_context": learning_context.dict()
+                "learning_context": learning_context.model_dump()
             }
 
 
@@ -434,7 +451,7 @@ async def get_session_context(
 
         return {
             "session_id": session_id,
-            "learning_context": context.dict(),
+            "learning_context": context.model_dump(),
             "summary": {
                 "topics_covered": len(context.topics_covered),
                 "current_focus": None,
@@ -452,67 +469,151 @@ async def get_session_context(
 @router.get("/learning-path/{topic}")
 async def get_learning_path(
     topic: str,
-    user_level: str = "intermediate"
+    user_level: str = "intermediate",
+    session_id: Optional[str] = None
 ):
-    """Get suggested learning path for a topic"""
-    logger.info(f"🛤️ Learning path request: {topic}")
+    """Get suggested learning path for a topic, based on course materials."""
+    logger.info(f"🛤️ Learning path request: {topic} for session {session_id}")
+
+    agent = get_educational_agent()
+    if not agent.rag_handler or not agent.rag_handler.retriever:
+        raise HTTPException(
+            status_code=503, detail="RAG handler not initialized")
+
+    # 1. Retrieve relevant documents from RAG
+    try:
+        retriever = agent.rag_handler.retriever
+        documents = retriever.invoke(topic)
+        context = "\n\n".join([doc.page_content for doc in documents])
+    except Exception as e:
+        logger.error(f"Error retrieving documents for learning path: {e}")
+        raise HTTPException(
+            status_code=500, detail="Could not retrieve context for learning path.")
+
+    if not documents:
+        # Fallback to a generic path if no context is found
+        learning_path = [
+            LearningPathStep(step=1, title=f"Introdução a {topic}",
+                             description="Visão geral e conceitos chave.", estimated_time="1 hora", difficulty="easy"),
+            LearningPathStep(step=2, title=f"Aplicações de {topic}",
+                             description="Exemplos práticos e estudos de caso.", estimated_time="3 horas", difficulty="medium")
+        ]
+        return {"topic": topic, "learning_path": [step.model_dump() for step in learning_path]}
+
+    # 2. Generate learning path with LLM using the context
+    prompt = f"""
+    Você é um designer instrucional. Com base no CONTEÚDO fornecido, crie um caminho de aprendizado detalhado e estruturado para o tópico '{topic}' para um aluno de nível '{user_level}'.
+
+    CONTEÚDO DISPONÍVEL:
+    ---
+    {context}
+    ---
+
+    INSTRUÇÕES:
+    1. Crie um caminho de aprendizado com 3 a 5 etapas lógicas e progressivas.
+    2. Cada etapa deve ser diretamente relacionada ao conteúdo fornecido.
+    3. Para cada etapa, forneça:
+       - 'step': um número sequencial.
+       - 'title': um título claro e conciso para a etapa.
+       - 'description': uma breve descrição do que será aprendido, baseada no conteúdo.
+       - 'estimated_time': uma estimativa de tempo (ex: '1-2 horas', '30 minutos').
+       - 'difficulty': o nível de dificuldade (easy, medium, hard).
+    4. A resposta DEVE ser um objeto JSON contendo uma chave "learning_path" que é uma lista de objetos, cada um representando uma etapa.
+
+    Exemplo de formato de saída:
+    {{
+      "learning_path": [
+        {{
+          "step": 1,
+          "title": "Título da Etapa 1",
+          "description": "Descrição da etapa 1.",
+          "estimated_time": "1 hora",
+          "difficulty": "easy"
+        }}
+      ]
+    }}
+    """
 
     try:
-        agent = get_educational_agent()
+        if not agent.model:
+            raise ValueError("Model not initialized")
+        response = agent.model.invoke(prompt)
+        response_content = response.content
+        if not isinstance(response_content, str):
+            raise TypeError("Response content is not a string.")
+        # The response content should be a JSON string
+        learning_path_data = json.loads(response_content)
+        path_steps_data = learning_path_data.get("learning_path", [])
+        learning_path = [LearningPathStep(
+            **step_data) for step_data in path_steps_data]
 
-        if not agent.rag_handler:
-            raise HTTPException(
-                status_code=503, detail="RAG handler not initialized")
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.error(f"Error parsing learning path from LLM response: {e}")
+        # Fallback for parsing errors
+        learning_path = [
+            LearningPathStep(step=1, title=f"Introdução a {topic}",
+                             description="Visão geral e conceitos chave.", estimated_time="1 hora", difficulty="easy"),
+            LearningPathStep(step=2, title=f"Aplicações de {topic}",
+                             description="Exemplos práticos e estudos de caso.", estimated_time="3 horas", difficulty="medium")
+        ]
 
-        # Generate a prompt to ask the model for a learning path
-        prompt = f"""
-        Crie um caminho de aprendizado detalhado para o tópico '{topic}' para um aluno de nível {user_level}.
-        O caminho de aprendizado deve conter de 3 a 5 etapas.
-        Para cada etapa, forneça:
-        - 'step': um número sequencial.
-        - 'title': um título claro e conciso.
-        - 'description': uma breve descrição do que será aprendido.
-        - 'estimated_time': uma estimativa de tempo (ex: '2-3 horas', '1 semana').
-        - 'difficulty': o nível de dificuldade (easy, medium, hard).
+    # 3. Save the learning path to the user's context if a session_id is provided
+    if session_id:
+        user_id = "default"  # Assuming a default user for now
+        learning_context = agent.get_learning_context(user_id, session_id)
+        learning_context.learning_path = learning_path
+        agent.update_learning_context(
+            user_id, session_id, learning_path=learning_path)
+        logger.info(f"Saved learning path for session {session_id}")
 
-        Retorne a resposta em formato JSON.
-        """
+    return {
+        "topic": topic,
+        "user_level": user_level,
+        "learning_path": [step.model_dump() for step in learning_path],
+    }
 
-        # Use the RAG handler to generate the learning path
-        response = await agent.chat(
-            message=prompt,
-            user_id="system_learning_path",
-            session_id=f"lp_{topic.replace(' ', '_')}",
-            learning_preferences={"difficulty_level": user_level}
+
+@router.post("/learning-path/add-topic")
+async def add_topic_to_learning_path(
+    request: AddTopicRequest,
+):
+    """Add a new topic to the user's learning path for a given session."""
+    agent = get_educational_agent()
+    user_id = "default"  # Assuming default user
+
+    try:
+        learning_context = agent.get_learning_context(
+            user_id, request.session_id)
+
+        new_step_number = len(learning_context.learning_path) + 1
+
+        new_step = LearningPathStep(
+            step=new_step_number,
+            title=request.topic_title,
+            description=request.topic_description,
+            estimated_time="30 minutos",  # Default time
+            difficulty="intermediate",  # Default difficulty
+            completed=False
         )
 
-        # Extract the learning path from the response
-        try:
-            # The response content should be a JSON string
-            learning_path_data = json.loads(response["response"])
-            learning_path = learning_path_data.get("learning_path", [])
-        except (json.JSONDecodeError, KeyError):
-            # Fallback to a simple structure if parsing fails
-            learning_path = [
-                {"step": 1, "title": f"Introdução a {topic}",
-                    "description": "Visão geral e conceitos chave.", "estimated_time": "1 hora", "difficulty": "easy"},
-                {"step": 2, "title": f"Aplicações de {topic}",
-                    "description": "Exemplos práticos e estudos de caso.", "estimated_time": "3 horas", "difficulty": "medium"}
-            ]
+        learning_context.learning_path.append(new_step)
+
+        agent.update_learning_context(
+            user_id, request.session_id, learning_path=learning_context.learning_path)
+
+        logger.info(
+            f"Added topic '{request.topic_title}' to learning path for session {request.session_id}")
 
         return {
-            "topic": topic,
-            "user_level": user_level,
-            "learning_path": learning_path,
-            "estimated_time": "1-2 semanas",
-            "prerequisites": ["Conhecimento básico de treinamento"],
-            "resources_available": True
+            "status": "success",
+            "message": "Topic added to learning path.",
+            "learning_path": [step.model_dump() for step in learning_context.learning_path]
         }
 
     except Exception as e:
-        logger.error(f"❌ Learning path error: {str(e)}")
+        logger.error(f"Error adding topic to learning path: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Learning path error: {str(e)}")
+            status_code=500, detail="Could not add topic to learning path.")
 
 # Example usage
 if __name__ == "__main__":
