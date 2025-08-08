@@ -250,6 +250,8 @@ class EducationalAgent:
         - Se não houver informação suficiente nos materiais, indique claramente
         - Gere perguntas de acompanhamento que ajudem o aluno a explorar mais profundamente
         - Mantenha o foco educacional e pedagógico em todas as interações
+        - Sempre que possível, faça referência ao conteúdo dos materiais de estudo utilizados, como por exemplo: "De acordo com a aula, vimos que...", "Conforme o material consultado...", "Segundo o documento...", "Nos materiais de estudo, é mencionado que..."
+        - É fundamental que a resposta incorpore o conhecimento extraído dos materiais de estudo, demonstrando que a informação foi consultada e utilizada para construir a resposta.
         """
 
         return base_prompt
@@ -472,7 +474,7 @@ async def educational_chat(
             "sources": [
                 {
                     **source,
-                    "chunk": source["chunk"][:200] + "..." if len(source["chunk"]) > 200 else source["chunk"],
+                    "chunk": source.get("chunk", "")[:200] + "..." if source.get("chunk") else "",
                     "title": None  # Remove the title
                 }
                 for source in result["sources"]

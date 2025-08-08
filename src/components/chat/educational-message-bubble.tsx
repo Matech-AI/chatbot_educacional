@@ -225,7 +225,6 @@ export const EducationalMessageBubble: React.FC<EducationalMessageBubbleProps> =
                             {source.chunk}
                           </p>
                         </div>
-                        <ExternalLink size={14} className="text-gray-400 flex-shrink-0 ml-2" />
                       </div>
                     </div>
                   ))}

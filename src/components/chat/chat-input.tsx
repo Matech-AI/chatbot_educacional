@@ -15,14 +15,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   placeholder = 'Digite sua pergunta...'
 }) => {
   const [message, setMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (message.trim() && !isDisabled) {
-      onSendMessage(message.trim());
+      setIsSending(true);
+      await onSendMessage(message.trim());
       setMessage('');
+      setIsSending(false);
       
       // Reset textarea height
       if (textareaRef.current) {
@@ -93,11 +96,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
         <Button
           type="submit"
-          disabled={!message.trim() || isDisabled}
+          disabled={!message.trim() || isDisabled || isSending}
           size="icon"
           className="rounded-full transition-all duration-200"
         >
-          <Send size={18} />
+          {isSending ? (
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+          ) : (
+            <Send size={18} />
+          )}
         </Button>
       </form>
 
