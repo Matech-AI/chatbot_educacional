@@ -115,7 +115,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="DNA da Força RAG Server",
     description="Servidor RAG para processamento de materiais e treinamento de modelos",
-    version="1.0.0",
+    version="1.7.0",
     lifespan=lifespan
 )
 
@@ -140,7 +140,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "rag-server",
-        "version": "1.0.0",
+        "version": "1.7.0",
         "rag_initialized": rag_handler is not None
     }
 
@@ -152,7 +152,7 @@ async def get_status():
 
     status = {
         "service": "rag-server",
-        "version": "1.0.0",
+        "version": "1.7.0",
         "rag_initialized": rag_handler is not None,
         "materials_directory": str(materials_dir) if materials_dir else None,
         "chroma_persist_dir": str(chroma_persist_dir) if chroma_persist_dir else None,
