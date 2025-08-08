@@ -7,7 +7,7 @@ incluindo o agente educacional, chat básico e gerenciamento de conversas.
 
 from .educational_agent import (
     EducationalAgent, EducationalChatRequest, EducationalChatResponse,
-    LearningContext, EducationalState, router as educational_agent_router
+    LearningContext, AgentState, router as educational_agent_router
 )
 
 __all__ = [
@@ -15,6 +15,6 @@ __all__ = [
     'EducationalChatRequest',
     'EducationalChatResponse',
     'LearningContext',
-    'EducationalState',
+    'AgentState',
     'educational_agent_router'
 ]

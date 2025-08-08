@@ -19,11 +19,11 @@ from langchain_core.tools.retriever import create_retriever_tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.prebuilt import ToolNode
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, tools_condition
-from langgraph.checkpoint.memory import MemorySaver
 from auth.auth import User, get_current_user
 from video_processing.video_handler import get_video_handler
 
@@ -94,11 +94,9 @@ class EducationalResponse(BaseModel):
 # Enhanced State for educational conversations
 
 
-class EducationalState(TypedDict):
-    messages: Annotated[list, add_messages]
-    documents: List[Document]
-    formatted_documents: str
-    response: str
+class AgentState(TypedDict):
+    messages: Annotated[List, add_messages]
+    sources: List[Dict[str, Any]]
 
 
 class EducationalChatRequest(BaseModel):
@@ -128,6 +126,7 @@ class EducationalAgent:
         self.vector_store = None
         self.memory = MemorySaver()
         self.learning_contexts: Dict[str, LearningContext] = {}
+        self.last_retrieved_sources: List[Dict[str, Any]] = []
         self.course_catalog: Optional[pd.DataFrame] = None
 
         self._load_course_catalog()
@@ -256,49 +255,38 @@ class EducationalAgent:
         return base_prompt
 
     def _build_graph(self):
-        """Build the educational conversation graph"""
+        """Build the educational conversation graph."""
+        if not self.model or not self.retriever:
+            logger.error("Model or retriever not initialized. Cannot build graph.")
+            return
 
-        def retriever_node(state: EducationalState):
-            if not self.retriever:
-                logger.warning("Retriever not available, returning empty documents.")
-                return {"documents": []}
-            documents = self.retriever.invoke(state["messages"][-1].content)
-            return {"documents": documents}
+        retriever_tool = self._create_custom_retriever_tool()
+        tools = [retriever_tool]
+        
+        tool_node = ToolNode(tools)
+        
+        model_with_tools = self.model.bind_tools(tools)
 
-        def format_documents_node(state: EducationalState):
-            formatted_docs = "\n\n".join(doc.page_content for doc in state["documents"])
-            return {"formatted_documents": formatted_docs}
+        def agent_node(state: AgentState):
+            response = model_with_tools.invoke(state["messages"])
+            return {"messages": [response]}
 
-        async def chatbot_node(state: EducationalState):
-            prompt_rag = f"""Você é um assistente útil que responde à perguntas do usuário com base no contexto fornecido.
-Leia atentamente a dúvida do usuário e observe o contexto retornado de um banco vetorial de pesquisa utilizado como fonte de informação:
+        def should_continue(state: AgentState):
+            last_message = state["messages"][-1]
+            if not last_message.tool_calls:
+                return END
+            else:
+                return "tools"
 
-<contexto>
-{state["formatted_documents"]}
-</contexto>
+        workflow = StateGraph(AgentState)
+        workflow.add_node("agent", agent_node)
+        workflow.add_node("tools", tool_node)
 
-Caso você não saiba, responda que não tem informações sobre isso. Não invente informações."""
+        workflow.add_edge(START, "agent")
+        workflow.add_conditional_edges("agent", should_continue)
+        workflow.add_edge("tools", "agent")
 
-            if not self.model:
-                raise ValueError("Model not initialized")
-
-            response = await self.model.ainvoke([
-                SystemMessage(content=prompt_rag),
-                HumanMessage(content=state["messages"][-1].content)
-            ])
-            return {"response": response.content}
-
-        graph = StateGraph(EducationalState)
-        graph.add_node("retriever", retriever_node)
-        graph.add_node("format_documents", format_documents_node)
-        graph.add_node("chatbot", chatbot_node)
-
-        graph.add_edge(START, "retriever")
-        graph.add_edge("retriever", "format_documents")
-        graph.add_edge("format_documents", "chatbot")
-        graph.add_edge("chatbot", END)
-
-        self.graph = graph.compile()
+        self.graph = workflow.compile(checkpointer=self.memory)
         logger.info("✅ Educational graph compiled successfully")
 
 
@@ -359,18 +347,16 @@ Caso você não saiba, responda que não tem informações sobre isso. Não inve
 
         config = RunnableConfig(configurable={"thread_id": f"{user_id}_{session_id}"})
         
-        initial_state = {
-            "messages": [HumanMessage(content=message)],
-        }
-
         try:
             if not self.graph:
                 raise ValueError("Graph not initialized")
 
-            final_state = await self.graph.ainvoke(initial_state, config)
+            initial_state = {"messages": [HumanMessage(content=message)]}
             
-            response_content = final_state["response"]
-            sources = [doc.metadata for doc in final_state.get("documents", [])]
+            final_state = await self.graph.ainvoke(initial_state, config=config)
+            
+            response_content = final_state["messages"][-1].content
+            sources = self.last_retrieved_sources
 
             follow_up_questions = self.generate_follow_up_questions(
                 "treinamento", "intermediate"
@@ -399,6 +385,38 @@ Caso você não saiba, responda que não tem informações sobre isso. Não inve
             }
 
 
+
+
+    def _create_custom_retriever_tool(self) -> BaseTool:
+        """Creates a custom retriever tool that captures the sources."""
+        
+        class CustomRetrieverTool(BaseTool):
+            """A custom retriever tool that captures the sources."""
+            name: str = "search_educational_materials"
+            description: str = "Searches and retrieves information from educational materials to answer questions about fitness, exercise science, and strength training."
+            agent: "EducationalAgent"
+
+            def _run(self, query: str) -> str:
+                """Execute the retrieval and capture the sources."""
+                if not self.agent.retriever:
+                    return "Retriever not initialized."
+                
+                documents = self.agent.retriever.invoke(query)
+                self.agent.last_retrieved_sources = [doc.metadata for doc in documents]
+                
+                return "\n\n".join([doc.page_content for doc in documents])
+
+            async def _arun(self, query: str) -> str:
+                """Asynchronously execute the retrieval and capture the sources."""
+                if not self.agent.retriever:
+                    return "Retriever not initialized."
+
+                documents = await self.agent.retriever.ainvoke(query)
+                self.agent.last_retrieved_sources = [doc.metadata for doc in documents]
+
+                return "\n\n".join([doc.page_content for doc in documents])
+
+        return CustomRetrieverTool(agent=self)
 
 
 # Global instance
