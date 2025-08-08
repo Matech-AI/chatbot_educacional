@@ -25,11 +25,11 @@ from drive_sync.drive_handler_recursive import RecursiveDriveHandler
 from auth.auth import get_current_user, User, router as auth_router
 from auth.auth import get_optional_current_user
 from auth.user_management import router as user_management_router
-# Educational agent router is now part of the RAG server
 from chat_agents.educational_agent import router as educational_agent_router
 import threading
 import asyncio
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 # Configure enhanced logging
 logging.basicConfig(
@@ -63,8 +63,7 @@ app.add_middleware(
 app.include_router(user_management_router)
 # Inclua o router de autenticação para endpoints públicos como redefinição de senha
 app.include_router(auth_router)
-# The educational agent router is now exposed via the RAG server
-app.include_router(educational_agent_router)
+app.include_router(educational_agent_router, prefix="/chat")
 
 # RAG Server URL
 RAG_SERVER_URL = os.getenv("RAG_SERVER_URL", "http://localhost:8001")
@@ -258,6 +257,14 @@ class SystemSettings(BaseModel):
     general: SystemSettingsGeneral
     security: SystemSettingsSecurity
     notifications: SystemSettingsNotifications
+
+
+class AssistantConfigRequest(BaseModel):
+    prompt: Optional[str] = None
+    chunk_size: Optional[int] = None
+    chunk_overlap: Optional[int] = None
+    temperature: Optional[float] = None
+    title: Optional[str] = None
 
 # ========================================
 # UTILITY FUNCTIONS
@@ -2716,124 +2723,239 @@ async def startup_event():
         "✅ Sistema pronto com funcionalidades recursivas completas e suporte a concorrência!")
 
 # ========================================
-# ASSISTANT CONFIGURATION ENDPOINTS (Proxy to RAG Server)
+# ASSISTANT CONFIGURATION ENDPOINTS
 # ========================================
+
+
+# Sistema de persistência para configurações do assistente
+assistant_configs_file = Path("data/assistant_configs.json")
+assistant_configs = {}
+current_assistant_config = None
+
+
+def load_assistant_configs():
+    """Carregar configurações do assistente do arquivo"""
+    global assistant_configs, current_assistant_config
+
+    if assistant_configs_file.exists():
+        try:
+            with open(assistant_configs_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                assistant_configs = data.get('configs', {})
+                current_assistant_config = data.get('current', None)
+                logger.info(
+                    f"✅ Configurações do assistente carregadas: {len(assistant_configs)} templates")
+        except Exception as e:
+            logger.error(f"❌ Erro ao carregar configurações: {e}")
+            assistant_configs = {}
+            current_assistant_config = None
+
+
+def save_assistant_configs():
+    """Salvar configurações do assistente no arquivo"""
+    global assistant_configs, current_assistant_config
+
+    try:
+        # Criar diretório se não existir
+        assistant_configs_file.parent.mkdir(parents=True, exist_ok=True)
+
+        data = {
+            'configs': assistant_configs,
+            'current': current_assistant_config,
+            'last_updated': time.time()
+        }
+
+        with open(assistant_configs_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+        logger.info(
+            f"✅ Configurações do assistente salvas: {len(assistant_configs)} templates")
+    except Exception as e:
+        logger.error(f"❌ Erro ao salvar configurações: {e}")
+
+
+def get_default_templates():
+    """Retornar templates padrão"""
+    return {
+        "Educação Física": {
+            "name": "Assistente Educacional de Educação Física",
+            "description": "Especializado em responder dúvidas sobre treinamento, fisiologia do exercício e metodologia do ensino",
+            "prompt": """Você é um ASSISTENTE EDUCACIONAL especializado em EDUCAÇÃO FÍSICA. Seu objetivo é auxiliar estudantes a compreender conceitos de treinamento, fisiologia do exercício, biomecânica e metodologia do ensino. Siga estas diretrizes:
+
+1. CONTEXTO DO CURSO:
+   - Basear suas respostas exclusivamente nos materiais do curso fornecidos
+   - Citar a fonte específica (aula, página, vídeo) de onde a informação foi extraída
+   - Nunca inventar informações que não estejam nos materiais do curso
+
+2. ESTILO DE RESPOSTA:
+   - Usar linguagem clara, técnica mas acessível
+   - Relacionar teoria com aplicação prática no treinamento
+   - Fornecer exemplos de exercícios e progressões quando apropriado
+   - Explicar os princípios fisiológicos por trás dos conceitos
+
+3. CITAÇÕES E FONTES:
+   - Sempre indicar a origem da informação (ex: "Conforme a Aula 3, página 7...")
+   - Para citações diretas, usar aspas e referenciar a fonte exata
+   - Se a pergunta não puder ser respondida com os materiais disponíveis, informar isto claramente
+
+4. ESTRATÉGIAS PEDAGÓGICAS:
+   - Conectar conceitos teóricos com aplicações práticas no treinamento
+   - Usar analogias relacionadas ao movimento humano
+   - Incentivar análise crítica de métodos de treinamento
+   - Sugerir progressões e adaptações para diferentes níveis
+
+Use {context}, {chat_history} e {question} como variáveis no template.""",
+            "model": "gpt-4o-mini",
+            "temperature": 0.1,
+            "chunkSize": 2000,
+            "chunkOverlap": 100,
+            "retrievalSearchType": "mmr",
+            "embeddingModel": "text-embedding-ada-002"
+        },
+        "Nutrição Esportiva": {
+            "name": "Assistente Educacional de Nutrição Esportiva",
+            "description": "Especializado em nutrição aplicada ao esporte, suplementação e estratégias alimentares para performance",
+            "prompt": """Você é um ASSISTENTE EDUCACIONAL especializado em NUTRIÇÃO ESPORTIVA. Seu objetivo é auxiliar estudantes a compreender conceitos de nutrição aplicada ao esporte, metabolismo energético, suplementação e estratégias alimentares. Siga estas diretrizes:
+
+1. CONTEXTO DO CURSO:
+   - Basear suas respostas exclusivamente nos materiais do curso fornecidos
+   - Citar a fonte específica (aula, página, vídeo) de onde a informação foi extraída
+   - Nunca inventar informações que não estejam nos materiais do curso
+
+2. ESTILO DE RESPOSTA:
+   - Usar linguagem científica mas didática
+   - Relacionar conceitos nutricionais com performance esportiva
+   - Fornecer exemplos práticos de aplicação nutricional
+   - Explicar os mecanismos bioquímicos quando relevante
+
+3. CITAÇÕES E FONTES:
+   - Sempre indicar a origem da informação (ex: "Conforme a Aula 5, página 12...")
+   - Para citações diretas, usar aspas e referenciar a fonte exata
+   - Se a pergunta não puder ser respondida com os materiais disponíveis, informar isto claramente
+
+4. ESTRATÉGIAS PEDAGÓGICAS:
+   - Conectar bioquímica nutricional com aplicações práticas
+   - Usar exemplos de diferentes modalidades esportivas
+   - Incentivar análise crítica de estratégias nutricionais
+   - Sugerir adequações nutricionais para diferentes objetivos
+
+Use {context}, {chat_history} e {question} como variáveis no template.""",
+            "model": "gpt-4o-mini",
+            "temperature": 0.2,
+            "chunkSize": 2200,
+            "chunkOverlap": 150,
+            "retrievalSearchType": "mmr",
+            "embeddingModel": "text-embedding-ada-002"
+        },
+        "Anatomia Humana": {
+            "name": "Assistente Educacional de Anatomia Humana",
+            "description": "Especializado em anatomia sistêmica, cinesiologia e biomecânica do movimento humano",
+            "prompt": """Você é um ASSISTENTE EDUCACIONAL especializado em ANATOMIA HUMANA. Seu objetivo é auxiliar estudantes a compreender a estrutura do corpo humano, cinesiologia e biomecânica do movimento. Siga estas diretrizes:
+
+1. CONTEXTO DO CURSO:
+   - Basear suas respostas exclusivamente nos materiais do curso fornecidos
+   - Citar a fonte específica (aula, página, atlas, vídeo) de onde a informação foi extraída
+   - Nunca inventar informações que não estejam nos materiais do curso
+
+2. ESTILO DE RESPOSTA:
+   - Usar terminologia anatômica precisa e correta
+   - Relacionar estrutura anatômica com função
+   - Fornecer exemplos de movimentos e posições
+   - Explicar a biomecânica quando relevante
+
+3. CITAÇÕES E FONTES:
+   - Sempre indicar a origem da informação (ex: "Conforme o Atlas de Anatomia, página 45...")
+   - Para citações diretas, usar aspas e referenciar a fonte exata
+   - Se a pergunta não puder ser respondida com os materiais disponíveis, informar isto claramente
+
+4. ESTRATÉGIAS PEDAGÓGICAS:
+   - Conectar anatomia com movimento e função
+   - Usar exemplos práticos de palpação e identificação
+   - Incentivar análise crítica de estruturas anatômicas
+   - Sugerir exercícios de memorização e identificação
+
+Use {context}, {chat_history} e {question} como variáveis no template.""",
+            "model": "gpt-4o-mini",
+            "temperature": 0.1,
+            "chunkSize": 2000,
+            "chunkOverlap": 100,
+            "retrievalSearchType": "mmr",
+            "embeddingModel": "text-embedding-ada-002"
+        }
+    }
 
 
 @app.get("/assistant/config")
 async def get_assistant_config(current_user: User = Depends(get_current_user)):
-    """Get current assistant configuration - proxy to RAG server"""
+    """Get current assistant configuration"""
     logger.info(f"⚙️ Assistant config requested by: {current_user.username}")
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{RAG_SERVER_URL}/assistant/config") as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
-    except Exception as e:
-        logger.error(f"❌ Error getting assistant config: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    load_assistant_configs()
+    return {
+        "status": "success",
+        "config": current_assistant_config,
+        "templates": assistant_configs
+    }
 
 
 @app.post("/assistant/config")
-async def update_assistant_config(config: dict, current_user: User = Depends(get_current_user)):
-    """Update assistant configuration - proxy to RAG server"""
+async def update_assistant_config(config: AssistantConfigRequest, current_user: User = Depends(get_current_user)):
+    """Update assistant configuration"""
+    global current_assistant_config
     logger.info(f"⚙️ Assistant config update by: {current_user.username}")
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{RAG_SERVER_URL}/assistant/config", json=config) as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
-    except Exception as e:
-        logger.error(f"❌ Error updating assistant config: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    if current_assistant_config is None:
+        current_assistant_config = {}
+
+    update_data = config.model_dump(exclude_unset=True)
+    current_assistant_config.update(update_data)
+
+    save_assistant_configs()
+    return {"status": "success", "config": current_assistant_config}
 
 
 @app.get("/assistant/templates")
 async def get_assistant_templates(current_user: User = Depends(get_current_user)):
-    """Get available assistant templates - proxy to RAG server"""
+    """Get available assistant templates"""
     logger.info(f"📋 Assistant templates requested by: {current_user.username}")
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{RAG_SERVER_URL}/assistant/templates") as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
-    except Exception as e:
-        logger.error(f"❌ Error getting assistant templates: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    load_assistant_configs()
+    return {"status": "success", "templates": assistant_configs}
 
 
 @app.post("/assistant/config/template/{template_name}")
 async def apply_assistant_template(template_name: str, current_user: User = Depends(get_current_user)):
-    """Apply a specific assistant template - proxy to RAG server"""
+    """Apply a specific assistant template"""
+    global current_assistant_config
     logger.info(
         f"📋 Applying template '{template_name}' by: {current_user.username}")
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{RAG_SERVER_URL}/assistant/config/template/{template_name}") as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
-    except Exception as e:
-        logger.error(f"❌ Error applying assistant template: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    load_assistant_configs()
+    if template_name in assistant_configs:
+        current_assistant_config = assistant_configs[template_name]
+        save_assistant_configs()
+        return {"status": "success", "config": current_assistant_config}
+    else:
+        raise HTTPException(status_code=404, detail="Template not found")
 
 
 @app.post("/assistant/config/reset")
 async def reset_assistant_config(current_user: User = Depends(get_current_user)):
-    """Reset assistant configuration to default - proxy to RAG server"""
+    """Reset assistant configuration to default"""
+    global current_assistant_config
     logger.info(f"🔄 Assistant config reset by: {current_user.username}")
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{RAG_SERVER_URL}/assistant/config/reset") as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
-    except Exception as e:
-        logger.error(f"❌ Error resetting assistant config: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # Here you can define what the "default" is.
+    # For example, loading the first template or a specific one.
+    load_assistant_configs()
+    if assistant_configs:
+        # Reset to the first available template
+        default_template_name = list(assistant_configs.keys())[0]
+        current_assistant_config = assistant_configs[default_template_name]
+    else:
+        # Or reset to a completely empty/default state
+        current_assistant_config = None
+
+    save_assistant_configs()
+    return {"status": "success", "config": current_assistant_config}
 
 
 # ========================================

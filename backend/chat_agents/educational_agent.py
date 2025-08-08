@@ -19,7 +19,8 @@ from langchain_core.tools.retriever import create_retriever_tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
-from rag_system.rag_handler import RAGHandler, RAGQueryTool
+from langchain_chroma import Chroma
+from langchain_openai import OpenAIEmbeddings
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
@@ -35,6 +36,16 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["educational_chat"])
+
+
+class Question(BaseModel):
+    content: str
+
+
+class Response(BaseModel):
+    answer: str
+    sources: List[dict]
+    response_time: float
 
 
 class LearningPathStep(BaseModel):
@@ -107,35 +118,14 @@ class EducationalChatResponse(BaseModel):
     response_time: float = 0.0
 
 
-# Models for streaming events
-class StreamSources(BaseModel):
-    type: str = "sources"
-    data: List[Dict[str, Any]]
-
-
-class StreamChunk(BaseModel):
-    type: str = "chunk"
-    content: str
-
-
-class StreamFinal(BaseModel):
-    type: str = "final_data"
-    follow_up_questions: List[str]
-
-
-class StreamError(BaseModel):
-    type: str = "error"
-    content: str
-
-
 class EducationalAgent:
     """Enhanced educational agent for fitness training with deep learning capabilities"""
 
     def __init__(self):
-        self.rag_handler = None
-        self.rag_tool: Optional[RAGQueryTool] = None
         self.model = None
         self.graph = None
+        self.retriever = None
+        self.vector_store = None
         self.memory = MemorySaver()
         self.learning_contexts: Dict[str, LearningContext] = {}
         self.course_catalog: Optional[pd.DataFrame] = None
@@ -146,19 +136,32 @@ class EducationalAgent:
         self._build_graph()
 
     def _initialize_rag(self):
-        """Initialize RAG handler with enhanced retrieval"""
+        """Initialize ChromaDB and retriever directly."""
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
-            logger.warning(
-                "OPENAI_API_KEY not found. RAG capabilities disabled.")
+            logger.warning("OPENAI_API_KEY not found. RAG capabilities disabled.")
             return
 
         try:
-            self.rag_handler = RAGHandler(api_key=openai_api_key)
-            self.rag_tool = RAGQueryTool(rag_handler=self.rag_handler)
-            logger.info("✅ RAG Query Tool initialized successfully")
+            embeddings = OpenAIEmbeddings(
+                model="text-embedding-ada-002",
+                api_key=SecretStr(openai_api_key)
+            )
+            
+            persist_directory = str(Path(__file__).parent.parent / "data" / "chromadb")
+            
+            self.vector_store = Chroma(
+                persist_directory=persist_directory,
+                embedding_function=embeddings
+            )
+            
+            self.retriever = self.vector_store.as_retriever(
+                search_type="mmr",
+                search_kwargs={"k": 6, "fetch_k": 20, "lambda_mult": 0.7},
+            )
+            logger.info("✅ Retriever initialized successfully directly from ChromaDB")
         except Exception as e:
-            logger.error(f"Error initializing RAG: {e}")
+            logger.error(f"Error initializing retriever: {e}")
 
     def _load_course_catalog(self, path: str = "data/catalog.xlsx"):
         """Loads the course catalog from an Excel file."""
@@ -256,13 +259,10 @@ class EducationalAgent:
         """Build the educational conversation graph"""
 
         def retriever_node(state: EducationalState):
-            if not self.rag_handler:
-                raise ValueError("RAG handler not initialized")
-            retriever = self.rag_handler.retriever
-            if not retriever:
+            if not self.retriever:
                 logger.warning("Retriever not available, returning empty documents.")
                 return {"documents": []}
-            documents = retriever.invoke(state["messages"][-1].content)
+            documents = self.retriever.invoke(state["messages"][-1].content)
             return {"documents": documents}
 
         def format_documents_node(state: EducationalState):
@@ -399,60 +399,6 @@ Caso você não saiba, responda que não tem informações sobre isso. Não inve
             }
 
 
-    async def stream_chat(
-        self,
-        message: str,
-        user_id: str = "default",
-        session_id: str = "default",
-        learning_preferences: Optional[Dict] = None
-    ) -> AsyncGenerator[str, None]:
-        """Streams the educational chat response."""
-
-        learning_context = self.get_learning_context(user_id, session_id)
-        if learning_preferences:
-            self.update_learning_context(
-                user_id, session_id, **learning_preferences)
-
-        # 1. Retrieve documents
-        if not self.rag_handler or not self.rag_handler.retriever:
-            yield StreamError(content="RAG handler not initialized").model_dump_json()
-            return
-
-        retriever = self.rag_handler.retriever
-        documents = retriever.invoke(message)
-        formatted_docs = "\n\n".join(doc.page_content for doc in documents)
-
-        sources = [doc.metadata for doc in documents]
-        yield StreamSources(data=sources).model_dump_json()
-
-        # 2. Create prompt
-        prompt_rag = f"""Você é um assistente útil que responde à perguntas do usuário com base no contexto fornecido.
-Leia atentamente a dúvida do usuário e observe o contexto retornado de um banco vetorial de pesquisa utilizado como fonte de informação:
-
-<contexto>
-{formatted_docs}
-</contexto>
-
-Caso você não saiba, responda que não tem informações sobre isso. Não invente informações."""
-
-        if not self.model:
-            yield StreamError(content="Model not initialized").model_dump_json()
-            return
-
-        messages = [
-            SystemMessage(content=prompt_rag),
-            HumanMessage(content=message)
-        ]
-
-        # 3. Stream response
-        async for chunk in self.model.astream(messages):
-            if chunk.content and isinstance(chunk.content, str):
-                yield StreamChunk(content=chunk.content).model_dump_json()
-
-        # 4. Follow-up questions (can be sent at the end)
-        follow_up = self.generate_follow_up_questions(
-            "treinamento", "intermediate")
-        yield StreamFinal(follow_up_questions=follow_up).model_dump_json()
 
 
 # Global instance
@@ -522,34 +468,6 @@ async def educational_chat(
             status_code=500, detail=f"Educational chat error: {str(e)}")
 
 
-@router.post("/educational/stream")
-async def educational_chat_stream(
-    request: EducationalChatRequest,
-):
-    """Enhanced educational chat with streaming response."""
-    agent = get_educational_agent()
-    current_user = User(id="default", username="default", role="student",
-                        created_at=datetime.utcnow(), updated_at=datetime.utcnow())
-
-    async def event_stream():
-        learning_preferences = {
-            "learning_objectives": request.learning_objectives
-        }
-
-        try:
-            async for chunk in agent.stream_chat(
-                message=request.content,
-                user_id=current_user.username,
-                session_id=request.session_id or f"session_{int(time.time())}",
-                learning_preferences=learning_preferences
-            ):
-                yield f"data: {chunk}\n\n"
-        except Exception as e:
-            logger.error(f"Stream error: {e}")
-            error_message = StreamError(content=str(e)).model_dump_json()
-            yield f"data: {error_message}\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/session/{session_id}/context")
@@ -590,13 +508,13 @@ async def get_learning_path(
     logger.info(f"🛤️ Learning path request: {topic} for session {session_id}")
 
     agent = get_educational_agent()
-    if not agent.rag_handler or not agent.rag_handler.retriever:
+    if not agent.retriever:
         raise HTTPException(
-            status_code=503, detail="RAG handler not initialized")
+            status_code=503, detail="Retriever not initialized")
 
     # 1. Retrieve relevant documents from RAG
     try:
-        retriever = agent.rag_handler.retriever
+        retriever = agent.retriever
         documents = retriever.invoke(topic)
         context = "\n\n".join([doc.page_content for doc in documents])
     except Exception as e:
@@ -709,6 +627,67 @@ async def add_topic_to_learning_path(
         logger.error(f"Error adding topic to learning path: {e}")
         raise HTTPException(
             status_code=500, detail="Could not add topic to learning path.")
+
+@router.post("/simple", response_model=Response)
+async def simple_chat(question: Question):
+    """Simplified chat endpoint"""
+    agent = get_educational_agent()
+    logger.info(f"💬 Simple chat request: {question.content[:50]}...")
+
+    if not agent.retriever:
+        simulated_answer = f"Sistema não inicializado. Esta é uma resposta simulada para: '{question.content}'. Configure uma chave OpenAI válida para funcionalidades completas."
+        return Response(
+            answer=simulated_answer,
+            sources=[{"title": "Sistema de Teste",
+                      "source": "educational_agent.py", "page": 1, "relevance": 0.9}],
+            response_time=0.1
+        )
+
+    try:
+        start_time = time.time()
+        result = await agent.chat(message=question.content)
+        response_time = time.time() - start_time
+        
+        return Response(
+            answer=result.get("response", ""),
+            sources=result.get("sources", []),
+            response_time=response_time
+        )
+    except Exception as e:
+        logger.error(f"❌ Simple chat error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/explore-topic", response_model=Response)
+async def explore_topic(request: dict):
+    """Explore a topic with the educational agent"""
+    agent = get_educational_agent()
+    try:
+        topic = request.get("topic")
+        user_level = request.get("user_level", "intermediate")
+        if not topic:
+            raise HTTPException(status_code=400, detail="Topic is required")
+
+        if not agent.retriever:
+            raise HTTPException(
+                status_code=503, detail="RAG handler not initialized in Educational Agent.")
+
+        start_time = time.time()
+        result = await agent.chat(
+            message=f"Explique o tópico '{topic}' para um aluno de nível {user_level}."
+        )
+        response_time = time.time() - start_time
+
+        return Response(
+            answer=result.get("response", ""),
+            sources=result.get("sources", []),
+            response_time=response_time
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Error exploring topic: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Example usage
 if __name__ == "__main__":

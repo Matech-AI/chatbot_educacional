@@ -10,39 +10,20 @@ import asyncio
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 import uvicorn
 from dotenv import load_dotenv
-from uuid import uuid4
 import time
-import json
 
 # Importar componentes RAG
 from rag_system.rag_handler import RAGHandler, RAGConfig, Source
 import chromadb
 from chromadb.config import Settings
-from chat_agents.educational_agent import router as educational_agent_router
 # ========================================
 # MODELS PYDANTIC
 # ========================================
-
-
-class Question(BaseModel):
-    content: str
-
-
-class Response(BaseModel):
-    answer: str
-    sources: List[dict]
-    response_time: float
-
-
-class ChatRequest(BaseModel):
-    message: str
-    thread_id: Optional[str] = None
 
 
 class ProcessMaterialsRequest(BaseModel):
@@ -66,12 +47,6 @@ class QueryResponse(BaseModel):
     response_time: float
 
 
-class AssistantConfigRequest(BaseModel):
-    prompt: Optional[str] = None
-    chunk_size: Optional[int] = None
-    chunk_overlap: Optional[int] = None
-    temperature: Optional[float] = None
-    title: Optional[str] = None
 
 
 # Configurar logging
@@ -89,162 +64,6 @@ rag_handler = None
 chroma_persist_dir = None
 materials_dir = None
 
-# Sistema de persistência para configurações do assistente
-assistant_configs_file = Path("data/assistant_configs.json")
-assistant_configs = {}
-current_assistant_config = None
-
-
-def load_assistant_configs():
-    """Carregar configurações do assistente do arquivo"""
-    global assistant_configs, current_assistant_config
-
-    if assistant_configs_file.exists():
-        try:
-            with open(assistant_configs_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                assistant_configs = data.get('configs', {})
-                current_assistant_config = data.get('current', None)
-                logger.info(
-                    f"✅ Configurações do assistente carregadas: {len(assistant_configs)} templates")
-        except Exception as e:
-            logger.error(f"❌ Erro ao carregar configurações: {e}")
-            assistant_configs = {}
-            current_assistant_config = None
-
-
-def save_assistant_configs():
-    """Salvar configurações do assistente no arquivo"""
-    global assistant_configs, current_assistant_config
-
-    try:
-        # Criar diretório se não existir
-        assistant_configs_file.parent.mkdir(parents=True, exist_ok=True)
-
-        data = {
-            'configs': assistant_configs,
-            'current': current_assistant_config,
-            'last_updated': time.time()
-        }
-
-        with open(assistant_configs_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-
-        logger.info(
-            f"✅ Configurações do assistente salvas: {len(assistant_configs)} templates")
-    except Exception as e:
-        logger.error(f"❌ Erro ao salvar configurações: {e}")
-
-
-def get_default_templates():
-    """Retornar templates padrão"""
-    return {
-        "Educação Física": {
-            "name": "Assistente Educacional de Educação Física",
-            "description": "Especializado em responder dúvidas sobre treinamento, fisiologia do exercício e metodologia do ensino",
-            "prompt": """Você é um ASSISTENTE EDUCACIONAL especializado em EDUCAÇÃO FÍSICA. Seu objetivo é auxiliar estudantes a compreender conceitos de treinamento, fisiologia do exercício, biomecânica e metodologia do ensino. Siga estas diretrizes:
-
-1. CONTEXTO DO CURSO:
-   - Basear suas respostas exclusivamente nos materiais do curso fornecidos
-   - Citar a fonte específica (aula, página, vídeo) de onde a informação foi extraída
-   - Nunca inventar informações que não estejam nos materiais do curso
-
-2. ESTILO DE RESPOSTA:
-   - Usar linguagem clara, técnica mas acessível
-   - Relacionar teoria com aplicação prática no treinamento
-   - Fornecer exemplos de exercícios e progressões quando apropriado
-   - Explicar os princípios fisiológicos por trás dos conceitos
-
-3. CITAÇÕES E FONTES:
-   - Sempre indicar a origem da informação (ex: "Conforme a Aula 3, página 7...")
-   - Para citações diretas, usar aspas e referenciar a fonte exata
-   - Se a pergunta não puder ser respondida com os materiais disponíveis, informar isto claramente
-
-4. ESTRATÉGIAS PEDAGÓGICAS:
-   - Conectar conceitos teóricos com aplicações práticas no treinamento
-   - Usar analogias relacionadas ao movimento humano
-   - Incentivar análise crítica de métodos de treinamento
-   - Sugerir progressões e adaptações para diferentes níveis
-
-Use {context}, {chat_history} e {question} como variáveis no template.""",
-            "model": "gpt-4o-mini",
-            "temperature": 0.1,
-            "chunkSize": 2000,
-            "chunkOverlap": 100,
-            "retrievalSearchType": "mmr",
-            "embeddingModel": "text-embedding-ada-002"
-        },
-        "Nutrição Esportiva": {
-            "name": "Assistente Educacional de Nutrição Esportiva",
-            "description": "Especializado em nutrição aplicada ao esporte, suplementação e estratégias alimentares para performance",
-            "prompt": """Você é um ASSISTENTE EDUCACIONAL especializado em NUTRIÇÃO ESPORTIVA. Seu objetivo é auxiliar estudantes a compreender conceitos de nutrição aplicada ao esporte, metabolismo energético, suplementação e estratégias alimentares. Siga estas diretrizes:
-
-1. CONTEXTO DO CURSO:
-   - Basear suas respostas exclusivamente nos materiais do curso fornecidos
-   - Citar a fonte específica (aula, página, vídeo) de onde a informação foi extraída
-   - Nunca inventar informações que não estejam nos materiais do curso
-
-2. ESTILO DE RESPOSTA:
-   - Usar linguagem científica mas didática
-   - Relacionar conceitos nutricionais com performance esportiva
-   - Fornecer exemplos práticos de aplicação nutricional
-   - Explicar os mecanismos bioquímicos quando relevante
-
-3. CITAÇÕES E FONTES:
-   - Sempre indicar a origem da informação (ex: "Conforme a Aula 5, página 12...")
-   - Para citações diretas, usar aspas e referenciar a fonte exata
-   - Se a pergunta não puder ser respondida com os materiais disponíveis, informar isto claramente
-
-4. ESTRATÉGIAS PEDAGÓGICAS:
-   - Conectar bioquímica nutricional com aplicações práticas
-   - Usar exemplos de diferentes modalidades esportivas
-   - Incentivar análise crítica de estratégias nutricionais
-   - Sugerir adequações nutricionais para diferentes objetivos
-
-Use {context}, {chat_history} e {question} como variáveis no template.""",
-            "model": "gpt-4o-mini",
-            "temperature": 0.2,
-            "chunkSize": 2200,
-            "chunkOverlap": 150,
-            "retrievalSearchType": "mmr",
-            "embeddingModel": "text-embedding-ada-002"
-        },
-        "Anatomia Humana": {
-            "name": "Assistente Educacional de Anatomia Humana",
-            "description": "Especializado em anatomia sistêmica, cinesiologia e biomecânica do movimento humano",
-            "prompt": """Você é um ASSISTENTE EDUCACIONAL especializado em ANATOMIA HUMANA. Seu objetivo é auxiliar estudantes a compreender a estrutura do corpo humano, cinesiologia e biomecânica do movimento. Siga estas diretrizes:
-
-1. CONTEXTO DO CURSO:
-   - Basear suas respostas exclusivamente nos materiais do curso fornecidos
-   - Citar a fonte específica (aula, página, atlas, vídeo) de onde a informação foi extraída
-   - Nunca inventar informações que não estejam nos materiais do curso
-
-2. ESTILO DE RESPOSTA:
-   - Usar terminologia anatômica precisa e correta
-   - Relacionar estrutura anatômica com função
-   - Fornecer exemplos de movimentos e posições
-   - Explicar a biomecânica quando relevante
-
-3. CITAÇÕES E FONTES:
-   - Sempre indicar a origem da informação (ex: "Conforme o Atlas de Anatomia, página 45...")
-   - Para citações diretas, usar aspas e referenciar a fonte exata
-   - Se a pergunta não puder ser respondida com os materiais disponíveis, informar isto claramente
-
-4. ESTRATÉGIAS PEDAGÓGICAS:
-   - Conectar anatomia com movimento e função
-   - Usar exemplos práticos de palpação e identificação
-   - Incentivar análise crítica de estruturas anatômicas
-   - Sugerir exercícios de memorização e identificação
-
-Use {context}, {chat_history} e {question} como variáveis no template.""",
-            "model": "gpt-4o-mini",
-            "temperature": 0.1,
-            "chunkSize": 2000,
-            "chunkOverlap": 100,
-            "retrievalSearchType": "mmr",
-            "embeddingModel": "text-embedding-ada-002"
-        }
-    }
 
 
 @asynccontextmanager
@@ -262,8 +81,6 @@ async def lifespan(app: FastAPI):
     chroma_persist_dir.mkdir(parents=True, exist_ok=True)
     materials_dir.mkdir(parents=True, exist_ok=True)
 
-    # Carregar configurações do assistente
-    load_assistant_configs()
 
     logger.info(f"📁 Diretórios configurados:")
     logger.info(f"   - ChromaDB: {chroma_persist_dir}")
@@ -293,8 +110,6 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("🛑 Encerrando servidor RAG...")
-    # Salvar configurações do assistente ao encerrar
-    save_assistant_configs()
 
 # Inicializar FastAPI
 app = FastAPI(
@@ -318,7 +133,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(educational_agent_router, prefix="/chat")
 
 @app.get("/health")
 async def health_check():
@@ -501,93 +315,6 @@ async def get_rag_stats():
             status_code=500, detail=f"Erro ao obter estatísticas: {str(e)}")
 
 
-# ========================================
-# CHAT ENDPOINTS
-# ========================================
-
-@app.post("/chat", response_model=Response)
-async def chat(question: Question):
-    """Simplified chat endpoint"""
-    logger.info(f"💬 Chat request: {question.content[:50]}...")
-
-    if not rag_handler:
-        simulated_answer = f"Sistema não inicializado. Esta é uma resposta simulada para: '{question.content}'. Configure uma chave OpenAI válida para funcionalidades completas."
-        return Response(
-            answer=simulated_answer,
-            sources=[{"title": "Sistema de Teste",
-                      "source": "rag_server.py", "page": 1, "relevance": 0.9}],
-            response_time=0.1
-        )
-
-    try:
-        response = rag_handler.generate_response(question.content)
-        return response
-    except Exception as e:
-        logger.error(f"❌ Chat error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/chat/explore-topic")
-async def explore_topic(request: dict):
-    """Explore a topic with the educational agent"""
-    try:
-        topic = request.get("topic")
-        user_level = request.get("user_level", "intermediate")
-        if not topic:
-            raise HTTPException(status_code=400, detail="Topic is required")
-
-        from chat_agents.educational_agent import get_educational_agent
-        agent = get_educational_agent()
-
-        if not agent.rag_handler:
-            raise HTTPException(
-                status_code=503, detail="RAG handler not initialized in Educational Agent.")
-
-        # This would ideally be a more sophisticated method in the agent
-        # For now, we can simulate a response or use a simple RAG query
-        response = agent.rag_handler.generate_response(
-            question=f"Explique o tópico '{topic}' para um aluno de nível {user_level}.",
-            user_level=user_level
-        )
-        return response
-
-    except Exception as e:
-        logger.error(f"❌ Error exploring topic: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/chat/learning-path/{topic}")
-async def get_learning_path(topic: str, user_level: str = "intermediate"):
-    """Get a learning path for a topic"""
-    try:
-        from chat_agents.educational_agent import get_educational_agent
-        agent = get_educational_agent()
-
-        # This would ideally be a more sophisticated method in the agent
-        # For now, we can simulate a response or use a simple RAG query
-        learning_path = [
-            {"step": 1, "title": f"Fundamentos de {topic}",
-                "description": "Conceitos básicos e terminologia"},
-            {"step": 2, "title": f"Aplicação prática de {topic}",
-                "description": "Como aplicar na prática"},
-            {"step": 3, "title": f"Progressão em {topic}",
-                "description": "Níveis avançados e variações"},
-            {"step": 4, "title": f"Troubleshooting {topic}",
-                "description": "Solucionando problemas comuns"}
-        ]
-
-        return {
-            "topic": topic,
-            "user_level": user_level,
-            "learning_path": learning_path,
-            "estimated_time": "2-4 semanas",
-            "prerequisites": [],
-            "resources_available": True
-        }
-
-    except Exception as e:
-        logger.error(f"❌ Error getting learning path: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
