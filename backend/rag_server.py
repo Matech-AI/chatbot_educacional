@@ -247,7 +247,14 @@ async def query_rag(request: QueryRequest):
 
         return QueryResponse(
             answer=result.get("answer", ""),
-            sources=result.get("sources", []),
+            sources=[
+                {
+                    **source,
+                    "chunk": source["chunk"][:200] + "..." if len(source["chunk"]) > 200 else source["chunk"],
+                    "title": None  # Remove the title
+                }
+                for source in result.get("sources", [])
+            ],
             response_time=response_time
         )
 

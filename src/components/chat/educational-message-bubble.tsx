@@ -71,6 +71,7 @@ export const EducationalMessageBubble: React.FC<EducationalMessageBubbleProps> =
 }) => {
   const [showEducationalFeatures, setShowEducationalFeatures] = useState(false);
   const [showVideos, setShowVideos] = useState(false);
+  const [showSources, setShowSources] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<VideoSuggestion | null>(null);
   const [showExport, setShowExport] = useState(false);
 
@@ -198,35 +199,38 @@ export const EducationalMessageBubble: React.FC<EducationalMessageBubbleProps> =
           {/* RAG Context Section */}
           {!isUser && message.sources && message.sources.length > 0 && (
             <div className="mt-4 pt-3 border-t border-gray-200">
-                <div className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-2">
-                    <BookOpen size={14} />
-                    <span>Contexto do RAG ({message.sources.length})</span>
-                </div>
+              <button
+                onClick={() => setShowSources(!showSources)}
+                className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-2"
+              >
+                <BookOpen size={14} />
+                <span>Contexto do RAG ({message.sources.length})</span>
+                {showSources ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+              {showSources && (
                 <div className="space-y-2">
-                    {message.sources.map((source, index) => (
-                      <div
-                        key={index}
-                        className="bg-gray-50 rounded-lg p-3 border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors"
-                        onClick={() => onSourceClick?.(source)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="font-medium text-sm text-gray-900">
-                              {source.title}
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">
-                              {source.page && `Página ${source.page} • `}
-                              {source.source.split('/').pop()}
-                            </div>
-                            <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">
-                              {source.chunk}
-                            </p>
+                  {message.sources.map((source, index) => (
+                    <div
+                      key={index}
+                      className="bg-gray-50 rounded-lg p-3 border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => onSourceClick?.(source)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="text-xs text-gray-500 mt-1">
+                            {source.page && `Página ${source.page} • `}
+                            {source.source.split('/').pop()}
                           </div>
-                          <ExternalLink size={14} className="text-gray-400 flex-shrink-0 ml-2" />
+                          <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">
+                            {source.chunk}
+                          </p>
                         </div>
+                        <ExternalLink size={14} className="text-gray-400 flex-shrink-0 ml-2" />
                       </div>
-                    ))}
+                    </div>
+                  ))}
                 </div>
+              )}
             </div>
           )}
 

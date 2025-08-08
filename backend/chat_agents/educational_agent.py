@@ -469,7 +469,14 @@ async def educational_chat(
         # Construct the final response
         response_data = {
             "response": result["response"],
-            "sources": result["sources"],
+            "sources": [
+                {
+                    **source,
+                    "chunk": source["chunk"][:200] + "..." if len(source["chunk"]) > 200 else source["chunk"],
+                    "title": None  # Remove the title
+                }
+                for source in result["sources"]
+            ],
             "follow_up_questions": result["follow_up_questions"],
             "learning_suggestions": result["learning_suggestions"],
             "related_topics": result["related_topics"],
