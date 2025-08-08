@@ -252,6 +252,7 @@ class EducationalAgent:
         - Mantenha o foco educacional e pedagógico em todas as interações
         - Sempre que possível, faça referência ao conteúdo dos materiais de estudo utilizados, como por exemplo: "De acordo com a aula, vimos que...", "Conforme o material consultado...", "Segundo o documento...", "Nos materiais de estudo, é mencionado que..."
         - É fundamental que a resposta incorpore o conhecimento extraído dos materiais de estudo, demonstrando que a informação foi consultada e utilizada para construir a resposta.
+        Responda somente em Português
         """
 
         return base_prompt
