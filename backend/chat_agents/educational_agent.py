@@ -26,6 +26,7 @@ from langchain_openai import OpenAIEmbeddings
 from langgraph.graph.message import add_messages
 from auth.auth import User, get_current_user
 from video_processing.video_handler import get_video_handler
+from models import EducationalChatRequest
 
 # Set environment variables
 load_dotenv()
@@ -99,10 +100,6 @@ class AgentState(TypedDict):
     sources: List[Dict[str, Any]]
 
 
-class EducationalChatRequest(BaseModel):
-    content: str
-    session_id: Optional[str] = None
-    learning_objectives: List[str] = []
 
 
 class EducationalChatResponse(BaseModel):
@@ -365,15 +362,28 @@ class EducationalAgent:
                 "treinamento", "intermediate"
             )
 
-            return {
+            # Populate the 'response' field of each source with its own chunk content
+            final_sources = []
+            for source_meta in sources:
+                # The 'chunk' is not directly in metadata, we need to get it from the document
+                # The custom retriever tool only saves metadata. We need to adjust it.
+                # For now, let's assume the full document content is what's needed.
+                # A better approach would be to retrieve the document object itself.
+                # Let's modify the custom retriever tool first.
+                final_sources.append({**source_meta, 'response': source_meta.get('chunk', '')})
+
+
+            rag_result = {
                 "response": response_content,
-                "sources": sources,
+                "sources": final_sources,
                 "follow_up_questions": follow_up_questions[:3],
                 "learning_suggestions": [],
                 "related_topics": [],
                 "educational_metadata": {},
                 "learning_context": learning_context.model_dump(),
             }
+            print("RAG Result:", rag_result)
+            return rag_result
 
         except Exception as e:
             logger.error(f"Error in educational chat: {e}", exc_info=True)
@@ -404,8 +414,18 @@ class EducationalAgent:
                 if not self.agent.retriever:
                     return "Retriever not initialized."
                 
+                logger.info(f"🕵️ Retriever tool invoked with query: '{query}'")
                 documents = self.agent.retriever.invoke(query)
-                self.agent.last_retrieved_sources = [doc.metadata for doc in documents]
+                # Store metadata and the chunk content together
+                self.agent.last_retrieved_sources = []
+                for doc in documents:
+                    source_info = doc.metadata
+                    source_info['chunk'] = doc.page_content
+                    self.agent.last_retrieved_sources.append(source_info)
+                
+                logger.info(f"📚 Retrieved {len(documents)} documents from vector store.")
+                for i, doc in enumerate(documents):
+                    logger.info(f"  - Doc {i+1} source: {doc.metadata.get('source', 'N/A')}")
                 
                 return "\n\n".join([doc.page_content for doc in documents])
 
@@ -415,11 +435,76 @@ class EducationalAgent:
                     return "Retriever not initialized."
 
                 documents = await self.agent.retriever.ainvoke(query)
-                self.agent.last_retrieved_sources = [doc.metadata for doc in documents]
+                # Store metadata and the chunk content together
+                self.agent.last_retrieved_sources = []
+                for doc in documents:
+                    source_info = doc.metadata
+                    source_info['chunk'] = doc.page_content
+                    self.agent.last_retrieved_sources.append(source_info)
 
                 return "\n\n".join([doc.page_content for doc in documents])
 
         return CustomRetrieverTool(agent=self)
+
+    async def get_learning_path(self, topic: str, user_level: str) -> LearningPath:
+        """Get suggested learning path for a topic, based on course materials."""
+        if not self.retriever:
+            raise ValueError("Retriever not initialized")
+
+        # 1. Retrieve relevant documents from RAG
+        try:
+            documents = self.retriever.invoke(topic)
+            context = "\n\n".join([doc.page_content for doc in documents])
+        except Exception as e:
+            logger.error(f"Error retrieving documents for learning path: {e}")
+            raise
+
+        if not documents:
+            # Fallback to a generic path if no context is found
+            return LearningPath(learning_path=[
+                LearningPathStep(step=1, title=f"Introdução a {topic}",
+                                 description="Visão geral e conceitos chave.", estimated_time="1 hora", difficulty="easy"),
+                LearningPathStep(step=2, title=f"Aplicações de {topic}",
+                                 description="Exemplos práticos e estudos de caso.", estimated_time="3 horas", difficulty="medium")
+            ])
+
+        # 2. Generate learning path with LLM using structured output
+        prompt = f"""
+        Você é um designer instrucional. Com base no CONTEÚDO fornecido, crie um caminho de aprendizado detalhado e estruturado para o tópico '{topic}' para um aluno de nível '{user_level}'.
+
+        CONTEÚDO DISPONÍVEL:
+        ---
+        {context}
+        ---
+
+        Crie um caminho de aprendizado com 3 a 5 etapas lógicas e progressivas. Cada etapa deve ser diretamente relacionada ao conteúdo fornecido.
+        """
+
+        try:
+            if not self.model:
+                raise ValueError("Model not initialized")
+
+            # Use structured output to guarantee a valid Pydantic object
+            structured_llm = self.model.with_structured_output(LearningPath)
+            response = await structured_llm.ainvoke(prompt)
+
+            # Ensure the response is of the correct type
+            if isinstance(response, LearningPath):
+                return response
+            else:
+                # Handle cases where the structured output fails
+                raise TypeError(
+                    f"Expected a LearningPath object, but got {type(response)}")
+
+        except Exception as e:
+            logger.error(f"Error generating structured learning path: {e}")
+            # Fallback for any LLM or structuring errors
+            return LearningPath(learning_path=[
+                LearningPathStep(step=1, title=f"Introdução a {topic}",
+                                 description="Visão geral e conceitos chave.", estimated_time="1 hora", difficulty="easy"),
+                LearningPathStep(step=2, title=f"Aplicações de {topic}",
+                                 description="Exemplos práticos e estudos de caso.", estimated_time="3 horas", difficulty="medium")
+            ])
 
 
 # Global instance
@@ -444,7 +529,7 @@ async def educational_chat(
     start_time = time.time()
 
     logger.info(
-        f"🎓 Educational chat from {current_user.username}: {request.content[:50]}...")
+        f"🎓 Educational chat from {current_user.username}: {request.message[:50]}...")
 
     try:
         # Get educational agent
@@ -457,7 +542,7 @@ async def educational_chat(
 
         # Process with educational agent
         result = await agent.chat(
-            message=request.content,
+            message=request.message,
             user_id=current_user.username,
             session_id=request.session_id or f"session_{int(time.time())}",
             learning_preferences=learning_preferences

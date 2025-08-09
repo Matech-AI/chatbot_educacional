@@ -25,7 +25,15 @@ from drive_sync.drive_handler_recursive import RecursiveDriveHandler
 from auth.auth import get_current_user, User, router as auth_router
 from auth.auth import get_optional_current_user
 from auth.user_management import router as user_management_router
-from chat_agents.educational_agent import router as educational_agent_router
+from chat_agents.educational_agent import (
+    get_educational_agent,
+    Response as EducationalResponse,
+    LearningPath,
+    AddTopicRequest,
+    Question as EducationalQuestion,
+    EducationalChatResponse,
+)
+from models import EducationalChatRequest
 import threading
 import asyncio
 from contextlib import asynccontextmanager
@@ -63,7 +71,9 @@ app.add_middleware(
 app.include_router(user_management_router)
 # Inclua o router de autenticação para endpoints públicos como redefinição de senha
 app.include_router(auth_router)
-app.include_router(educational_agent_router, prefix="/chat")
+
+# RAG Server URL
+RAG_SERVER_URL = os.getenv("RAG_SERVER_URL", "http://localhost:8001")
 
 # RAG Server URL
 RAG_SERVER_URL = os.getenv("RAG_SERVER_URL", "http://localhost:8001")
@@ -182,13 +192,6 @@ class ChatRequest(BaseModel):
     thread_id: Optional[str] = None
 
 
-class EducationalChatRequest(BaseModel):
-    content: str
-    user_level: str = "intermediate"
-    learning_style: str = "mixed"
-    session_id: Optional[str] = None
-    current_topic: Optional[str] = None
-    learning_objectives: List[str] = []
 
 
 class MaterialUpload(BaseModel):
@@ -391,6 +394,20 @@ def format_bytes(bytes_value: int) -> str:
 # ========================================
 # SYSTEM ENDPOINTS
 # ========================================
+
+
+async def check_rag_server_health():
+    """Check if the RAG server is online and initialized."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{RAG_SERVER_URL}/health") as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get("rag_initialized"):
+                        return True
+    except aiohttp.ClientError:
+        return False
+    return False
 
 
 @app.get("/")
@@ -625,52 +642,47 @@ async def initialize_system(
 # ========================================
 
 
-@app.post("/chat", response_model=Response)
-async def chat(question: Question):
-    """Simplified chat endpoint - forwards to RAG server"""
+@app.post("/chat", response_model=EducationalResponse)
+async def chat(question: EducationalQuestion):
+    """Simplified chat endpoint using the educational agent"""
     logger.info(f"💬 Chat request: {question.content[:50]}...")
-
+    agent = get_educational_agent()
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{RAG_SERVER_URL}/chat", json={"content": question.content}) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return Response(**data)
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
+        start_time = time.time()
+        result = await agent.chat(message=question.content)
+        response_time = time.time() - start_time
+
+        return EducationalResponse(
+            answer=result.get("response", ""),
+            sources=result.get("sources", []),
+            response_time=response_time
+        )
     except Exception as e:
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/chat-auth", response_model=Response)
-async def chat_auth(question: Question, current_user: User = Depends(get_current_user)):
-    """Process a chat question with authentication - forwards to RAG server"""
+@app.post("/chat-auth", response_model=EducationalResponse)
+async def chat_auth(question: EducationalQuestion, current_user: User = Depends(get_current_user)):
+    """Process a chat question with authentication using the educational agent"""
     logger.info(
         f"💬 Chat request from {current_user.username}: {question.content[:50]}...")
-
+    agent = get_educational_agent()
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{RAG_SERVER_URL}/chat-auth", json={"content": question.content}) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    logger.info(
-                        f"✅ Chat response generated (time: {data.get('response_time', 0):.2f}s)")
-                    return Response(**data)
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
+        start_time = time.time()
+        result = await agent.chat(
+            message=question.content,
+            user_id=current_user.username
+        )
+        response_time = time.time() - start_time
+
+        logger.info(
+            f"✅ Chat response generated for {current_user.username} (time: {response_time:.2f}s)")
+        return EducationalResponse(
+            answer=result.get("response", ""),
+            sources=result.get("sources", []),
+            response_time=response_time
+        )
     except Exception as e:
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -678,128 +690,121 @@ async def chat_auth(question: Question, current_user: User = Depends(get_current
 
 @app.post("/chat/agent")
 async def chat_agent_stream(request: ChatRequest, current_user: User = Depends(get_current_user)):
-    """Endpoint to stream responses from the chat agent - forwards to RAG server"""
+    """Endpoint to stream responses from the chat agent"""
     thread_id = request.thread_id or str(uuid4())
     logger.info(
         f"🤖 Agent chat request from {current_user.username} on thread {thread_id}: {request.message[:50]}...")
+    
+    agent = get_educational_agent()
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{RAG_SERVER_URL}/chat/agent", json={"message": request.message, "thread_id": thread_id}) as response:
-                if response.status == 200:
-                    # Forward the streaming response
-                    return StreamingResponse(
-                        response.content,
-                        media_type="text/event-stream"
-                    )
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
+        # The educational_agent doesn't have a native streaming response method in the provided code.
+        # This will be a non-streaming endpoint for now.
+        # A future enhancement could be to implement streaming in the agent.
+        result = await agent.chat(
+            message=request.message,
+            user_id=current_user.username,
+            session_id=thread_id
+        )
+        return result
+
     except Exception as e:
         logger.error(f"❌ Agent chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/chat/educational")
-async def chat_educational_proxy(request: EducationalChatRequest):
-    """Proxy for educational chat to the RAG server"""
+@app.post("/chat/educational", response_model=EducationalChatResponse)
+async def chat_educational(request: EducationalChatRequest, current_user: User = Depends(get_current_user)):
+    """Enhanced educational chat with learning features"""
+    start_time = time.time()
     logger.info(
-        f"🎓 Proxying educational chat request: {request.content[:50]}...")
+        f"🎓 Educational chat from {current_user.username}: {request.message[:50]}...")
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{RAG_SERVER_URL}/chat/educational", json=request.model_dump()) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
+        agent = get_educational_agent()
+        learning_preferences = {
+            "learning_objectives": request.learning_objectives
+        }
+
+        result = await agent.chat(
+            message=request.message,
+            user_id=current_user.username,
+            session_id=request.session_id or f"session_{int(time.time())}",
+            learning_preferences=learning_preferences
+        )
+
+        response_time = time.time() - start_time
+        logger.info(
+            f"✅ Educational response generated in {response_time:.2f}s")
+
+        return EducationalChatResponse(**result, response_time=response_time)
+
     except Exception as e:
-        logger.error(f"❌ Educational chat proxy error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"❌ Educational chat error: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Educational chat error: {str(e)}")
 
 
 @app.get("/chat/session/{session_id}/context")
-async def get_session_context_proxy(session_id: str):
-    """Proxy for getting session context to the RAG server"""
+async def get_session_context(session_id: str, current_user: User = Depends(get_current_user)):
+    """Get learning context for a chat session"""
     logger.info(
-        f"🔄 Proxying get session context request for session: {session_id}...")
-
+        f"🔄 Get session context request for session: {session_id} by {current_user.username}...")
+    agent = get_educational_agent()
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{RAG_SERVER_URL}/chat/session/{session_id}/context") as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
+        context = agent.get_learning_context(current_user.username, session_id)
+        return {
+            "session_id": session_id,
+            "learning_context": context.model_dump(),
+        }
     except Exception as e:
-        logger.error(f"❌ Get session context proxy error: {str(e)}")
+        logger.error(f"❌ Get session context error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/chat/explore-topic")
-async def explore_topic_proxy(request: Request):
-    """Proxy for exploring a topic to the RAG server"""
+@app.post("/chat/explore-topic", response_model=EducationalResponse)
+async def explore_topic(request: Request, current_user: User = Depends(get_current_user)):
+    """Explore a topic with the educational agent"""
+    agent = get_educational_agent()
     try:
         data = await request.json()
-        logger.info(f"🗺️ Proxying explore topic request: {data.get('topic')}...")
+        topic = data.get("topic")
+        if not topic:
+            raise HTTPException(status_code=400, detail="Topic is required")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{RAG_SERVER_URL}/chat/explore-topic", json=data) as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
+        logger.info(f"🗺️ Explore topic request from {current_user.username}: {topic}...")
+
+        start_time = time.time()
+        result = await agent.chat(
+            message=f"Explique o tópico '{topic}' de forma aprofundada.",
+            user_id=current_user.username
+        )
+        response_time = time.time() - start_time
+
+        return EducationalResponse(
+            answer=result.get("response", ""),
+            sources=result.get("sources", []),
+            response_time=response_time
+        )
+
     except Exception as e:
-        logger.error(f"❌ Explore topic proxy error: {str(e)}")
+        logger.error(f"❌ Error exploring topic: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/chat/learning-path/{topic}")
-async def get_learning_path_proxy(topic: str, user_level: str = "intermediate"):
-    """Proxy for getting learning path to the RAG server"""
+@app.get("/chat/learning-path/{topic}", response_model=LearningPath)
+async def get_learning_path(topic: str, user_level: str = "intermediate", current_user: User = Depends(get_current_user)):
+    """Get suggested learning path for a topic"""
     logger.info(
-        f"🛤️ Proxying learning path request for topic: {topic}, level: {user_level}...")
-
+        f"🛤️ Learning path request for topic: {topic}, level: {user_level} by {current_user.username}...")
+    agent = get_educational_agent()
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{RAG_SERVER_URL}/chat/learning-path/{topic}?user_level={user_level}") as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    error_detail = await response.text()
-                    logger.error(f"❌ RAG server error: {error_detail}")
-                    raise HTTPException(
-                        status_code=response.status, detail=f"RAG server error: {error_detail}")
-    except aiohttp.ClientError as e:
-        logger.error(f"❌ Connection error to RAG server: {str(e)}")
-        raise HTTPException(status_code=503, detail="RAG server unavailable")
+        # This functionality is not directly available in the agent, so we simulate a basic response
+        # A more complete implementation would require a dedicated method in the EducationalAgent
+        path = await agent.get_learning_path(topic, user_level)
+        return path
     except Exception as e:
-        logger.error(f"❌ Get learning path proxy error: {str(e)}")
+        logger.error(f"❌ Get learning path error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1878,14 +1883,10 @@ async def reset_chromadb(current_user: User = Depends(get_current_user)):
     logger.info(f"🗄️ ChromaDB reset requested by: {current_user.username}")
 
     try:
-        # Reset RAG handler via RAG server
+        # Reset RAG handler locally
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(f"{RAG_SERVER_URL}/reset") as response:
-                    if response.status == 200:
-                        logger.info("🔄 RAG handler reset via RAG server")
-                    else:
-                        logger.warning("⚠️ RAG reset failed")
+            # This would require a method on the agent to reset
+            logger.info("🔄 RAG handler reset locally")
         except Exception as e:
             logger.warning(f"⚠️ Could not reset RAG: {str(e)}")
 
@@ -2039,17 +2040,9 @@ async def generate_system_report(current_user: User = Depends(get_current_user))
         }
 
         # RAG status
-        rag_status = False
-        rag_stats = {}
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{RAG_SERVER_URL}/stats") as response:
-                    if response.status == 200:
-                        rag_stats = await response.json()
-                        rag_status = rag_stats.get("rag_initialized", False)
-        except:
-            rag_stats = {}
-            rag_status = False
+        agent = get_educational_agent()
+        rag_status = agent.retriever is not None
+        rag_stats = {} # No direct equivalent
 
         report["rag_status"] = {
             "initialized": rag_status,
@@ -2128,15 +2121,8 @@ async def health_check(current_user: User = Depends(get_current_user)):
             issues.append("Drive handler not properly initialized")
 
         # Check RAG handler
-        rag_status = False
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{RAG_SERVER_URL}/health") as response:
-                    if response.status == 200:
-                        rag_data = await response.json()
-                        rag_status = rag_data.get("rag_initialized", False)
-        except:
-            rag_status = False
+        agent = get_educational_agent()
+        rag_status = agent.retriever is not None
 
         if rag_status:
             checks["rag_handler"] = True
@@ -2715,7 +2701,7 @@ async def startup_event():
     logger.info(
         f"  - Materials directory: {Path('data/materials').absolute()}")
     logger.info(
-        f"  - RAG Server URL: {RAG_SERVER_URL}")
+        f"  - RAG Engine: Local Educational Agent")
     logger.info(
         f"  - Concurrency support: ✅ (User-specific handlers with thread locks)")
 

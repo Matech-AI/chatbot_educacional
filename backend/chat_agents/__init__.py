@@ -6,13 +6,12 @@ incluindo o agente educacional, chat básico e gerenciamento de conversas.
 """
 
 from .educational_agent import (
-    EducationalAgent, EducationalChatRequest, EducationalChatResponse,
+    EducationalAgent, EducationalChatResponse,
     LearningContext, AgentState, router as educational_agent_router
 )
 
 __all__ = [
     'EducationalAgent',
-    'EducationalChatRequest',
     'EducationalChatResponse',
     'LearningContext',
     'AgentState',
