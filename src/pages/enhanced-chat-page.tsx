@@ -172,9 +172,13 @@ const EnhancedChatPage: React.FC = () => {
     setEducationalMessages((prev) => [...prev, loadingMessage]);
 
     try {
+      if (!currentUserId || !activeSessionId) {
+        throw new Error("User or session not found");
+      }
       const response = await api.educationalChat({
-        content,
-        session_id: activeSessionId || undefined,
+        message: content,
+        user_id: currentUserId,
+        session_id: activeSessionId,
         learning_objectives: [],
       });
 

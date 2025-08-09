@@ -26,6 +26,7 @@ interface EducationalSource {
   source: string;
   chunk: string;
   page?: number | null;
+  response?: string;
 }
 
 interface VideoSuggestion {
@@ -221,9 +222,11 @@ export const EducationalMessageBubble: React.FC<EducationalMessageBubbleProps> =
                             {source.page && `Página ${source.page} • `}
                             {source.source.split('/').pop()}
                           </div>
-                          <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">
-                            {source.chunk}
-                          </p>
+                          <div className="mt-2 pt-2 border-t border-gray-200">
+                            <p className="text-xs text-gray-500 italic">
+                              Resposta: {source.chunk}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>

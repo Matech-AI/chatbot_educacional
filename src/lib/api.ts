@@ -257,10 +257,11 @@ export const api = {
 
   // Enhanced Educational Chat
   educationalChat: (data: {
-    content: string;
+    message: string;
+    user_id: string;
+    session_id: string;
     user_level?: string;
     learning_style?: string;
-    session_id?: string;
     current_topic?: string;
     learning_objectives?: string[];
   }) => apiRequestJson('/chat/educational', {

@@ -265,25 +265,36 @@ class RAGHandler:
                 )
                 loaded_docs = loader.load()
                 # Filter documents to include only those ending with '_resumo'
-                documents.extend([doc for doc in loaded_docs if Path(doc.metadata.get('source', '')).stem.endswith('_resumo')])
+                logger.info(f"🔎 Found {len(loaded_docs)} documents with pattern {pattern}")
+                documents.extend(loaded_docs)
             except Exception as e:
                 logger.warning(f"⚠️ Error loading {pattern}: {e}")
         logger.info(f"📄 Loaded {len(documents)} total documents.")
         return documents
+    def _get_relative_path(self, file_path: str, base_dir: Path) -> str:
+        """Computes the relative path of a file given a base directory."""
+        try:
+            return str(Path(file_path).relative_to(base_dir))
+        except ValueError:
+            return file_path
 
     def _enhance_document(self, doc: Document) -> Document:
         """Enhance a single document with educational metadata."""
         source_path = doc.metadata.get('source', '')
+        relative_path = self._get_relative_path(source_path, self.materials_dir)
+        source_filename = Path(relative_path).name
         content_type = self._analyze_content_type(source_path)
         
         enhanced_metadata = {
             **doc.metadata,
+            'source': relative_path,
+            'source_filename': source_filename,
             'content_type': content_type,
             'processed_at': time.time(),
         }
 
         # Get course info from catalog and add it to metadata
-        course_info = self._get_course_info(source_path)
+        course_info = self._get_course_info(source_filename)
         if course_info:
             enhanced_metadata.update(course_info)
 
@@ -297,15 +308,15 @@ class RAGHandler:
         
         return Document(page_content=doc.page_content, metadata=enhanced_metadata)
 
-    def _get_course_info(self, file_path: str) -> Optional[Dict[str, Any]]:
+    def _get_course_info(self, file_name: str) -> Optional[Dict[str, Any]]:
         """Extracts course information from the catalog based on the file name."""
         if self.course_structure is None:
             return None
 
         try:
-            filename_stem = Path(file_path).stem
+            filename_stem = Path(file_name).stem
             # Extract the code (e.g., M01A01) from the filename
-            video_code = filename_stem.split(' ')[0].strip().lower()
+            video_code = filename_stem.replace(' ', '-').strip().lower()
 
             match = self.course_structure[self.course_structure['código_normalized'] == video_code]
             
@@ -319,7 +330,7 @@ class RAGHandler:
                     "summary": course_data.get('resumo da aula')
                 }
         except Exception as e:
-            logger.debug(f"Could not extract course info for {file_path}: {e}")
+            logger.debug(f"Could not extract course info for {file_name}: {e}")
         
         return None
 
@@ -373,6 +384,8 @@ class RAGHandler:
             logger.info(f"🔍 Retrieving documents for question: '{question}'")
             docs = self.retriever.get_relevant_documents(question)
             logger.info(f"📄 Found {len(docs)} relevant documents.")
+            for i, doc in enumerate(docs):
+                logger.info(f"  - Doc {i+1} source: {doc.metadata.get('source', 'N/A')}, page: {doc.metadata.get('page', 'N/A')}")
 
             if not docs:
                 logger.warning("No documents found for the question.")
@@ -386,7 +399,7 @@ class RAGHandler:
                 logger.info(f"    - Chunk Content: {doc.page_content}") # Log the full chunk content
                 
                 source = Source(
-                    title=doc.metadata.get('title', Path(doc.metadata.get('source', '')).name),
+                    title=doc.metadata.get('title', doc.metadata.get('source_filename', '')),
                     source=doc.metadata.get('source', ''),
                     page=doc.metadata.get('page'),
                     chunk=doc.page_content,
@@ -442,6 +455,8 @@ class RAGHandler:
             logger.info(f"🤖 LLM Answer: {answer}")
 
             final_sources = [s.dict() for s in sources]
+            for source_dict in final_sources:
+                source_dict['response'] = source_dict.get('chunk', '')
             logger.info(f"✅ Successfully generated response with {len(final_sources)} sources.")
             return {"answer": answer, "sources": final_sources}
         except Exception as e:
