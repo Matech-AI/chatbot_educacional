@@ -225,7 +225,7 @@ export const api = {
   // User management (admin only)
   users: {
     list: () => apiRequestJson('/auth/users'),
-            count: () => apiRequestJson('/users-count'),
+    count: () => apiRequestJson('/auth/users/count'),
     create: (userData: any) => apiRequestJson('/auth/users', {
       method: 'POST',
       body: JSON.stringify(userData),

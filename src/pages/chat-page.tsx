@@ -242,7 +242,7 @@ const ChatPage: React.FC = () => {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full min-h-dvh flex flex-col">
       {/* Header com sessões */}
       <header className="bg-white border-b border-gray-200 p-4 flex-shrink-0">
         <div className="flex items-center justify-between mb-4">
@@ -298,13 +298,13 @@ const ChatPage: React.FC = () => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.3 }}
-          className="flex-1 overflow-hidden"
+          className="flex-1 overflow-y-auto"
         >
           <ChatHistory messages={messages} isProcessing={isProcessing} />
         </motion.div>
 
         {/* Área de input */}
-        <div className="p-4 bg-gray-50 border-t border-gray-200 flex-shrink-0">
+        <div className="p-4 bg-gray-50 border-t border-gray-200 flex-shrink-0 sticky bottom-0 z-10 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <ChatInput
             onSendMessage={handleSendMessage}
             isDisabled={isProcessing || !activeSessionId}

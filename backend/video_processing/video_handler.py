@@ -514,7 +514,7 @@ class DriveVideoHandler:
                 drive_id or "", start_time)
 
         return {
-            "metadata": metadata.dict(),
+            "metadata": metadata.model_dump(),
             "embed_url": embed_url,
             "start_time": start_time,
             "matched_topic": matched_topic,

@@ -126,10 +126,12 @@ class EducationalAgent:
             if os.path.exists(path):
                 self.course_catalog = pd.read_excel(path)
                 # Normalize column names for easier access
-                self.course_catalog.columns = [col.strip().lower() for col in self.course_catalog.columns]
+                self.course_catalog.columns = [
+                    col.strip().lower() for col in self.course_catalog.columns]
                 logger.info("✅ Course catalog loaded successfully.")
             else:
-                logger.warning(f"Course catalog not found at {path}. Video suggestions will be disabled.")
+                logger.warning(
+                    f"Course catalog not found at {path}. Video suggestions will be disabled.")
         except Exception as e:
             logger.error(f"Error loading course catalog: {e}")
 
@@ -234,21 +236,31 @@ class EducationalAgent:
 
         if not self.model:
             raise ValueError("Model not initialized")
-        
+
         model_with_tools = self.model.bind_tools(tools)
 
         def agent_node(state: EducationalState):
             """The primary agent node that decides what to do."""
             learning_context = state.get("learning_context")
             if not learning_context:
-                learning_context = LearningContext(user_id="default", session_id="default")
+                learning_context = LearningContext(
+                    user_id="default", session_id="default")
 
-            system_prompt = SystemMessage(content=self._get_educational_system_prompt(learning_context))
-            
+            system_prompt = SystemMessage(
+                content=self._get_educational_system_prompt(learning_context))
+
             messages = [system_prompt] + state["messages"]
-            
-            response = model_with_tools.invoke(messages)
-            
+
+            # Gentle insistence on using RAG tool when question needs grounding
+            # Add a lightweight instruction message to bias tool usage
+            insistence = SystemMessage(content=(
+                "Quando a pergunta envolver conteúdo do curso ou fatos verificáveis, "
+                "utilize a tool 'search_educational_materials' para buscar contexto antes de responder. "
+                "Sempre prefira citar fontes dos materiais quando disponíveis."
+            ))
+
+            response = model_with_tools.invoke([insistence] + messages)
+
             return {"messages": [response]}
 
         # Build graph
@@ -265,7 +277,6 @@ class EducationalAgent:
 
         self.graph = builder.compile(checkpointer=self.memory)
         logger.info("✅ Educational graph compiled successfully with RAG tool")
-
 
     def get_learning_context(self, user_id: str, session_id: str) -> LearningContext:
         """Get or create learning context for user/session"""
@@ -320,10 +331,12 @@ class EducationalAgent:
 
         learning_context = self.get_learning_context(user_id, session_id)
         if learning_preferences:
-            self.update_learning_context(user_id, session_id, **learning_preferences)
+            self.update_learning_context(
+                user_id, session_id, **learning_preferences)
 
-        config = RunnableConfig(configurable={"thread_id": f"{user_id}_{session_id}"})
-        
+        config = RunnableConfig(
+            configurable={"thread_id": f"{user_id}_{session_id}"})
+
         initial_state = {
             "messages": [HumanMessage(content=message)],
             "learning_context": learning_context,
@@ -334,10 +347,10 @@ class EducationalAgent:
                 raise ValueError("Graph not initialized")
 
             final_state = self.graph.invoke(initial_state, config)
-            
+
             assistant_message = final_state["messages"][-1]
             response_content = assistant_message.content
-            
+
             sources = []
             if self.rag_tool and assistant_message.tool_calls:
                 tool_call = assistant_message.tool_calls[0]
@@ -349,7 +362,8 @@ class EducationalAgent:
                                 # The tool output is a dictionary, not a JSON string
                                 sources = tool_output.get("sources", [])
                             except Exception as e:
-                                logger.warning(f"Could not extract sources from tool output: {e}")
+                                logger.warning(
+                                    f"Could not extract sources from tool output: {e}")
                             break
 
             follow_up_questions = self.generate_follow_up_questions(
@@ -369,7 +383,7 @@ class EducationalAgent:
                         parts = filename.split('_')
                         if parts:
                             video_codes.add(parts[0].upper())
-                
+
                 for code in video_codes:
                     # Ensure column name is correct
                     if 'código' in self.course_catalog.columns:
@@ -391,7 +405,7 @@ class EducationalAgent:
                 "learning_suggestions": [],
                 "related_topics": [],
                 "educational_metadata": {},
-                "learning_context": learning_context.dict(),
+                "learning_context": learning_context.model_dump(),
                 "video_suggestions": video_suggestions
             }
 
@@ -404,7 +418,7 @@ class EducationalAgent:
                 "learning_suggestions": [],
                 "related_topics": [],
                 "educational_metadata": {},
-                "learning_context": learning_context.dict()
+                "learning_context": learning_context.model_dump()
             }
 
 
@@ -450,9 +464,8 @@ async def educational_chat(
             learning_preferences=learning_preferences
         )
 
-
         response_time = time.time() - start_time
-        
+
         video_suggestions = result.get("video_suggestions", [])
         logger.info(
             f"✅ Educational response generated in {response_time:.2f}s with {len(video_suggestions)} video suggestions")
@@ -469,7 +482,7 @@ async def educational_chat(
             "video_suggestions": video_suggestions,
             "response_time": response_time
         }
-        
+
         return EducationalChatResponse(**response_data)
 
     except Exception as e:
@@ -491,7 +504,7 @@ async def get_session_context(
 
         return {
             "session_id": session_id,
-            "learning_context": context.dict(),
+            "learning_context": context.model_dump(),
             "summary": {
                 "topics_covered": len(context.topics_covered),
                 "current_focus": context.current_topic,

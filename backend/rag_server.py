@@ -8,7 +8,7 @@ import os
 import logging
 import asyncio
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
@@ -254,9 +254,10 @@ async def lifespan(app: FastAPI):
 
     logger.info("🚀 Iniciando servidor RAG...")
 
-    # Configurar diretórios
-    chroma_persist_dir = Path("data/chromadb")
-    materials_dir = Path("data/materials")
+    # Configurar diretórios (relativos ao diretório deste arquivo, não ao CWD)
+    base_dir = Path(__file__).parent
+    chroma_persist_dir = base_dir / "data" / "chromadb"
+    materials_dir = base_dir / "data" / "materials"
 
     # Criar diretórios se não existirem
     chroma_persist_dir.mkdir(parents=True, exist_ok=True)
@@ -276,7 +277,8 @@ async def lifespan(app: FastAPI):
             logger.info("🔧 Inicializando RAG handler automaticamente...")
             rag_handler = RAGHandler(
                 api_key=openai_api_key,
-                persist_dir=str(chroma_persist_dir)
+                persist_dir=str(chroma_persist_dir),
+                materials_dir=str(materials_dir)
             )
             logger.info("✅ RAG handler inicializado automaticamente")
         except Exception as e:
@@ -320,6 +322,118 @@ app.add_middleware(
 
 app.include_router(educational_agent_router, prefix="/chat")
 
+
+def _apply_config_to_rag_handler(cfg: Dict[str, Any]):
+    """Atualiza o RAGHandler com a configuração recebida do frontend, se estiver inicializado."""
+    global rag_handler
+    if not rag_handler:
+        return
+    try:
+        # Mapear campos do frontend para o RAGConfig
+        if 'chunkSize' in cfg and isinstance(cfg['chunkSize'], int):
+            rag_handler.config.chunk_size = cfg['chunkSize']
+        if 'chunkOverlap' in cfg and isinstance(cfg['chunkOverlap'], int):
+            rag_handler.config.chunk_overlap = cfg['chunkOverlap']
+        if 'model' in cfg and isinstance(cfg['model'], str):
+            rag_handler.config.model_name = cfg['model']
+        if 'embeddingModel' in cfg and isinstance(cfg['embeddingModel'], str):
+            rag_handler.config.embedding_model = cfg['embeddingModel']
+            try:
+                # Reinitialize embeddings and vector store to ensure new embedding model is used
+                rag_handler._initialize_embeddings()
+                rag_handler._initialize_vector_store()
+            except Exception as reinit_err:
+                logger.warning(
+                    f"Falha ao reinicializar embeddings/vector store: {reinit_err}")
+        if 'temperature' in cfg:
+            try:
+                rag_handler.config.temperature = float(cfg['temperature'])
+            except Exception:
+                pass
+        if 'retrievalSearchType' in cfg and isinstance(cfg['retrievalSearchType'], str):
+            rag_handler.config.retrieval_search_type = cfg['retrievalSearchType']
+        # Reconfigurar retriever após mudanças
+        rag_handler._setup_retriever()
+    except Exception as e:
+        logger.warning(
+            f"Não foi possível aplicar configuração ao RAG handler: {e}")
+
+
+def _get_effective_templates() -> Dict[str, Any]:
+    """Retorna templates carregados ou os padrões se vazio."""
+    global assistant_configs
+    load_assistant_configs()
+    if not assistant_configs:
+        assistant_configs = get_default_templates()
+    return assistant_configs
+
+
+@app.get("/assistant/config")
+async def get_assistant_config_rag():
+    """Obter configuração atual do assistente e templates disponíveis."""
+    global current_assistant_config
+    load_assistant_configs()
+    templates = _get_effective_templates()
+    # Se não há current, usar primeiro template disponível
+    if current_assistant_config is None and templates:
+        first_name = next(iter(templates.keys()))
+        current_assistant_config = templates[first_name]
+    return {
+        "status": "success",
+        "config": current_assistant_config or {},
+        "templates": templates,
+    }
+
+
+@app.post("/assistant/config")
+async def update_assistant_config_rag(request: Request):
+    """Atualizar configuração do assistente (merge simples) e aplicar no RAG se possível."""
+    global current_assistant_config
+    payload = await request.json()
+    load_assistant_configs()
+    if current_assistant_config is None:
+        current_assistant_config = {}
+    try:
+        # Merge raso
+        current_assistant_config.update(payload or {})
+        _apply_config_to_rag_handler(current_assistant_config)
+        save_assistant_configs()
+        return {"status": "success", "config": current_assistant_config}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/assistant/templates")
+async def get_assistant_templates_rag():
+    """Listar templates disponíveis (persistidos + padrão)."""
+    templates = _get_effective_templates()
+    return {"status": "success", "templates": templates}
+
+
+@app.post("/assistant/config/template/{template_name}")
+async def apply_assistant_template_rag(template_name: str):
+    """Aplicar um template existente como configuração atual e refletir no RAG."""
+    global current_assistant_config
+    templates = _get_effective_templates()
+    if template_name not in templates:
+        raise HTTPException(status_code=404, detail="Template not found")
+    current_assistant_config = templates[template_name]
+    _apply_config_to_rag_handler(current_assistant_config)
+    save_assistant_configs()
+    return {"status": "success", "config": current_assistant_config}
+
+
+@app.post("/assistant/config/save-template")
+async def save_assistant_template_rag(template_name: str, request: Request):
+    """Salvar/atualizar um template com o corpo enviado."""
+    global assistant_configs
+    payload = await request.json()
+    load_assistant_configs()
+    assistant_configs[template_name] = payload or {}
+    save_assistant_configs()
+    return {"status": "success", "config": assistant_configs.get(template_name, {})}
+
+
 @app.get("/health")
 async def health_check():
     """Verificar saúde do servidor RAG"""
@@ -361,15 +475,18 @@ async def process_materials(request: ProcessMaterialsRequest, background_tasks: 
     """Process materials in the background with configurable educational features."""
     global rag_handler
     if not rag_handler:
-        raise HTTPException(status_code=503, detail="RAG handler not initialized.")
+        raise HTTPException(
+            status_code=503, detail="RAG handler not initialized.")
 
     try:
-        logger.info(f"🔄 Starting material processing with educational features: {request.enable_educational_features}")
-        
+        logger.info(
+            f"🔄 Starting material processing with educational features: {request.enable_educational_features}")
+
         # Update the handler's config for this task
         rag_handler.config.enable_educational_features = request.enable_educational_features
-        
-        background_tasks.add_task(rag_handler.process_documents, force_reprocess=request.force_reprocess)
+
+        background_tasks.add_task(
+            rag_handler.process_documents, force_reprocess=request.force_reprocess)
 
         return ProcessResponse(
             success=True,
@@ -390,7 +507,8 @@ async def reprocess_enhanced_materials(background_tasks: BackgroundTasks):
     """
     global rag_handler
     if not rag_handler:
-        raise HTTPException(status_code=503, detail="RAG handler not initialized.")
+        raise HTTPException(
+            status_code=503, detail="RAG handler not initialized.")
 
     try:
         logger.info("🚀 Starting enhanced material reprocessing...")
@@ -399,7 +517,8 @@ async def reprocess_enhanced_materials(background_tasks: BackgroundTasks):
         rag_handler.config.enable_educational_features = True
 
         # Adicionar a tarefa de reprocessamento em segundo plano
-        background_tasks.add_task(rag_handler.process_documents, force_reprocess=True)
+        background_tasks.add_task(
+            rag_handler.process_documents, force_reprocess=True)
 
         return ProcessResponse(
             success=True,
@@ -525,7 +644,6 @@ async def chat(question: Question):
     except Exception as e:
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 if __name__ == "__main__":

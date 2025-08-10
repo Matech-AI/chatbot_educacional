@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Send,
-  Settings,
   BookOpen,
   Target,
   TrendingUp,
@@ -10,9 +9,6 @@ import {
   Eye,
   Volume2,
   Hand,
-  RotateCcw,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -42,7 +38,6 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
   sessionContext,
 }) => {
   const [message, setMessage] = useState("");
-  const [showPreferences, setShowPreferences] = useState(false);
   const [preferences, setPreferences] = useState<LearningPreferences>({
     user_level: "intermediate",
     learning_style: "mixed",
@@ -93,24 +88,7 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
     }
   };
 
-  const addLearningObjective = () => {
-    if (newObjective.trim() && preferences.learning_objectives.length < 5) {
-      setPreferences((prev) => ({
-        ...prev,
-        learning_objectives: [...prev.learning_objectives, newObjective.trim()],
-      }));
-      setNewObjective("");
-    }
-  };
-
-  const removeLearningObjective = (index: number) => {
-    setPreferences((prev) => ({
-      ...prev,
-      learning_objectives: prev.learning_objectives.filter(
-        (_, i) => i !== index
-      ),
-    }));
-  };
+  // Preferências removidas da UI; mantemos apenas defaults internos
 
   const suggestedQuestions = [
     "Como melhorar minha técnica?",
@@ -184,159 +162,7 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
         ))}
       </div>
 
-      {/* Learning Preferences Panel */}
-      <AnimatePresence>
-        {showPreferences && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg overflow-hidden"
-          >
-            <div className="space-y-4">
-              <h4 className="text-sm font-medium text-gray-900 flex items-center space-x-2">
-                <Settings size={16} />
-                <span>Preferências de Aprendizado</span>
-              </h4>
-
-              {/* Level Selection */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-2">
-                  Nível de Conhecimento
-                </label>
-                <div className="flex space-x-2">
-                  {["beginner", "intermediate", "advanced"].map((level) => (
-                    <button
-                      key={level}
-                      onClick={() =>
-                        setPreferences((prev) => ({
-                          ...prev,
-                          user_level: level as any,
-                        }))
-                      }
-                      className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                        preferences.user_level === level
-                          ? "bg-red-100 text-red-700 border border-red-300"
-                          : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
-                      }`}
-                    >
-                      {getLevelIcon(level)}
-                      <span className="capitalize">
-                        {level === "beginner"
-                          ? "Iniciante"
-                          : level === "intermediate"
-                          ? "Intermediário"
-                          : "Avançado"}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Learning Style */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-2">
-                  Estilo de Aprendizado
-                </label>
-                <div className="flex space-x-2">
-                  {[
-                    { key: "visual", label: "Visual" },
-                    { key: "auditory", label: "Auditivo" },
-                    { key: "kinesthetic", label: "Cinestésico" },
-                    { key: "mixed", label: "Misto" },
-                  ].map(({ key, label }) => (
-                    <button
-                      key={key}
-                      onClick={() =>
-                        setPreferences((prev) => ({
-                          ...prev,
-                          learning_style: key as any,
-                        }))
-                      }
-                      className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                        preferences.learning_style === key
-                          ? "bg-blue-100 text-blue-700 border border-blue-300"
-                          : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
-                      }`}
-                    >
-                      {getStyleIcon(key)}
-                      <span>{label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Current Topic */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-2">
-                  Tópico Atual (opcional)
-                </label>
-                <Input
-                  value={preferences.current_topic || ""}
-                  onChange={(e) =>
-                    setPreferences((prev) => ({
-                      ...prev,
-                      current_topic: e.target.value,
-                    }))
-                  }
-                  placeholder="Ex: hipertrofia, força, resistência..."
-                  className="text-sm"
-                />
-              </div>
-
-              {/* Learning Objectives */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-2">
-                  Objetivos de Aprendizado (máx. 5)
-                </label>
-
-                {preferences.learning_objectives.length > 0 && (
-                  <div className="mb-2 space-y-1">
-                    {preferences.learning_objectives.map((objective, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between bg-white border border-gray-200 rounded px-3 py-2"
-                      >
-                        <span className="text-sm text-gray-700">
-                          {objective}
-                        </span>
-                        <button
-                          onClick={() => removeLearningObjective(index)}
-                          className="text-red-500 hover:text-red-700 ml-2"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {preferences.learning_objectives.length < 5 && (
-                  <div className="flex space-x-2">
-                    <Input
-                      value={newObjective}
-                      onChange={(e) => setNewObjective(e.target.value)}
-                      placeholder="Adicionar objetivo..."
-                      className="text-sm"
-                      onKeyPress={(e) =>
-                        e.key === "Enter" && addLearningObjective()
-                      }
-                    />
-                    <Button
-                      onClick={addLearningObjective}
-                      variant="outline"
-                      size="sm"
-                      disabled={!newObjective.trim()}
-                    >
-                      +
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Preferências removidas da UI por solicitação */}
 
       {/* Main Input Area */}
       <div className="flex space-x-3">
@@ -354,15 +180,6 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
 
         <div className="flex flex-col space-y-2">
           <Button
-            onClick={() => setShowPreferences(!showPreferences)}
-            variant="outline"
-            size="sm"
-            className="p-2"
-          >
-            {showPreferences ? <ChevronUp size={18} /> : <Settings size={18} />}
-          </Button>
-
-          <Button
             onClick={handleSend}
             disabled={!message.trim() || isLoading}
             className="bg-red-600 hover:bg-red-700 p-2"
@@ -377,9 +194,12 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
       </div>
 
       {/* Quick Topic Exploration */}
-      {sessionContext?.topics_covered &&
-        Array.isArray(sessionContext.topics_covered) &&
-        sessionContext.topics_covered.length > 0 && (
+      {(() => {
+        const topics = Array.isArray(sessionContext?.topics_covered)
+          ? (sessionContext!.topics_covered as string[])
+          : [];
+        if (topics.length === 0) return null;
+        return (
           <div className="mt-3 pt-3 border-t border-gray-100">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-gray-600">
@@ -387,7 +207,7 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {sessionContext.topics_covered.slice(-3).map((topic, index) => (
+              {topics.slice(-3).map((topic, index) => (
                 <button
                   key={index}
                   onClick={() => onTopicExplore?.(topic)}
@@ -398,7 +218,8 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
               ))}
             </div>
           </div>
-        )}
+        );
+      })()}
     </div>
   );
 };

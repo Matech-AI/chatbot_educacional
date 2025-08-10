@@ -46,3 +46,4 @@ backend/.env
 # ChromaDB
 .chromadb/
 backend/data/*
+backend/data/chromadb/**/*.bin

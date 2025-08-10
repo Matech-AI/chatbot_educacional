@@ -207,7 +207,7 @@ export const useAssistantStore = create<AssistantState>()(
           
           if (result.status === 'success') {
             set({ 
-              config: { ...result.config },
+              config: { ...DEFAULT_CONFIG, ...result.config },
               isLoading: false
             });
             return true;
@@ -226,16 +226,25 @@ export const useAssistantStore = create<AssistantState>()(
           set({ isLoading: true });
           
           // Fazer chamada real para a API usando apiRequestJson
-          const templates = await apiRequestJson('/assistant/templates', {
+          const result = await apiRequestJson('/assistant/templates', {
             method: 'GET',
           });
           
-          // Extrair nomes dos templates
-          const templateNames = Object.keys(templates);
+          // Extrair nomes dos templates do payload correto e filtrar entradas inválidas
+          const serverTemplatesRaw = (result && (result as any).templates) || {};
+          const serverTemplates = Object.fromEntries(
+            Object.entries(serverTemplatesRaw).filter(([, cfg]: any) => {
+              return cfg && typeof cfg === 'object' && (cfg.prompt || cfg.model || cfg.embeddingModel);
+            })
+          ) as Record<string, AssistantConfig>;
+          const templateNames = Object.keys(serverTemplates);
+          const effectiveTemplateNames = templateNames.length > 0
+            ? templateNames
+            : Object.keys(TEMPLATE_CONFIGS);
           
           set({ 
-            templates: templateNames,
-            customTemplates: templates,
+            templates: effectiveTemplateNames,
+            customTemplates: serverTemplates,
             isLoading: false
           });
           
@@ -252,12 +261,26 @@ export const useAssistantStore = create<AssistantState>()(
           set({ isLoading: true });
           
           // Fazer chamada real para a API usando apiRequestJson
-          const config = await apiRequestJson('/assistant/config', {
+          const result = await apiRequestJson('/assistant/config', {
             method: 'GET',
           });
           
+          const serverConfig = (result && (result as any).config) || {};
+          const serverTemplatesRaw = (result && (result as any).templates) || {};
+          const serverTemplates = Object.fromEntries(
+            Object.entries(serverTemplatesRaw).filter(([, cfg]: any) => {
+              return cfg && typeof cfg === 'object' && (cfg.prompt || cfg.model || cfg.embeddingModel);
+            })
+          ) as Record<string, AssistantConfig>;
+          const templateNames = Object.keys(serverTemplates);
+          const effectiveTemplateNames = templateNames.length > 0
+            ? templateNames
+            : Object.keys(TEMPLATE_CONFIGS);
+          
           set({ 
-            config: { ...config },
+            config: { ...DEFAULT_CONFIG, ...serverConfig },
+            templates: effectiveTemplateNames,
+            customTemplates: serverTemplates,
             isLoading: false
           });
           
