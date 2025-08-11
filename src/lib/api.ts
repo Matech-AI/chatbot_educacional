@@ -94,13 +94,27 @@ export async function apiRequestJson<T = any>(
 
   try {
     const response = await apiRequest(endpoint, options);
-    
+
     if (!response.ok) {
       const errorData = await response.text();
       throw new Error(`HTTP ${response.status}: ${errorData}`);
     }
 
-    return response.json();
+    // Robust JSON handling: support empty bodies and non-JSON responses
+    const contentType = response.headers.get('content-type') || '';
+    const rawText = await response.text();
+    if (!rawText || rawText.trim().length === 0) {
+      return {} as T;
+    }
+    if (contentType.includes('application/json')) {
+      return JSON.parse(rawText) as T;
+    }
+    try {
+      return JSON.parse(rawText) as T;
+    } catch {
+      // Fallback: wrap plain text
+      return ({ message: rawText } as unknown) as T;
+    }
   } catch (error) {
     console.error(`API request failed: ${endpoint}`, error);
     throw error;
@@ -135,7 +149,19 @@ export async function ragApiRequestJson<T = any>(
       throw new Error(`HTTP ${response.status}: ${errorData}`);
     }
 
-    return response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const rawText = await response.text();
+    if (!rawText || rawText.trim().length === 0) {
+      return {} as T;
+    }
+    if (contentType.includes('application/json')) {
+      return JSON.parse(rawText) as T;
+    }
+    try {
+      return JSON.parse(rawText) as T;
+    } catch {
+      return ({ message: rawText } as unknown) as T;
+    }
   } catch (error) {
     console.error(`RAG API request failed: ${endpoint}`, error);
     throw error;

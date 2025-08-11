@@ -62,7 +62,7 @@ services:
     envVars:
       - key: VITE_API_BASE_URL
         value: https://dna-forca-api-server.onrender.com
-      - key: VITE_RAG_BASE_URL
+      - key: VITE_RAG_API_BASE_URL
         value: https://dna-forca-rag-server.onrender.com
     routes:
       - type: rewrite
@@ -184,7 +184,7 @@ CMD ["python", "api_server.py"]
 
 ```bash
 VITE_API_BASE_URL=https://dna-forca-api-server.onrender.com
-VITE_RAG_BASE_URL=https://dna-forca-rag-server.onrender.com
+VITE_RAG_API_BASE_URL=https://dna-forca-rag-server.onrender.com
 ```
 
 ### **Para o RAG Server:**
