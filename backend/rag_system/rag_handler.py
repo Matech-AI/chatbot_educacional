@@ -22,6 +22,8 @@ from langchain_core.documents import Document
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain.load import dumps, loads
+import chromadb
+from chromadb.config import Settings
 try:
     import tiktoken  # for token estimation
 except Exception:
@@ -58,6 +60,9 @@ class RAGConfig:
     add_batch_size: int = 8
     embedding_request_token_limit: int = 300000
     embedding_request_target: int = 280000
+
+    # Vector store
+    collection_name: str = "langchain"
 
     # Educational features (can be toggled)
     enable_educational_features: bool = True
@@ -161,11 +166,77 @@ class RAGHandler:
     def _initialize_vector_store(self):
         try:
             os.makedirs(self.persist_dir, exist_ok=True)
-            self.vector_store = Chroma(
-                persist_directory=self.persist_dir,
-                embedding_function=self.embeddings
+            # Tenta carregar a coleção configurada (default: "langchain")
+            try:
+                self.vector_store = Chroma(
+                    persist_directory=self.persist_dir,
+                    embedding_function=self.embeddings,
+                    collection_name=self.config.collection_name,
+                )
+                logger.info(
+                    f"✅ Vector store loaded at {self.persist_dir} (collection='{self.config.collection_name}')"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ Could not load configured collection '{self.config.collection_name}': {e}. Will try autodiscovery."
+                )
+                self.vector_store = None
+
+            # Se a coleção configurada estiver vazia, tentar descobrir alguma coleção existente com dados
+            try:
+                current_count = 0
+                if self.vector_store and hasattr(self.vector_store, "_collection"):
+                    current_count = self.vector_store._collection.count()
+
+                if not self.vector_store or current_count == 0:
+                    client = chromadb.PersistentClient(path=self.persist_dir)
+                    collections = client.list_collections()
+                    logger.info(
+                        f"🔎 Autodiscovery: found {len(collections)} collection(s) in persist dir"
+                    )
+                    # Priorizar coleção não vazia
+                    for col in collections:
+                        try:
+                            candidate_vs = Chroma(
+                                persist_directory=self.persist_dir,
+                                embedding_function=self.embeddings,
+                                collection_name=col.name,
+                            )
+                            cnt = candidate_vs._collection.count()
+                            if cnt and cnt > 0:
+                                self.vector_store = candidate_vs
+                                self.config.collection_name = col.name
+                                logger.info(
+                                    f"✅ Loaded existing non-empty collection '{col.name}' with {cnt} item(s)"
+                                )
+                                break
+                        except Exception as inner_e:
+                            logger.debug(
+                                f"Skipping collection '{getattr(col, 'name', '?')}' due to error: {inner_e}"
+                            )
+
+                if self.vector_store is None:
+                    # Como último recurso, cria/usa a coleção configurada
+                    self.vector_store = Chroma(
+                        persist_directory=self.persist_dir,
+                        embedding_function=self.embeddings,
+                        collection_name=self.config.collection_name,
+                    )
+                    logger.info(
+                        f"✅ Vector store ready at {self.persist_dir} (collection='{self.config.collection_name}')"
+                    )
+            except Exception as discover_e:
+                logger.warning(
+                    f"⚠️ Vector store autodiscovery failed: {discover_e}")
+
+            # Logar contagem final
+            try:
+                final_count = self.vector_store._collection.count()
+            except Exception:
+                final_count = 0
+            logger.info(
+                f"📊 Vector store collection='{self.config.collection_name}' count={final_count}"
             )
-            logger.info(f"✅ Vector store loaded/created at {self.persist_dir}")
         except Exception as e:
             logger.error(f"❌ Failed to initialize vector store: {e}")
             raise
@@ -654,8 +725,24 @@ class RAGHandler:
     def get_system_stats(self) -> Dict[str, Any]:
         """Get system statistics for debugging."""
         try:
+            collection_name = None
+            vector_store_count = 0
+            if self.vector_store and hasattr(self.vector_store, "_collection"):
+                try:
+                    collection_name = getattr(
+                        self.vector_store._collection, "name", None)
+                except Exception:
+                    collection_name = None
+                try:
+                    vector_store_count = self.vector_store._collection.count()
+                except Exception:
+                    vector_store_count = 0
+
             return {
-                "vector_store_count": self.vector_store._collection.count() if self.vector_store else 0,
+                "vector_store_ready": vector_store_count > 0,
+                "vector_store_count": vector_store_count,
+                "collection_name": collection_name or self.config.collection_name,
+                "persist_dir": self.persist_dir,
                 "config": self.config.__dict__,
             }
         except Exception as e:

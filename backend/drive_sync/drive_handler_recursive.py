@@ -62,6 +62,37 @@ class RecursiveDriveHandler:
         logger.info(
             f"🚀 Initialized RecursiveDriveHandler with materials directory: {self.materials_dir}")
 
+    def _resolve_credentials_path(self, default_path: str = 'data/credentials.json') -> str:
+        env_path = os.getenv('GOOGLE_CREDENTIALS_PATH')
+        candidate_paths = [
+            env_path,
+            default_path,
+            '/app/data/credentials.json',
+            '/etc/secrets/credentials.json',
+            'credentials.json',
+        ]
+        for path in candidate_paths:
+            if path and os.path.exists(path):
+                logger.info(f"🔎 Using credentials file: {path}")
+                return path
+        return env_path or default_path
+
+    def _resolve_token_path(self) -> str:
+        env_token = os.getenv('GOOGLE_TOKEN_PATH')
+        candidate_paths = [
+            env_token,
+            'data/token.json',
+            '/app/data/token.json',
+            '/etc/secrets/token.json',
+            'token.json',
+            '/app/token.json',
+        ]
+        for path in candidate_paths:
+            if path and os.path.exists(path):
+                logger.info(f"🔎 Using token file (exists): {path}")
+                return path
+        return env_token or '/app/data/token.json'
+
     def authenticate(self, credentials_path: str = 'data/credentials.json', api_key: Optional[str] = None) -> bool:
         """Main authentication method that tries multiple approaches in order"""
         logger.info("🚀 Starting Google Drive authentication process...")
@@ -76,7 +107,7 @@ class RecursiveDriveHandler:
             return True
 
         # Priorizar token.json existente
-        token_path = 'data/token.json'
+        token_path = self._resolve_token_path()
         if os.path.exists(token_path):
             try:
                 logger.info(
@@ -121,7 +152,7 @@ class RecursiveDriveHandler:
             ("Environment API Key", lambda: self.authenticate_with_api_key(os.getenv(
                 'GOOGLE_DRIVE_API_KEY')) if os.getenv('GOOGLE_DRIVE_API_KEY') else False),
             ("OAuth2 Credentials",
-             lambda: self.authenticate_with_credentials(credentials_path)),
+             lambda: self.authenticate_with_credentials(self._resolve_credentials_path(credentials_path))),
             ("Public Access", self.authenticate_public_access)
         ]
 
@@ -199,7 +230,7 @@ class RecursiveDriveHandler:
                 f"📄 Credentials file exists: {os.path.exists(credentials_path)}")
 
             creds = None
-            token_path = 'token.json'
+            token_path = self._resolve_token_path()
             logger.info(f"🎫 Token file path: {token_path}")
             logger.info(f"🎫 Token file exists: {os.path.exists(token_path)}")
 
@@ -286,9 +317,27 @@ class RecursiveDriveHandler:
                 if creds:
                     logger.info("💾 Saving credentials to token.json...")
                     try:
-                        with open(token_path, 'w') as token:
-                            token.write(creds.to_json())
-                        logger.info("✅ Credentials saved successfully")
+                        writable_candidates = [
+                            token_path,
+                            '/app/data/token.json',
+                            'token.json',
+                        ]
+                        saved = False
+                        for wpath in writable_candidates:
+                            try:
+                                Path(wpath).parent.mkdir(
+                                    parents=True, exist_ok=True)
+                                with open(wpath, 'w') as token:
+                                    token.write(creds.to_json())
+                                logger.info(
+                                    f"✅ Credentials saved successfully at {wpath}")
+                                saved = True
+                                break
+                            except Exception:
+                                continue
+                        if not saved:
+                            logger.warning(
+                                "⚠️ Could not save credentials to any known writable location")
                     except Exception as e:
                         logger.warning(f"⚠️ Could not save credentials: {e}")
 
