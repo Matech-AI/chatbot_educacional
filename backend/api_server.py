@@ -2880,6 +2880,210 @@ async def reset_system_settings(current_user: User = Depends(get_current_user)):
         raise HTTPException(
             status_code=500, detail=f"Erro ao resetar configurações: {str(e)}")
 
+# ========================================
+# SELECTIVE MODULE DOWNLOAD ENDPOINT
+# ========================================
+
+
+class SelectiveModuleDownload(BaseModel):
+    folder_id: str
+    module_name: Optional[str] = None
+    max_depth: Optional[int] = 2
+    download_files: bool = True
+    api_key: Optional[str] = None
+
+
+@app.post("/drive/download-module")
+async def download_specific_module(
+    data: SelectiveModuleDownload,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user)
+):
+    """Download a specific module or limited depth from Google Drive"""
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    logger.info(f"📚 Module download requested by: {current_user.username}")
+    logger.info(f"📁 Folder ID: {data.folder_id}")
+    logger.info(f"📖 Module: {data.module_name or 'All (limited depth)'}")
+    logger.info(f"🔍 Max Depth: {data.max_depth}")
+
+    try:
+        # Get user-specific drive handler
+        async with get_user_drive_handler(current_user.username, data.api_key) as user_handler:
+            # Verify authentication
+            if not user_handler.service:
+                raise HTTPException(
+                    status_code=400, detail="Could not authenticate with Google Drive")
+
+            # Start background download
+            download_id = f"module_download_{current_user.username}_{int(time.time())}"
+
+            # Update download progress with thread safety
+            with download_progress_lock:
+                download_progress[download_id] = {
+                    "status": "starting",
+                    "progress": 0,
+                    "total_files": 0,
+                    "downloaded_files": 0,
+                    "current_file": "",
+                    "started_at": datetime.now().isoformat(),
+                    "folder_id": data.folder_id,
+                    "module_name": data.module_name,
+                    "max_depth": data.max_depth,
+                    "user": current_user.username
+                }
+                active_downloads[download_id] = True
+
+            # Create an isolated copy of the handler for the background task
+            task_handler = RecursiveDriveHandler()
+            task_handler.authenticate(api_key=data.api_key or "")
+
+            async def run_module_download():
+                try:
+                    # Update status with thread safety
+                    with download_progress_lock:
+                        download_progress[download_id]["status"] = "analyzing"
+
+                    # First, analyze the folder structure to find the specific module
+                    if data.module_name:
+                        # Find the specific module folder
+                        folder_structure = task_handler.get_folder_structure(
+                            data.folder_id, max_depth=1)
+
+                        target_folder_id = None
+                        for item in folder_structure.get("items", []):
+                            if item.get("name") == data.module_name:
+                                target_folder_id = item.get("id")
+                                break
+
+                        if not target_folder_id:
+                            raise Exception(
+                                f"Module '{data.module_name}' not found")
+
+                        # Download only this module with limited depth
+                        result = task_handler.download_drive_recursive(
+                            target_folder_id, max_depth=data.max_depth)
+                    else:
+                        # Download with limited depth
+                        result = task_handler.download_drive_recursive(
+                            data.folder_id, max_depth=data.max_depth)
+
+                    if result["status"] == "success":
+                        # Update progress with thread safety
+                        with download_progress_lock:
+                            download_progress[download_id].update({
+                                "status": "processing",
+                                "progress": 95,
+                                "total_files": result["statistics"]["total_files"],
+                                "downloaded_files": result["statistics"]["downloaded_files"],
+                            })
+
+                        # Re-index materials in RAG server
+                        try:
+                            async with aiohttp.ClientSession() as session:
+                                async with session.post(f"{RAG_SERVER_URL}/process-materials", json={"api_key": "", "force_reprocess": False}) as response:
+                                    if response.status == 200:
+                                        logger.info("✅ Re-indexing complete.")
+                                    else:
+                                        logger.warning("⚠️ Re-indexing failed")
+                        except Exception as e:
+                            logger.warning(
+                                f"⚠️ Could not trigger re-indexing: {str(e)}")
+
+                        # Final update with thread safety
+                        with download_progress_lock:
+                            download_progress[download_id].update({
+                                "status": "completed",
+                                "progress": 100,
+                                "completed_at": datetime.now().isoformat(),
+                                "result": result
+                            })
+                    else:
+                        # Error update with thread safety
+                        with download_progress_lock:
+                            download_progress[download_id].update({
+                                "status": "error",
+                                "error": result.get("error", "Unknown error"),
+                                "completed_at": datetime.now().isoformat()
+                            })
+                except Exception as e:
+                    # Exception update with thread safety
+                    with download_progress_lock:
+                        download_progress[download_id].update({
+                            "status": "error",
+                            "error": str(e),
+                            "completed_at": datetime.now().isoformat()
+                        })
+                finally:
+                    # Clean up task resources
+                    task_handler.cleanup_temp_files()
+
+            # Use asyncio.create_task for better async handling
+            background_tasks.add_task(run_module_download)
+
+        return {
+            "status": "started",
+            "download_id": download_id,
+            "message": f"Module download started in background (max depth: {data.max_depth})"
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Module download error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ========================================
+# MODULE LISTING ENDPOINT
+# ========================================
+
+
+@app.get("/drive/list-modules")
+async def list_available_modules(
+    folder_id: str,
+    api_key: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """List available modules in the Google Drive folder"""
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    logger.info(f"📚 Module listing requested by: {current_user.username}")
+    logger.info(f"📁 Folder ID: {folder_id}")
+
+    try:
+        # Get user-specific drive handler
+        async with get_user_drive_handler(current_user.username, api_key) as user_handler:
+            # Verify authentication
+            if not user_handler.service:
+                raise HTTPException(
+                    status_code=400, detail="Could not authenticate with Google Drive")
+
+            # Get folder structure (only first level)
+            folder_structure = user_handler.get_folder_structure(
+                folder_id, max_depth=1)
+
+            # Extract module information
+            modules = []
+            for item in folder_structure.get("items", []):
+                if item.get("mimeType") == "application/vnd.google-apps.folder":
+                    modules.append({
+                        "id": item.get("id"),
+                        "name": item.get("name"),
+                        "type": "folder",
+                        "created_time": item.get("createdTime"),
+                        "modified_time": item.get("modifiedTime")
+                    })
+
+            return {
+                "status": "success",
+                "folder_id": folder_id,
+                "modules": modules,
+                "total_modules": len(modules)
+            }
+
+    except Exception as e:
+        logger.error(f"❌ Module listing error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
