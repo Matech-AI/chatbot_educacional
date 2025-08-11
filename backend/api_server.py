@@ -390,7 +390,7 @@ def format_bytes(bytes_value: int) -> str:
 def root():
     """Root endpoint"""
     return {
-        "message": "🚀 DNA da Força API v1.4 - Complete Recursive Drive Integration",
+        "message": "🚀 DNA da Força API v1.7 - Complete Recursive Drive Integration",
         "status": "ok",
         "version": "1.7.0",
         "features": [
@@ -2643,7 +2643,7 @@ async def sync_drive_simple(
 async def startup_event():
     """Initialize application on startup"""
     logger.info(
-        "🚀 DNA da Força Backend v1.4 - Complete Recursive Drive Integration Starting...")
+        "🚀 DNA da Força Backend v1.7 - Complete Recursive Drive Integration Starting...")
 
     # Create necessary directories
     Path("data/materials").mkdir(parents=True, exist_ok=True)
@@ -2884,5 +2884,5 @@ async def reset_system_settings(current_user: User = Depends(get_current_user)):
 if __name__ == "__main__":
     import uvicorn
     logger.info(
-        "🚀 DNA da Força Backend v1.4 - Complete Recursive Drive Integration")
+        "🚀 DNA da Força Backend v1.7 - Complete Recursive Drive Integration")
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

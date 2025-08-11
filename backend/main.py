@@ -500,10 +500,10 @@ async def chat(question: Question):
         start_time = time.time()
         response_data = rag_handler.generate_response(question.content)
         end_time = time.time()
-        
+
         # Adicionar o tempo de resposta ao dicionário de resposta
         response_data['response_time'] = end_time - start_time
-        
+
         # Criar e retornar um objeto Response
         return Response(
             answer=response_data.get("answer", ""),
@@ -2161,8 +2161,6 @@ def should_require_auth(filename: str) -> bool:
     return True
 
 
-
-
 @app.delete("/materials/{filename}")
 async def delete_material(filename: str, current_user: User = Depends(get_current_user)):
     """Delete a material file"""
@@ -2348,7 +2346,7 @@ async def startup_event():
     """Initialize application on startup"""
     global rag_handler
     logger.info(
-        "🚀 DNA da Força Backend v1.4 - Complete Recursive Drive Integration Starting...")
+        "🚀 DNA da Força Backend v1.7 - Complete Recursive Drive Integration Starting...")
 
     # Create necessary directories
     Path("data/materials").mkdir(parents=True, exist_ok=True)
@@ -2387,5 +2385,5 @@ async def startup_event():
 if __name__ == "__main__":
     import uvicorn
     logger.info(
-        "🚀 DNA da Força Backend v1.4 - Complete Recursive Drive Integration")
+        "🚀 DNA da Força Backend v1.7 - Complete Recursive Drive Integration")
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="debug")
