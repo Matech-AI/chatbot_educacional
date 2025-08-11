@@ -6,7 +6,7 @@ export async function processDriveMaterials(folderId: string): Promise<any[]> {
     console.log('Processing Drive materials from folder:', folderId);
     
     // Call the backend sync endpoint
-    const response = await api.syncDrive(folderId);
+    const response = await api.legacy.syncDrive(folderId);
     
     if (response && response.files) {
       console.log(`Successfully processed ${response.files.length} files from Drive`);

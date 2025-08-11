@@ -133,7 +133,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
           ) : (
             <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
               <span className="text-red-600 font-medium">
-                {user?.name.charAt(0)}
+                {user?.name?.charAt(0) || "?"}
               </span>
             </div>
           )}

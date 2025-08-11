@@ -53,7 +53,7 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         setError(data.detail || "Erro ao alterar senha.");
       } else {
         setSuccess(true);
-        
+
         // Se for senha temporária, indicar que a conta foi ativada
         if (isTemporary) {
           setAccountActivated(true);
@@ -81,10 +81,14 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         >
           ×
         </button>
-        <h2 className="text-lg font-bold mb-4">{isTemporary ? 'Alterar senha temporária' : 'Alterar senha'}</h2>
+        <h2 className="text-lg font-bold mb-4">
+          {isTemporary ? "Alterar senha temporária" : "Alterar senha"}
+        </h2>
         {isTemporary && (
           <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
-            Você está usando uma senha temporária. Por favor, altere-a para uma senha permanente de sua escolha para maior segurança e ativar sua conta.
+            Você está usando uma senha temporária. Por favor, altere-a para uma
+            senha permanente de sua escolha para maior segurança e ativar sua
+            conta.
           </div>
         )}
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -109,7 +113,11 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
           />
-          {error && <div className="text-red-600 text-sm">{typeof error === 'object' ? String(error) : error}</div>}
+          {error && (
+            <div className="text-red-600 text-sm">
+              {typeof error === "object" ? String(error) : error}
+            </div>
+          )}
           {success && (
             <div className="text-green-600 text-sm">
               Senha alterada com sucesso!
@@ -181,7 +189,8 @@ const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <h2 className="text-lg font-bold mb-4">Esqueci minha senha</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-800">
-            Digite seu nome de usuário abaixo. Se a conta existir, enviaremos um email com instruções para redefinir sua senha.
+            Digite seu nome de usuário abaixo. Se a conta existir, enviaremos um
+            email com instruções para redefinir sua senha.
           </div>
           <Input
             type="text"
@@ -193,7 +202,8 @@ const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           {error && <div className="text-red-600 text-sm">{error}</div>}
           {success && (
             <div className="text-green-600 text-sm">
-              Se o usuário existir, um email com instruções para redefinir sua senha foi enviado.
+              Se o usuário existir, um email com instruções para redefinir sua
+              senha foi enviado.
             </div>
           )}
           <div className="flex gap-2 mt-2">
@@ -251,9 +261,14 @@ const LoginPage: React.FC = () => {
 
     try {
       const result = await login(username, password);
-      if (result.success) {
+      if (
+        result &&
+        typeof result === "object" &&
+        "success" in result &&
+        result.success
+      ) {
         // Usar a informação de senha temporária da API
-        if (result.is_temporary_password) {
+        if ("is_temporary_password" in result && result.is_temporary_password) {
           setIsTempPassword(true);
           setShowChangePassword(true);
         } else {
@@ -333,7 +348,7 @@ const LoginPage: React.FC = () => {
                   animate={{ opacity: 1, y: 0 }}
                   className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm"
                 >
-                  {typeof error === 'object' ? String(error) : error}
+                  {typeof error === "object" ? String(error) : error}
                 </motion.div>
               )}
 
@@ -358,14 +373,14 @@ const LoginPage: React.FC = () => {
           </form>
 
           {showChangePassword && (
-            <ChangePasswordModal 
+            <ChangePasswordModal
               isTemporary={isTempPassword}
               onClose={() => {
                 setShowChangePassword(false);
                 if (isTempPassword) {
                   navigate("/");
                 }
-              }} 
+              }}
             />
           )}
           {showResetPassword && (

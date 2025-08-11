@@ -13,79 +13,27 @@ import {
 import { useAuthStore } from "./store/auth-store";
 
 // ========================================
-// IMPORTS LAZY (carregados sob demanda) - CORRIGIDOS COM FALLBACKS
+// IMPORTS LAZY (carregados sob demanda)
 // ========================================
-const AppLayout = lazy(() =>
-  import("./components/layout/app-layout").catch(() =>
-    import("./components/layout/app-layout").then((m) => ({
-      default: m.AppLayout || m.default,
-    }))
-  )
+const AppLayout = lazy(() => import("./components/layout/app-layout"));
+
+const LoginPage = lazy(() => import("./pages/login-page"));
+
+const AuthVerificationPage = lazy(
+  () => import("./pages/auth-verification-page")
 );
 
-const LoginPage = lazy(() =>
-  import("./pages/login-page").catch(() =>
-    import("./pages/login-page").then((m) => ({
-      default: m.LoginPage || m.default,
-    }))
-  )
-);
+const HomePage = lazy(() => import("./pages/home-page"));
 
-const AuthVerificationPage = lazy(() =>
-  import("./pages/auth-verification-page").catch(() =>
-    import("./pages/auth-verification-page").then((m) => ({
-      default: m.AuthVerificationPage || m.default,
-    }))
-  )
-);
+const ChatPage = lazy(() => import("./pages/chat-page"));
 
-const HomePage = lazy(() =>
-  import("./pages/home-page").catch(() =>
-    import("./pages/home-page").then((m) => ({
-      default: m.HomePage || m.default,
-    }))
-  )
-);
+const EnhancedChatPage = lazy(() => import("./pages/enhanced-chat-page"));
 
-const ChatPage = lazy(() =>
-  import("./pages/chat-page").catch(() =>
-    import("./pages/chat-page").then((m) => ({
-      default: m.ChatPage || m.default,
-    }))
-  )
-);
+const MaterialsPage = lazy(() => import("./pages/materials-page"));
 
-const EnhancedChatPage = lazy(() =>
-  import("./pages/enhanced-chat-page").catch(() =>
-    import("./pages/enhanced-chat-page").then((m) => ({
-      default: m.EnhancedChatPage || m.default,
-    }))
-  )
-);
+const AssistantPage = lazy(() => import("./pages/assistant-page"));
 
-const MaterialsPage = lazy(() =>
-  import("./pages/materials-page").catch(() =>
-    import("./pages/materials-page").then((m) => ({
-      default: m.MaterialsPage || m.default,
-    }))
-  )
-);
-
-const AssistantPage = lazy(() =>
-  import("./pages/assistant-page").catch(() =>
-    import("./pages/assistant-page").then((m) => ({
-      default: m.AssistantPage || m.default,
-    }))
-  )
-);
-
-const ResetPasswordPage = lazy(() =>
-  import("./pages/reset-password-page").catch(() =>
-    import("./pages/reset-password-page").then((m) => ({
-      default: m.ResetPasswordPage || m.default,
-    }))
-  )
-);
+const ResetPasswordPage = lazy(() => import("./pages/reset-password-page"));
 
 // ========================================
 // COMPONENTE DE LOADING
@@ -213,7 +161,9 @@ const ProtectedRouteBase: React.FC<{
   console.log("ProtectedRouteBase - isAuthenticated:", isAuthenticated);
 
   if (!isAuthenticated) {
-    console.log("ProtectedRouteBase - Not authenticated, redirecting to /login");
+    console.log(
+      "ProtectedRouteBase - Not authenticated, redirecting to /login"
+    );
     return <Navigate to="/login" replace />;
   }
 
@@ -221,10 +171,16 @@ const ProtectedRouteBase: React.FC<{
   if (user && user.role === "student" && currentPath) {
     const allowedStudentPaths = ["/", "/chat"];
 
-    console.log("ProtectedRouteBase - Student check - allowedStudentPaths:", allowedStudentPaths);
-    console.log("ProtectedRouteBase - Student check - is path allowed:", allowedStudentPaths.some(
-      (path) => currentPath === path || currentPath.startsWith(path + "/")
-    ));
+    console.log(
+      "ProtectedRouteBase - Student check - allowedStudentPaths:",
+      allowedStudentPaths
+    );
+    console.log(
+      "ProtectedRouteBase - Student check - is path allowed:",
+      allowedStudentPaths.some(
+        (path) => currentPath === path || currentPath.startsWith(path + "/")
+      )
+    );
 
     // Se o caminho atual não estiver na lista de permitidos para estudantes
     if (
@@ -238,7 +194,9 @@ const ProtectedRouteBase: React.FC<{
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    console.log("ProtectedRouteBase - User role not in allowedRoles, redirecting to /");
+    console.log(
+      "ProtectedRouteBase - User role not in allowedRoles, redirecting to /"
+    );
     return <Navigate to="/" replace />;
   }
 
@@ -268,22 +226,10 @@ const ProtectedRoute: React.FC<{
 // ========================================
 // PÁGINAS SIMPLES INLINE
 // ========================================
-// Settings page now lazy loaded
-const SettingsPage = lazy(() =>
-  import("./pages/settings-page").catch(() =>
-    import("./pages/settings-page").then((m) => ({
-      default: m.SettingsPage || m.default,
-    }))
-  )
-);
+// Settings page
+const SettingsPage = lazy(() => import("./pages/settings-page"));
 
-const UserManagementPage = lazy(() =>
-  import("./pages/user-management-page").catch(() =>
-    import("./pages/user-management-page").then((m) => ({
-      default: m.UserManagementPage || m.default,
-    }))
-  )
-);
+const UserManagementPage = lazy(() => import("./pages/user-management-page"));
 
 const SimpleDebugPage: React.FC = () => {
   const { user, isAuthenticated } = useAuthStore();

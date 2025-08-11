@@ -7,7 +7,10 @@ interface AuthState {
   isAuthenticated: boolean;
   user: User | null;
   error: string | null;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (
+    username: string,
+    password: string
+  ) => Promise<{ success: boolean; is_temporary_password?: boolean }>;
   logout: () => void;
   clearError: () => void;
   checkAuth: () => void;
@@ -102,6 +105,7 @@ function createUserFromToken(payload: any): User {
 
   return {
     id: username,
+    username,
     name: getUserDisplayName(username),
     role: roleMap[role] || 'student',
     email: payload.email,
@@ -204,7 +208,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!result.success) {
         console.error('❌ Login failed: Credenciais inválidas');
         set({ error: 'Credenciais inválidas' });
-        return false;
+        return { success: false };
       }
       
       // Obter o token do localStorage (já foi salvo pela função api.login)
@@ -213,7 +217,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!token) {
         console.error('❌ No token received from server');
         set({ error: 'Token não recebido do servidor' });
-        return false;
+        return { success: false };
       }
 
       console.log('📥 Token received:', token.substring(0, 20) + '...');
@@ -223,7 +227,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!payload) {
         console.error('❌ Could not decode received token');
         set({ error: 'Token inválido recebido' });
-        return false;
+        return { success: false };
       }
 
       const user = createUserFromToken(payload);

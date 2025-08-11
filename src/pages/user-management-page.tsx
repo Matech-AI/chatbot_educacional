@@ -62,11 +62,11 @@ const UserManagementPage: React.FC = () => {
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const usersData = await api.users.list();
+      const usersData: UserData[] = await api.users.list();
 
       // Ordenar usuários por ID numérico (external_id)
       // TODO: Quando migrar para BD, considerar usar ORDER BY na query SQL
-      const sortedUsers = usersData.sort((a, b) => {
+      const sortedUsers = usersData.sort((a: UserData, b: UserData) => {
         const idA = parseInt(a.external_id || "0") || 0;
         const idB = parseInt(b.external_id || "0") || 0;
         return idA - idB;
@@ -462,7 +462,7 @@ const CreateUserModal: React.FC<{
   const [createdUser, setCreatedUser] = useState<{
     user: any;
     password: string | null;
-  }>(null);
+  } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
