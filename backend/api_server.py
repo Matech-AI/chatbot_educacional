@@ -5,6 +5,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from pathlib import Path
+import zipfile
+import tarfile
 import os
 import json
 import sys
@@ -50,7 +52,7 @@ app = FastAPI(
 
 # Configure CORS
 cors_origins = os.getenv(
-    "CORS_ORIGINS", "https://chatbot-educacional.vercel.app,http://localhost:3000,http://127.0.0.1:3000,https://dna-forca-frontend.vercel.app").split(",")
+    "CORS_ORIGINS", "https://dna-forca-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -292,7 +294,7 @@ def get_file_type(filename: str) -> str:
 def format_file_info(file_path: Path, uploaded_by: str = "system") -> dict:
     """Format file information for API response"""
     stat = file_path.stat()
-    materials_dir = Path("data/materials")
+    materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
 
     # Obter caminho relativo à pasta materials
     try:
@@ -1244,7 +1246,7 @@ async def get_folder_stats(current_user: User = Depends(get_current_user)):
         stats = drive_handler.get_download_stats()
 
         # Enhanced stats with folder structure analysis
-        materials_dir = Path("data/materials")
+        materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
         if materials_dir.exists():
             folder_structure = {}
 
@@ -1257,7 +1259,14 @@ async def get_folder_stats(current_user: User = Depends(get_current_user)):
                     folder_structure[rel_path] = {
                         "file_count": len(files_in_folder),
                         "total_size": sum(f.stat().st_size for f in files_in_folder),
-                        "files": [{"name": f.name, "size": f.stat().st_size, "type": f.suffix[1:] or "unknown"} for f in files_in_folder[:10]]
+                        "files": [
+                            {
+                                "name": f.name,
+                                "size": f.stat().st_size,
+                                "type": f.suffix[1:] or "unknown",
+                            }
+                            for f in files_in_folder[:10]
+                        ],
                     }
 
             stats["folder_structure"] = folder_structure
@@ -1280,7 +1289,7 @@ async def get_drive_stats_detailed(current_user: User = Depends(get_current_user
         basic_stats = drive_handler.get_download_stats()
 
         # Build detailed folder structure
-        materials_dir = Path("data/materials")
+        materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
         folder_structure = {}
 
         if materials_dir.exists():
@@ -2301,7 +2310,7 @@ async def list_materials(current_user: User = Depends(get_current_user)):
     """List all available materials"""
     logger.info(f"📚 Materials list requested by: {current_user.username}")
 
-    materials_dir = Path("data/materials")
+    materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
     materials_dir.mkdir(parents=True, exist_ok=True)
 
     materials = []
@@ -2340,7 +2349,7 @@ async def upload_material(
             detail=f"File type not allowed. Supported: {', '.join(allowed_extensions)}"
         )
 
-    materials_dir = Path("data/materials")
+    materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
     materials_dir.mkdir(parents=True, exist_ok=True)
 
     file_path = materials_dir / file.filename
@@ -2390,6 +2399,70 @@ async def upload_material(
         raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
 
 
+@app.post("/materials/upload-archive")
+async def upload_materials_archive(
+    archive: UploadFile = File(...),
+    destination_subdir: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user)
+):
+    """Upload a .zip or .tar.gz with multiple materials and extract into MATERIALS_DIR"""
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
+    materials_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        content = await archive.read()
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Empty archive")
+
+        # Save temp
+        tmp_dir = Path(tempfile.mkdtemp())
+        tmp_path = tmp_dir / archive.filename
+        tmp_path.write_bytes(content)
+
+        # Determine destination
+        dest_dir = materials_dir / destination_subdir if destination_subdir else materials_dir
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # Extract
+        name_lower = archive.filename.lower()
+        extracted_files = []
+        if name_lower.endswith(".zip"):
+            with zipfile.ZipFile(tmp_path, 'r') as zf:
+                zf.extractall(dest_dir)
+                extracted_files = zf.namelist()
+        elif name_lower.endswith(".tar.gz") or name_lower.endswith(".tgz"):
+            with tarfile.open(tmp_path, 'r:gz') as tf:
+                tf.extractall(dest_dir)
+                extracted_files = [
+                    m.name for m in tf.getmembers() if m.isfile()]
+        else:
+            raise HTTPException(
+                status_code=400, detail="Unsupported archive format. Use .zip or .tar.gz")
+
+        # Cleanup temp
+        try:
+            tmp_path.unlink(missing_ok=True)  # type: ignore
+            tmp_dir.rmdir()
+        except Exception:
+            pass
+
+        return {
+            "status": "success",
+            "message": "Archive extracted",
+            "destination": str(dest_dir),
+            "files_count": len(extracted_files)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Archive upload error: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Archive upload error: {str(e)}")
+
+
 @app.get("/materials/{filename:path}")
 async def download_material(filename: str, download: bool = False, current_user: Optional[User] = Depends(get_optional_current_user)):
     """Download a material file with optional authentication"""
@@ -2406,11 +2479,12 @@ async def download_material(filename: str, download: bool = False, current_user:
 
     # Normalizar o caminho do arquivo
     normalized_filename = filename.replace("/", os.path.sep)
-    file_path = Path("data/materials") / normalized_filename
+    file_path = Path(os.getenv("MATERIALS_DIR", "data/materials")
+                     ) / normalized_filename
 
     if not file_path.exists() or not file_path.is_file():
         # Try to find file recursively
-        materials_dir = Path("data/materials")
+        materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
         found_files = list(materials_dir.rglob(Path(normalized_filename).name))
 
         if found_files:
@@ -2471,11 +2545,11 @@ async def delete_material(filename: str, current_user: User = Depends(get_curren
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Handle nested file paths
-    file_path = Path("data/materials") / filename
+    file_path = Path(os.getenv("MATERIALS_DIR", "data/materials")) / filename
 
     if not file_path.exists() or not file_path.is_file():
         # Try to find file recursively
-        materials_dir = Path("data/materials")
+        materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
         found_files = list(materials_dir.rglob(filename))
 
         if found_files:
@@ -2506,7 +2580,7 @@ async def update_material_metadata(
     logger.info(f"✏️ Metadata update by {current_user.username}: {filename}")
 
     # Handle nested file paths
-    file_path = Path("data/materials") / filename
+    file_path = Path(os.getenv("MATERIALS_DIR", "data/materials")) / filename
 
     if not file_path.exists() or not file_path.is_file():
         # Try to find file recursively
@@ -2523,7 +2597,8 @@ async def update_material_metadata(
         # Por exemplo, você poderia ter um arquivo JSON com os metadados de todos os materiais
 
         # Exemplo simplificado (você precisaria adaptar isso ao seu sistema de armazenamento de metadados):
-        metadata_file = Path("data/materials_metadata.json")
+        metadata_file = Path(
+            os.getenv("MATERIALS_DIR", "data/materials")) / "materials_metadata.json"
 
         if metadata_file.exists():
             with open(metadata_file, "r") as f:

@@ -26,7 +26,9 @@ class DriveHandler:
     """Handles downloading and managing files from Google Drive with enhanced error handling"""
 
     def __init__(self, materials_dir: str = "data/materials"):
-        self.materials_dir = Path(materials_dir)
+        # Allow overriding materials dir via environment variable
+        resolved_dir = os.getenv('MATERIALS_DIR', materials_dir)
+        self.materials_dir = Path(resolved_dir)
         self.materials_dir.mkdir(parents=True, exist_ok=True)
         self.service = None
         self.api_key = None
@@ -54,6 +56,13 @@ class DriveHandler:
             'auth_method': None,
             'is_authenticated': False
         }
+
+        # Download options configurable via environment
+        self.include_videos: bool = os.getenv(
+            'INCLUDE_DRIVE_VIDEOS', 'false').lower() == 'true'
+        # Export Google Docs to PDF by default for local persistence
+        self.export_google_docs: bool = os.getenv(
+            'EXPORT_GOOGLE_DOCS', 'true').lower() == 'true'
 
         logger.info(
             f"🚀 Initialized DriveHandler with materials directory: {self.materials_dir}")
@@ -661,10 +670,54 @@ class DriveHandler:
                 logger.info(
                     f"📁 Downloading: {filename} (metadata unavailable)")
 
-            # Skip Google Apps files
-            if mime_type.startswith('application/vnd.google-apps'):
-                logger.warning(f"⏭️ Skipping Google Apps file: {filename}")
+            # Hard skip video files unless explicitly enabled
+            video_extensions = ['.mp4', '.avi', '.mov',
+                                '.webm', '.mkv', '.flv', '.wmv']
+            if (mime_type.startswith('video/') or any((filename or '').lower().endswith(ext) for ext in video_extensions)) and not self.include_videos:
+                logger.info(
+                    f"⏭️ Skipping video file (include_videos=False): {filename}")
                 return None
+
+            # Handle Google Apps files (Docs/Sheets/Slides)
+            if mime_type.startswith('application/vnd.google-apps'):
+                if not self.export_google_docs:
+                    logger.info(
+                        f"⏭️ Skipping Google Apps file (export disabled): {filename}")
+                    return None
+                export_map = {
+                    'application/vnd.google-apps.document': ('application/pdf', '.pdf'),
+                    'application/vnd.google-apps.presentation': ('application/pdf', '.pdf'),
+                    'application/vnd.google-apps.spreadsheet': ('application/pdf', '.pdf'),
+                    'application/vnd.google-apps.drawing': ('application/pdf', '.pdf'),
+                }
+                export_mime, export_ext = export_map.get(
+                    mime_type, ('application/pdf', '.pdf'))
+                try:
+                    logger.info(
+                        f"📤 Exporting Google Apps file to {export_ext}: {filename}")
+                    export_request = self.service.files().export(
+                        fileId=file_id, mimeType=export_mime
+                    ) if self.service else None
+                    exported_content = export_request.execute() if export_request else None
+                    if not exported_content or len(exported_content) < 100:
+                        logger.warning(
+                            f"⚠️ Export returned empty content for: {filename}")
+                        self.download_stats['errors'] += 1
+                        return None
+                    file_content = exported_content
+                    download_method = "export"
+                    # Adjust filename extension to exported one
+                    base_name, _ = os.path.splitext(filename)
+                    filename = base_name + export_ext
+                except HttpError as e:
+                    logger.error(
+                        f"❌ Export failed (HTTP {e.resp.status}) for {filename}")
+                    self.download_stats['errors'] += 1
+                    return None
+                except Exception as e:
+                    logger.error(f"❌ Export failed for {filename}: {e}")
+                    self.download_stats['errors'] += 1
+                    return None
 
             file_content = None
             download_method = None
@@ -929,6 +982,14 @@ class DriveHandler:
                 file_size = 0
                 logger.info(
                     f"📁 Downloading: {filename} (metadata unavailable)")
+
+            # Hard skip video files unless explicitly enabled
+            video_extensions = ['.mp4', '.avi', '.mov',
+                                '.webm', '.mkv', '.flv', '.wmv']
+            if (mime_type.startswith('video/') or any((filename or '').lower().endswith(ext) for ext in video_extensions)) and not self.include_videos:
+                logger.info(
+                    f"⏭️ Skipping video file (include_videos=False): {filename}")
+                return None
 
             # Skip Google Apps files
             if mime_type.startswith('application/vnd.google-apps'):
