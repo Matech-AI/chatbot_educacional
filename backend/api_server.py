@@ -215,6 +215,7 @@ class RecursiveSync(BaseModel):
     folder_id: str
     api_key: Optional[str] = None
     credentials_json: Optional[str] = None
+    max_depth: Optional[int] = None
 
 
 class SystemStatus(BaseModel):
@@ -852,7 +853,7 @@ async def sync_drive_recursive(
 
                     # Run the download operation
                     result = task_handler.download_drive_recursive(
-                        data.folder_id)
+                        data.folder_id, max_depth=data.max_depth)
 
                     if result["status"] == "success":
                         # Update progress with thread safety

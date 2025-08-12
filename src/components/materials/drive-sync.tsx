@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { apiRequestJson } from "@/lib/api";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
@@ -41,10 +42,11 @@ interface DriveFile {
 
 export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
   const { user, isAuthenticated } = useAuthStore();
-  
+
   // Carregar valores do localStorage se disponíveis
   const [folderInput, setFolderInput] = useState(
-    localStorage.getItem("lastDriveFolderId") || "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
+    localStorage.getItem("lastDriveFolderId") ||
+      "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
   );
   const [apiKey, setApiKey] = useState(
     localStorage.getItem("lastDriveApiKey") || ""
@@ -89,7 +91,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
       setError("Você precisa estar logado para testar o acesso à pasta");
       return;
     }
-    
+
     setIsTesting(true);
     setError("");
     setSuccess("");
@@ -115,23 +117,16 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
         localStorage.setItem("lastDriveApiKey", apiKey);
       }
 
-      const response = await fetch("/api/test-drive-folder", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: JSON.stringify({
-          folder_id: folderId,
-          api_key: apiKey || undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const result: DriveTestResult = await response.json();
+      const result = await apiRequestJson<DriveTestResult>(
+        "/test-drive-folder",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            folder_id: folderId,
+            api_key: apiKey || undefined,
+          }),
+        }
+      );
       setTestResult(result);
 
       if (result.accessible) {
@@ -157,7 +152,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
       setError("Você precisa estar logado para sincronizar arquivos");
       return;
     }
-    
+
     try {
       setError(null);
       setSuccess(null);
@@ -180,25 +175,14 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
       console.log("Sincronizando pasta:", folderId);
 
       // Alterado de /api/sync-drive para /api/sync-drive-simple
-      const response = await fetch("/api/sync-drive-simple", {
+      const result = await apiRequestJson<any>("/sync-drive-simple", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
         body: JSON.stringify({
           folder_id: folderId,
           api_key: apiKey || undefined,
-          download_files: downloadFiles, // Usar a opção selecionada pelo usuário
+          download_files: downloadFiles,
         }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `HTTP ${response.status}`);
-      }
-
-      const result = await response.json();
       setSyncedFiles(result.files || []);
 
       setSuccess(
@@ -266,7 +250,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
           </div>
         </div>
       )}
-      
+
       <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
         <Cloud size={20} />
         Sincronizar com Google Drive
@@ -282,7 +266,9 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
             value={folderInput}
             onChange={handleInputChange}
             placeholder="Ex: 1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
-            disabled={!isAuthenticated || isProcessing || isLoading || isTesting}
+            disabled={
+              !isAuthenticated || isProcessing || isLoading || isTesting
+            }
           />
           <p className="mt-1 text-xs text-gray-500">
             Cole o ID da pasta ou a URL completa do Google Drive
@@ -299,7 +285,9 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="Sua API Key do Google Drive"
-            disabled={!isAuthenticated || isProcessing || isLoading || isTesting}
+            disabled={
+              !isAuthenticated || isProcessing || isLoading || isTesting
+            }
           />
           <p className="mt-1 text-xs text-gray-500">
             Necessário para pastas privadas. Deixe em branco para pastas
@@ -313,10 +301,12 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
             <Switch
               checked={downloadFiles}
               onCheckedChange={setDownloadFiles}
-              disabled={!isAuthenticated || isProcessing || isLoading || isTesting}
+              disabled={
+                !isAuthenticated || isProcessing || isLoading || isTesting
+              }
               id="download-switch"
             />
-            <label 
+            <label
               htmlFor="download-switch"
               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
             >
@@ -411,7 +401,11 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
           <Button
             onClick={testFolderAccess}
             disabled={
-              !isAuthenticated || !folderInput.trim() || isLoading || isProcessing || isTesting
+              !isAuthenticated ||
+              !folderInput.trim() ||
+              isLoading ||
+              isProcessing ||
+              isTesting
             }
             isLoading={isTesting}
             variant="outline"
@@ -424,16 +418,24 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
           <Button
             onClick={handleSync}
             disabled={
-              !isAuthenticated || !folderInput.trim() || isLoading || isProcessing || isTesting
+              !isAuthenticated ||
+              !folderInput.trim() ||
+              isLoading ||
+              isProcessing ||
+              isTesting
             }
             isLoading={isProcessing}
             className="flex-1 flex items-center justify-center gap-2"
           >
             <Download size={18} />
             <span>
-              {isProcessing 
-                ? (downloadFiles ? "Baixando..." : "Processando...") 
-                : (downloadFiles ? "Baixar Materiais" : "Listar Materiais")}
+              {isProcessing
+                ? downloadFiles
+                  ? "Baixando..."
+                  : "Processando..."
+                : downloadFiles
+                ? "Baixar Materiais"
+                : "Listar Materiais"}
             </span>
           </Button>
         </div>

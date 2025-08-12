@@ -26,7 +26,9 @@ class RecursiveDriveHandler:
     """Enhanced Drive Handler with recursive folder processing and duplicate detection"""
 
     def __init__(self, materials_dir: str = "data/materials"):
-        self.materials_dir = Path(materials_dir)
+        # Allow overriding materials dir via env
+        resolved_dir = os.getenv('MATERIALS_DIR', materials_dir)
+        self.materials_dir = Path(resolved_dir)
         self.materials_dir.mkdir(parents=True, exist_ok=True)
         self.service = None
         self.api_key = None
@@ -58,6 +60,13 @@ class RecursiveDriveHandler:
             'auth_method': None,
             'is_authenticated': False
         }
+
+        # Download options (can be configured by API layer or env)
+        self.include_videos: bool = os.getenv(
+            'INCLUDE_DRIVE_VIDEOS', 'false').lower() == 'true'
+        # Export Google Docs to PDF by default so conteúdo fica local
+        self.export_google_docs: bool = os.getenv(
+            'EXPORT_GOOGLE_DOCS', 'true').lower() == 'true'
 
         logger.info(
             f"🚀 Initialized RecursiveDriveHandler with materials directory: {self.materials_dir}")
@@ -723,17 +732,54 @@ class RecursiveDriveHandler:
             file_size = int(file_metadata.get('size', 0)
                             ) if file_metadata.get('size') else 0
 
-            # Skip Google Apps files
+            # Handle Google Apps files (Docs/Sheets/Slides)
             if mime_type.startswith('application/vnd.google-apps'):
-                logger.warning(f"⏭️ Skipping Google Apps file: {filename}")
+                if not self.export_google_docs:
+                    logger.info(
+                        f"⏭️ Skipping Google Apps file (export disabled): {filename}")
                 return None
 
-            # Skip video files - they will be replaced by PDF files with same name
+                export_map = {
+                    'application/vnd.google-apps.document': ('application/pdf', '.pdf'),
+                    'application/vnd.google-apps.presentation': ('application/pdf', '.pdf'),
+                    'application/vnd.google-apps.spreadsheet': ('application/pdf', '.pdf'),
+                    'application/vnd.google-apps.drawing': ('application/pdf', '.pdf'),
+                }
+                export_mime, export_ext = export_map.get(
+                    mime_type, ('application/pdf', '.pdf'))
+                try:
+                    logger.info(
+                        f"📤 Exporting Google Apps file to {export_ext}: {filename}")
+                    export_request = self.service.files().export(
+                        fileId=file_id, mimeType=export_mime
+                    ) if self.service else None
+                    exported_content = export_request.execute() if export_request else None
+                    if not exported_content or len(exported_content) < 100:
+                        logger.warning(
+                            f"⚠️ Export returned empty content for: {filename}")
+                        self.download_stats['errors'] += 1
+                        return None
+                    file_content = exported_content
+                    download_method = "export"
+                    # Adjust filename extension to exported one
+                    base_name, _ = os.path.splitext(filename)
+                    filename = base_name + export_ext
+                except HttpError as e:
+                    logger.error(
+                        f"❌ Export failed (HTTP {e.resp.status}) for {filename}")
+                    self.download_stats['errors'] += 1
+                    return None
+                except Exception as e:
+                    logger.error(f"❌ Export failed for {filename}: {e}")
+                    self.download_stats['errors'] += 1
+                    return None
+
+            # Video files: optional download (disabled by default)
             video_extensions = ['.mp4', '.avi', '.mov',
                                 '.webm', '.mkv', '.flv', '.wmv']
-            if any(filename.lower().endswith(ext) for ext in video_extensions) or mime_type.startswith('video/'):
+            if (any(filename.lower().endswith(ext) for ext in video_extensions) or mime_type.startswith('video/')) and not self.include_videos:
                 logger.info(
-                    f"⏭️ Skipping video file: {filename} (will be replaced by PDF)")
+                    f"⏭️ Skipping video file (include_videos=False): {filename}")
                 return None
 
             # Download file content
@@ -938,9 +984,9 @@ class RecursiveDriveHandler:
         return {}
 
     def download_drive_recursive(self, root_folder_id: str, max_depth: Optional[int] = None) -> Dict[str, Any]:
-        """Main method to download entire Drive folder structure recursively"""
+        """Main method to download entire Drive folder structure recursively with low memory footprint"""
         logger.info(
-            f"🚀 Starting recursive download of folder: {root_folder_id}")
+            f"🚀 Starting recursive download (streaming) of folder: {root_folder_id}")
 
         # Reset stats and cancel flag
         self.download_stats = {
@@ -950,7 +996,7 @@ class RecursiveDriveHandler:
             'skipped_duplicates': 0,
             'errors': 0
         }
-        self.cancel_flag = False  # Garantir que começamos com o flag desativado
+        self.cancel_flag = False
 
         # Scan existing files to avoid re-downloading
         logger.info("🔍 Scanning existing files to avoid duplicates...")
@@ -960,72 +1006,134 @@ class RecursiveDriveHandler:
 
         start_time = time.time()
 
+        processed_files_sample: List[Dict[str, Any]] = []
+        processed_files_sample_limit: int = 200
+
+        def download_folder_recursive(folder_id: str, parent_path: str = "", current_depth: int = 0):
+            # Verificar profundidade máxima
+            if max_depth is not None and current_depth >= max_depth:
+                return []
+
+            if self.cancel_flag:
+                raise Exception("Operação cancelada pelo usuário")
+
+            processed: List[Dict[str, Any]] = []
+
+            # Tentar obter nome da pasta (melhor logging e path)
+            try:
+                folder_info = self.service.files().get(
+                    fileId=folder_id, fields="id,name").execute() if self.service else {"name": "unknown"}
+                folder_name = folder_info.get('name', 'Unknown')
+            except Exception:
+                folder_name = f'folder_{folder_id[:8]}'
+
+            current_path = os.path.join(
+                parent_path, folder_name) if parent_path else folder_name
+            logger.info(f"📂 Processing folder (stream): {current_path}")
+
+            # Listar itens desta pasta em páginas menores para reduzir pico de memória
+            page_token = None
+            while True:
+                if self.cancel_flag:
+                    raise Exception("Operação cancelada pelo usuário")
+
+                query = f"'{folder_id}' in parents and trashed = false"
+                try:
+                    request = self.service.files().list(
+                        q=query,
+                        pageSize=200,
+                        pageToken=page_token,
+                        fields="nextPageToken, files(id,name,mimeType,size,parents,createdTime,modifiedTime)"
+                    ) if self.service else None
+
+                    results = request.execute() if request else {"files": []}
+                    items = results.get('files', [])
+                    self.download_stats['total_files'] += len(
+                        [i for i in items if i.get('mimeType') != 'application/vnd.google-apps.folder'])
+                    self.download_stats['total_folders'] += len(
+                        [i for i in items if i.get('mimeType') == 'application/vnd.google-apps.folder'])
+
+                    logger.info(
+                        f"📊 Found {len(items)} items in folder: {folder_name}")
+
+                    # Primeiro processa arquivos
+                    for item in items:
+                        if item.get('mimeType') == 'application/vnd.google-apps.folder':
+                            continue
+                        if self.cancel_flag:
+                            raise Exception("Operação cancelada pelo usuário")
+                        try:
+                            file_result = self.download_file_with_duplicate_check(
+                                item.get('id'),
+                                item.get('name', 'Unknown'),
+                                current_path
+                            )
+                            if file_result:
+                                # Guardar apenas uma amostra para reduzir uso de memória
+                                if len(processed_files_sample) < processed_files_sample_limit:
+                                    processed_files_sample.append(file_result)
+                                processed.append(file_result)
+                        except Exception as e:
+                            logger.error(
+                                f"Error processing file {item.get('name','Unknown')}: {e}")
+                            self.download_stats['errors'] += 1
+
+                    # Depois processa subpastas
+                    for item in items:
+                        if item.get('mimeType') == 'application/vnd.google-apps.folder':
+                            if self.cancel_flag:
+                                raise Exception(
+                                    "Operação cancelada pelo usuário")
+                            try:
+                                processed.extend(
+                                    download_folder_recursive(
+                                        item['id'], current_path, current_depth + 1)
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    f"Error processing subfolder {item.get('name','Unknown')}: {e}")
+                                self.download_stats['errors'] += 1
+
+                    page_token = results.get('nextPageToken')
+                    if not page_token:
+                        break
+                except Exception as e:
+                    logger.error(
+                        f"Error listing folder contents (stream): {e}")
+                    break
+
+            return processed
+
         try:
-            # Verificar flag de cancelamento
-            if self.cancel_flag:
-                logger.info("🛑 Download cancelado antes de iniciar a análise")
-                raise Exception("Operação cancelada pelo usuário")
+            processed_files = download_folder_recursive(root_folder_id, "", 0)
 
-            # First, get the complete folder structure
-            logger.info("📊 Analyzing complete folder structure...")
-            folder_structure = self.get_folder_structure(
-                root_folder_id, max_depth=max_depth)
-
-            # Verificar flag de cancelamento após análise da estrutura
-            if self.cancel_flag:
-                logger.info("🛑 Download cancelado após análise da estrutura")
-                raise Exception("Operação cancelada pelo usuário")
-
-            analysis_time = time.time() - start_time
-            logger.info(
-                f"✅ Structure analysis completed in {analysis_time:.2f}s")
-            logger.info(
-                f"📊 Found {self.download_stats['total_folders']} folders and {self.download_stats['total_files']} files")
-
-            # Now download all files
-            logger.info("📥 Starting file downloads...")
-            download_start = time.time()
-            processed_files = self.process_folder_recursive(folder_structure)
-
-            # Verificar flag de cancelamento após processamento
-            if self.cancel_flag:
-                logger.info(
-                    "🛑 Download cancelado após processamento de arquivos")
-                raise Exception("Operação cancelada pelo usuário")
-
-            download_time = time.time() - download_start
             total_time = time.time() - start_time
-
-            # Final statistics
-            logger.info("🎉 Recursive download completed!")
+            logger.info("🎉 Recursive download (streaming) completed!")
             logger.info(f"📊 Final Statistics:")
             logger.info(
-                f"   Total folders: {self.download_stats['total_folders']}")
+                f"   Total folders (seen): {self.download_stats['total_folders']}")
             logger.info(
-                f"   Total files found: {self.download_stats['total_files']}")
+                f"   Total files (seen): {self.download_stats['total_files']}")
             logger.info(
                 f"   Files downloaded: {self.download_stats['downloaded_files']}")
             logger.info(
                 f"   Duplicates skipped: {self.download_stats['skipped_duplicates']}")
             logger.info(f"   Errors: {self.download_stats['errors']}")
-            logger.info(f"   Analysis time: {analysis_time:.2f}s")
-            logger.info(f"   Download time: {download_time:.2f}s")
             logger.info(f"   Total time: {total_time:.2f}s")
 
             return {
                 'status': 'success',
                 'statistics': self.download_stats,
-                'processed_files': processed_files,
-                'folder_structure': folder_structure,
+                'processed_files': processed_files[:processed_files_sample_limit],
+                'processed_files_total': len(processed_files),
+                'folder_structure': {},  # não retornamos a árvore completa para reduzir memória
                 'timing': {
-                    'analysis_time': analysis_time,
-                    'download_time': download_time,
                     'total_time': total_time
                 }
             }
-
         except Exception as e:
-            logger.error(f"❌ Error in recursive download: {str(e)}")
+            logger.error(
+                f"❌ Error in recursive download (streaming): {str(e)}")
             return {
                 'status': 'error',
                 'error': str(e),
