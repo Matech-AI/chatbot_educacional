@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { useCallback } from 'react';
 import type { Material } from '../types';
+import { apiRequest, apiRequestJson } from '@/lib/api';
 
 interface MaterialsState {
   materials: Material[];
@@ -14,18 +15,7 @@ interface MaterialsState {
 // API functions
 async function fetchMaterialsAPI(): Promise<Material[]> {
   try {
-    const response = await fetch('/api/materials', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-      },
-    });
-    
-    if (!response.ok) {
-      console.error('Failed to fetch materials:', response.status);
-      return [];
-    }
-    
-    const data = await response.json();
+    const data = await apiRequestJson<any[]>('/materials');
     
     // Convert the response to match our Material interface
     return data.map((item: any) => ({
@@ -49,29 +39,17 @@ async function uploadMaterialAPI(file: File, description?: string, tags?: string
   try {
     const formData = new FormData();
     formData.append('file', file);
-    
     if (description) {
       formData.append('description', description);
     }
-    
     if (tags && tags.length > 0) {
       formData.append('tags', JSON.stringify(tags));
     }
-    
-    const response = await fetch('/api/materials/upload', {
+    const resp = await apiRequest('/materials/upload', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-      },
       body: formData,
     });
-    
-    if (!response.ok) {
-      console.error('Failed to upload material:', response.status);
-      return false;
-    }
-    
-    return true;
+    return resp.ok;
   } catch (error) {
     console.error('Error uploading material:', error);
     return false;
@@ -80,19 +58,8 @@ async function uploadMaterialAPI(file: File, description?: string, tags?: string
 
 async function deleteMaterialAPI(id: string): Promise<boolean> {
   try {
-    const response = await fetch(`/api/materials/${id}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-      },
-    });
-    
-    if (!response.ok) {
-      console.error('Failed to delete material:', response.status);
-      return false;
-    }
-    
-    return true;
+    const resp = await apiRequest(`/materials/${id}`, { method: 'DELETE' });
+    return resp.ok;
   } catch (error) {
     console.error('Error deleting material:', error);
     return false;
@@ -103,29 +70,17 @@ async function deleteMaterialAPI(id: string): Promise<boolean> {
 async function updateMaterialAPI(id: string, description?: string, tags?: string[]): Promise<boolean> {
   try {
     const formData = new FormData();
-    
     if (description) {
       formData.append('description', description);
     }
-    
     if (tags && tags.length > 0) {
       formData.append('tags', JSON.stringify(tags));
     }
-    
-    const response = await fetch(`/api/materials/${id}/metadata`, {
+    const resp = await apiRequest(`/materials/${id}/metadata`, {
       method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-      },
       body: formData,
     });
-    
-    if (!response.ok) {
-      console.error('Failed to update material:', response.status);
-      return false;
-    }
-    
-    return true;
+    return resp.ok;
   } catch (error) {
     console.error('Error updating material:', error);
     return false;

@@ -60,14 +60,20 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
 
   const loadDriveStats = async () => {
     try {
-      const response = await fetch("/api/drive-stats-detailed", {
+      const base = import.meta.env.VITE_API_BASE_URL || "";
+      const response = await fetch(`${base}/drive-stats-detailed`, {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
       });
-      if (response.ok) {
-        const stats = await response.json();
-        setDriveStats(stats);
-        setFolderStructure(stats.folder_structure);
+      const contentType = response.headers.get("content-type") || "";
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${text}`);
       }
+      const stats = contentType.includes("application/json")
+        ? JSON.parse(text)
+        : {};
+      setDriveStats(stats);
+      setFolderStructure(stats.folder_structure);
     } catch (error) {
       console.error("Error loading drive stats:", error);
     }
@@ -599,7 +605,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
             </div>
           </motion.div>
         )}
-        
+
         {/* Adicionar esta seção para a aba de edição */}
         {activeTab === "edit" && editingMaterial && (
           <motion.div
@@ -608,10 +614,12 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
           >
-            <UploadForm 
-              onUpload={handleUpload} 
-              onUpdate={(id, description, tags) => handleUpdate(id, description, tags)}
-              isLoading={isProcessing} 
+            <UploadForm
+              onUpload={handleUpload}
+              onUpdate={(id, description, tags) =>
+                handleUpdate(id, description, tags)
+              }
+              isLoading={isProcessing}
               material={editingMaterial}
             />
           </motion.div>
