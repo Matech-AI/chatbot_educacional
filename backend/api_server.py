@@ -3085,6 +3085,64 @@ async def list_available_modules(
         logger.error(f"❌ Module listing error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ========================================
+# DEBUG ENDPOINT - CREDENTIALS CHECK
+# ========================================
+
+
+@app.get("/debug/credentials-check")
+async def debug_credentials_check(current_user: User = Depends(get_current_user)):
+    """Debug endpoint to check where credentials files are located"""
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    import os
+
+    # Check common paths
+    paths_to_check = [
+        "credentials.json",
+        "data/credentials.json",
+        "/app/credentials.json",
+        "/app/data/credentials.json",
+        "/etc/secrets/credentials.json",
+        "token.json",
+        "data/token.json",
+        "/app/token.json",
+        "/app/data/token.json",
+        "/etc/secrets/token.json"
+    ]
+
+    results = {}
+    for path in paths_to_check:
+        try:
+            exists = os.path.exists(path)
+            size = os.path.getsize(path) if exists else 0
+            results[path] = {
+                "exists": exists,
+                "size": size,
+                "readable": os.access(path, os.R_OK) if exists else False
+            }
+        except Exception as e:
+            results[path] = {
+                "exists": False,
+                "error": str(e)
+            }
+
+    # Check environment variables
+    env_vars = {
+        "GOOGLE_CREDENTIALS_PATH": os.getenv("GOOGLE_CREDENTIALS_PATH"),
+        "GOOGLE_DRIVE_API_KEY": os.getenv("GOOGLE_DRIVE_API_KEY"),
+        "PWD": os.getcwd(),
+        "CWD": os.getcwd()
+    }
+
+    return {
+        "status": "debug_info",
+        "file_checks": results,
+        "environment": env_vars,
+        "timestamp": datetime.now().isoformat()
+    }
+
 if __name__ == "__main__":
     import uvicorn
     logger.info(
