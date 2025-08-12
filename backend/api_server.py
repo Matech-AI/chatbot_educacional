@@ -89,6 +89,11 @@ active_downloads = {}
 # Global lock for download progress updates
 download_progress_lock = threading.Lock()
 
+# Archive import progress tracking
+archive_imports_progress: Dict[str, Dict[str, Any]] = {}
+archive_active_imports: Dict[str, bool] = {}
+archive_progress_lock = threading.Lock()
+
 # User authentication status cache
 user_auth_status = {}  # Armazenar status de autenticação por usuário
 
@@ -294,7 +299,8 @@ def get_file_type(filename: str) -> str:
 def format_file_info(file_path: Path, uploaded_by: str = "system") -> dict:
     """Format file information for API response"""
     stat = file_path.stat()
-    materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
+    materials_dir = Path(os.getenv("MATERIALS_DIR", str(
+        Path(__file__).resolve().parent / "data" / "materials")))
 
     # Obter caminho relativo à pasta materials
     try:
@@ -407,8 +413,10 @@ def root():
 @app.get("/health")
 async def health():
     """Health check endpoint"""
-    materials_count = len(list(Path("data/materials").rglob("*"))
-                          ) if Path("data/materials").exists() else 0
+    local_default = Path(__file__).resolve().parent / "data" / "materials"
+    materials_root = Path(os.getenv("MATERIALS_DIR", str(local_default)))
+    materials_count = len(list(materials_root.rglob("*"))
+                          ) if materials_root.exists() else 0
 
     # Check RAG server status
     rag_status = False
@@ -439,7 +447,8 @@ async def health():
 @app.get("/status")
 async def get_status():
     """Get detailed system status"""
-    materials_dir = Path("data/materials")
+    materials_dir = Path(os.getenv("MATERIALS_DIR", str(
+        Path(__file__).resolve().parent / "data" / "materials")))
     chromadb_dir = Path(".chromadb")
 
     # Check RAG server status
@@ -1246,7 +1255,8 @@ async def get_folder_stats(current_user: User = Depends(get_current_user)):
         stats = drive_handler.get_download_stats()
 
         # Enhanced stats with folder structure analysis
-        materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
+        materials_dir = Path(os.getenv("MATERIALS_DIR", str(
+            Path(__file__).resolve().parent / "data" / "materials")))
         if materials_dir.exists():
             folder_structure = {}
 
@@ -1289,7 +1299,8 @@ async def get_drive_stats_detailed(current_user: User = Depends(get_current_user
         basic_stats = drive_handler.get_download_stats()
 
         # Build detailed folder structure
-        materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
+        materials_dir = Path(os.getenv("MATERIALS_DIR", str(
+            Path(__file__).resolve().parent / "data" / "materials")))
         folder_structure = {}
 
         if materials_dir.exists():
@@ -2399,6 +2410,55 @@ async def upload_material(
         raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
 
 
+@app.get("/materials/browse")
+async def browse_materials(
+    path: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Browse materials by folder. Returns subfolders and files for the given path (non-recursive)."""
+    logger.info(
+        f"📂 Browse materials requested by: {current_user.username} | path={path or '/'}")
+
+    materials_root = Path(os.getenv("MATERIALS_DIR", str(
+        Path(__file__).resolve().parent / "data" / "materials")))
+    materials_root.mkdir(parents=True, exist_ok=True)
+
+    base_path = materials_root / path if path else materials_root
+    if not base_path.exists() or not base_path.is_dir():
+        raise HTTPException(status_code=404, detail="Folder not found")
+
+    # Collect subfolders (direct children)
+    subfolders = []
+    files = []
+
+    try:
+        for item in sorted(base_path.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+            rel_path = str(item.relative_to(materials_root)).replace("\\", "/")
+            if item.is_dir():
+                try:
+                    file_list = [f for f in item.iterdir() if f.is_file()]
+                except Exception:
+                    file_list = []
+                subfolders.append({
+                    "name": item.name,
+                    "path": rel_path,
+                    "file_count": len(file_list),
+                    "total_size": sum(f.stat().st_size for f in file_list),
+                })
+            else:
+                files.append(format_file_info(item, uploaded_by="user"))
+    except Exception as e:
+        logger.error(f"❌ Error browsing materials: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "path": str(base_path.relative_to(materials_root)) if path else "/",
+        "subfolders": subfolders,
+        "files": files,
+        "root": str(materials_root),
+    }
+
+
 @app.post("/materials/upload-archive")
 async def upload_materials_archive(
     archive: UploadFile = File(...),
@@ -2479,12 +2539,13 @@ async def download_material(filename: str, download: bool = False, current_user:
 
     # Normalizar o caminho do arquivo
     normalized_filename = filename.replace("/", os.path.sep)
-    file_path = Path(os.getenv("MATERIALS_DIR", "data/materials")
-                     ) / normalized_filename
+    file_path = Path(os.getenv("MATERIALS_DIR", str(
+        Path(__file__).resolve().parent / "data" / "materials"))) / normalized_filename
 
     if not file_path.exists() or not file_path.is_file():
         # Try to find file recursively
-        materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
+        materials_dir = Path(os.getenv("MATERIALS_DIR", str(
+            Path(__file__).resolve().parent / "data" / "materials")))
         found_files = list(materials_dir.rglob(Path(normalized_filename).name))
 
         if found_files:
@@ -2538,19 +2599,23 @@ def should_require_auth(filename: str) -> bool:
     return True
 
 
-@app.delete("/materials/{filename}")
+@app.delete("/materials/{filename:path}")
 async def delete_material(filename: str, current_user: User = Depends(get_current_user)):
     """Delete a material file"""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Handle nested file paths
-    file_path = Path(os.getenv("MATERIALS_DIR", "data/materials")) / filename
+    # Handle nested file paths with normalization
+    normalized_filename = filename.replace("/", os.path.sep)
+    file_path = Path(os.getenv("MATERIALS_DIR", str(
+        Path(__file__).resolve().parent / "data" / "materials"))) / normalized_filename
 
     if not file_path.exists() or not file_path.is_file():
         # Try to find file recursively
-        materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
-        found_files = list(materials_dir.rglob(filename))
+        materials_dir = Path(os.getenv("MATERIALS_DIR", str(
+            Path(__file__).resolve().parent / "data" / "materials")))
+        # Fallback: search by basename if exact path not found
+        found_files = list(materials_dir.rglob(Path(normalized_filename).name))
 
         if found_files:
             file_path = found_files[0]
@@ -2566,7 +2631,7 @@ async def delete_material(filename: str, current_user: User = Depends(get_curren
         raise HTTPException(status_code=500, detail=f"Delete error: {str(e)}")
 
 
-@app.put("/materials/{filename}/metadata")
+@app.put("/materials/{filename:path}/metadata")
 async def update_material_metadata(
     filename: str,
     description: str = Form(""),

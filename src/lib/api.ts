@@ -331,11 +331,11 @@ export const api = {
       });
     },
 
-    delete: (filename: string) => apiRequest(`/materials/${filename}`, {
+    delete: (filename: string) => apiRequest(`/materials/${encodeURIComponent(filename)}`, {
       method: 'DELETE',
     }),
 
-    download: (filename: string) => apiRequest(`/materials/${filename}`),
+    download: (filename: string) => apiRequest(`/materials/${encodeURIComponent(filename)}`),
   },
 
   // Chat
