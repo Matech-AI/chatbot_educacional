@@ -260,7 +260,7 @@ async def lifespan(app: FastAPI):
 
     # Configurar diretórios (usar variáveis de ambiente se definidas; caso contrário, relativos ao diretório deste arquivo)
     base_dir = Path(__file__).parent
-    default_chroma = base_dir / "data" / "chromadb"
+    default_chroma = base_dir / "data" / ".chromadb"
     default_materials = base_dir / "data" / "materials"
 
     env_chroma = os.getenv("CHROMA_PERSIST_DIR")

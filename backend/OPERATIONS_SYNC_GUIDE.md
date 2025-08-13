@@ -194,3 +194,127 @@ tar -xzf materials.tar.gz
 - `EXPORT_GOOGLE_DOCS=true` e `INCLUDE_DRIVE_VIDEOS=false` (economiza tempo/armazenamento).
 - `batch_size` pequeno (2–3) e `max_depth` baixo (1–2) reduzem muito memória/CPU.
 - Em acervos enormes, considere instância Render com mais RAM/CPU e dividir importações.
+
+---
+
+## 11) RAG: Uso de ChromaDB pré‑treinado e Sincronização de Materiais (API → RAG)
+
+Esta seção explica como:
+- Usar um ChromaDB já treinado localmente no Render (sem reprocessar).
+- Sincronizar materiais do serviço API para o serviço RAG (server‑to‑server) quando precisar de citações (arquivo/página).
+
+### 11.1 Variáveis no Render
+- RAG service:
+  - `CHROMA_PERSIST_DIR=/app/data/.chromadb`
+  - `MATERIALS_DIR=/app/data/materials`
+  - Disk montado em `/app/data`
+- API service:
+  - `RAG_SERVER_URL=https://dna-forca-rag-server.onrender.com`
+
+### 11.2 Usar ChromaDB pré‑treinado (local → Render)
+1) Validar localmente se o índice tem texto (não só embeddings):
+```
+python - << 'PY'
+from langchain_openai import OpenAIEmbeddings
+from langchain_chroma import Chroma
+vs = Chroma(collection_name="langchain", persist_directory="backend/data/.chromadb",
+            embedding_function=OpenAIEmbeddings(model="text-embedding-3-small"))
+data = vs.get()
+print("docs_count:", len(data.get("documents", [])))
+print("doc_sample_len:", len((data.get("documents") or [""])[0] or ""))
+PY
+```
+2) Compactar (PowerShell):
+```
+tar -czf chromadb.tar.gz -C backend\data\chromadb .
+```
+3) Enviar para o Render (ex.: Magic‑Wormhole):
+```
+# Local
+python -m pip install --upgrade magic-wormhole
+wormhole send chromadb.tar.gz
+
+# Render (shell do serviço RAG)
+pip install --no-cache-dir magic-wormhole
+cd /app/data
+wormhole receive
+mkdir -p /app/data/.chromadb
+tar -xzf chromadb.tar.gz -C /app/data/.chromadb
+```
+4) Reiniciar o serviço RAG e validar:
+```
+curl -s https://dna-forca-rag-server.onrender.com/status | jq '{persist_dir, vector_store_ready, vector_store_count}'
+```
+5) Ajustar embeddings/busca (se necessário):
+```
+curl -s -X POST https://dna-forca-rag-server.onrender.com/assistant/config \
+  -H "Content-Type: application/json" \
+  -d '{"embeddingModel":"text-embedding-3-small","retrievalSearchType":"similarity","retrieval_k":8,"retrieval_fetch_k":50}'
+```
+6) Testar consulta:
+```
+curl -s -X POST https://dna-forca-rag-server.onrender.com/query \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Explique princípio da sobrecarga","user_level":"intermediate"}'
+```
+> Importante: não rode reprocessamento se você não subiu também os materiais.
+
+### 11.3 Sincronizar Materiais API → RAG (server‑to‑server)
+Use quando precisar de citações precisas (arquivo/página) ou reindexar.
+
+- Endpoints:
+  - API: `GET /materials/archive` (gera `.tar.gz` de toda a pasta `materials/`, requer auth)
+  - RAG: `POST /materials/sync-from-api` (baixa/extrai do API), `GET /materials/list`, `POST /reprocess-enhanced-materials`
+
+- Fluxo:
+```
+# RAG baixa do API e extrai em MATERIALS_DIR
+curl -s -X POST https://dna-forca-rag-server.onrender.com/materials/sync-from-api \
+  -F 'api_base_url=https://dna-forca-api-server.onrender.com' \
+  -F 'token=SEU_JWT_DO_API'
+
+# Verificar arquivos no RAG
+curl -s https://dna-forca-rag-server.onrender.com/materials/list
+
+# Reprocessar com metadados educacionais e citações por página
+curl -i -X POST https://dna-forca-rag-server.onrender.com/reprocess-enhanced-materials
+```
+
+### 11.4 Upload direto de materiais no RAG
+```
+curl -i -X POST https://dna-forca-rag-server.onrender.com/materials/upload-archive \
+  -F "archive=@/caminho/materials.zip"
+```
+
+### 11.5 Diagnóstico rápido
+- Status do RAG:
+```
+curl -s https://dna-forca-rag-server.onrender.com/status
+```
+- Materiais visíveis no RAG:
+```
+curl -s https://dna-forca-rag-server.onrender.com/materials/list
+```
+- Teste de vetor no container (Render):
+```
+python - << 'PY'
+from langchain_openai import OpenAIEmbeddings
+from langchain_chroma import Chroma
+vs = Chroma(collection_name="langchain", persist_directory="/app/data/.chromadb",
+            embedding_function=OpenAIEmbeddings(model="text-embedding-3-small"))
+docs = vs.similarity_search("hipertrofia", k=8)
+print("retrieved:", len(docs))
+for i, d in enumerate(docs):
+  print(i+1, d.metadata, len(d.page_content))
+PY
+```
+
+### 11.6 Problemas comuns
+- `vector_store_count` alto, mas busca retorna 0:
+  - Índice sem `documents` (só embeddings). Reindexe no RAG com PDFs (sincronize materiais e reprocessar) ou gere localmente um `.chromadb` com texto e reenviar.
+  - Versões divergentes de `chromadb/langchain` entre local e Render. Alinhe versões no `backend/config/requirements.txt`.
+  - Modelo de embedding diferente. Ajuste via `POST /assistant/config`.
+- Diretório incorreto:
+  - Use exatamente `CHROMA_PERSIST_DIR=/app/data/.chromadb` (com ponto). Liste com `ls -la /app/data`.
+- Segurança:
+  - Proteja a sincronização com token (JWT admin/instructor no API). Se necessário, adote um `X-SYNC-TOKEN` compartilhado.

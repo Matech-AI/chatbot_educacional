@@ -110,7 +110,7 @@ class RAGHandler:
             self.persist_dir = persist_dir
         else:
             backend_dir = Path(__file__).parent.parent
-            self.persist_dir = str(backend_dir / "data" / "chromadb")
+            self.persist_dir = str(backend_dir / "data" / ".chromadb")
 
         self.materials_dir = Path(materials_dir)
 

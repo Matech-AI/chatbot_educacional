@@ -7,7 +7,7 @@ Este documento descreve, de forma prática e objetiva, como o sistema de RAG (Re
   - `backend/rag_system/rag_handler.py`: pipeline RAG (ingestão, embeddings, vector store, retriever, geração)
   - `backend/rag_server.py`: API dedicada ao RAG (inicialização, processamento, consulta, templates)
   - `backend/chat_agents/educational_agent.py`: agente educacional com LangGraph (grafo stateful com ferramentas, incluindo a ferramenta RAG)
-  - Persistência do vetor store: `data/chromadb`
+  - Persistência do vetor store: `data/.chromadb`
   - Materiais a processar: `data/materials`
 
 
@@ -286,7 +286,7 @@ if self.rag_tool and assistant_message.tool_calls:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ...
-    chroma_persist_dir = Path("data/chromadb")
+    chroma_persist_dir = Path("data/.chromadb")
     materials_dir = Path("data/materials")
     ...
     openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -404,7 +404,7 @@ def _apply_config_to_rag_handler(cfg: Dict[str, Any]):
 
 - **Stateful Graph (LangGraph)**: sim, o grafo mantém estado por sessão (thread_id), usa `MemorySaver` como checkpointer e agrega `messages` no `EducationalState`. Fluxo: `agent -> tools -> agent` baseado em `tools_condition`.
 - **Reranking**: não há reranker externo; a diversidade é via MMR no retriever (`retrieval_search_type="mmr"`).
-- **Diretórios**: `data/materials` (entrada), `data/chromadb` (persistência do ChromaDB).
+- **Diretórios**: `data/materials` (entrada), `data/.chromadb` (persistência do ChromaDB).
 - **Metadados educacionais**: infraestrutura pronta e caches; para ativar extrações no ingestion, descomente o bloco indicado em `_enhance_document` e mantenha `enable_educational_features=True`.
 - **Templates**: o servidor RAG expõe endpoints para ler/aplicar/salvar templates; mudanças relevantes (chunking/modelo/busca) são refletidas no `RAGHandler` em tempo de execução.
 
