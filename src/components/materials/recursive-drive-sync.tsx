@@ -90,6 +90,20 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
   const [progressInterval, setProgressInterval] =
     useState<NodeJS.Timeout | null>(null);
 
+  // Controles para sincronização por módulos (em partes)
+  const [modulePrefix, setModulePrefix] = useState(
+    localStorage.getItem("moduleSyncPrefix") || "Módulo "
+  );
+  const [moduleName, setModuleName] = useState(
+    localStorage.getItem("moduleSyncName") || ""
+  );
+  const [moduleBatchSize, setModuleBatchSize] = useState<number>(
+    parseInt(localStorage.getItem("moduleSyncBatchSize") || "2")
+  );
+  const [moduleMaxDepth, setModuleMaxDepth] = useState<number>(
+    parseInt(localStorage.getItem("moduleSyncMaxDepth") || "2")
+  );
+
   const extractFolderIdFromUrl = (url: string): string | null => {
     try {
       const patterns = [
@@ -370,6 +384,115 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
       console.error("Erro na sincronização:", err);
       setIsProcessing(false);
       setCurrentDownloadId(null);
+    }
+  };
+
+  // Sincronização por módulos (em partes)
+  const handleModuleSync = async () => {
+    try {
+      setError(null);
+      setSuccess(null);
+      setIsProcessing(true);
+
+      const folderId =
+        extractFolderIdFromUrl(folderInput.trim()) || folderInput.trim();
+
+      if (!folderId || !validateDriveFolderId(folderId)) {
+        setError("ID da pasta inválido");
+        setIsProcessing(false);
+        return;
+      }
+
+      // Persistir preferências
+      localStorage.setItem("lastDriveFolderId", folderId);
+      if (apiKey) localStorage.setItem("lastDriveApiKey", apiKey);
+      localStorage.setItem("moduleSyncPrefix", modulePrefix);
+      localStorage.setItem("moduleSyncName", moduleName);
+      localStorage.setItem("moduleSyncBatchSize", String(moduleBatchSize));
+      localStorage.setItem("moduleSyncMaxDepth", String(moduleMaxDepth));
+
+      // Montar payload
+      const payload: any = {
+        folder_id: folderId,
+        batch_size: moduleBatchSize,
+        max_depth: moduleMaxDepth,
+        download_files: true,
+      };
+      if (moduleName.trim()) payload.module_name = moduleName.trim();
+      if (!moduleName.trim() && modulePrefix.trim())
+        payload.module_prefix = modulePrefix.trim();
+      if (apiKey) payload.api_key = apiKey;
+
+      const result = await apiRequestJson("/drive/download-module", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      if (result.status === "started" && result.download_id) {
+        const downloadId = result.download_id as string;
+        setCurrentDownloadId(downloadId);
+
+        setSuccess(
+          "⏳ Sincronização por módulos iniciada. Monitorando progresso..."
+        );
+
+        const interval = setInterval(async () => {
+          try {
+            const progress = await apiRequestJson(
+              `/drive/download-progress?download_id=${downloadId}`
+            );
+
+            if (progress.status === "analyzing") {
+              setSuccess("🔍 Analisando módulos...");
+            } else if (progress.status === "processing") {
+              const cm = progress.current_module || "";
+              const pm = progress.processed_modules || 0;
+              const df = progress.downloaded_files || 0;
+              const tf = progress.total_files || "?";
+              setSuccess(
+                `📦 Módulo atual: ${
+                  cm || "(aguardando)"
+                } | Processados: ${pm} | Arquivos: ${df} de ${tf}`
+              );
+            } else if (progress.status === "completed" && progress.result) {
+              clearInterval(interval);
+              setProgressInterval(null);
+              setCurrentDownloadId(null);
+              setSuccess(
+                "🎉 Sincronização por módulos concluída com sucesso. Atualizando materiais..."
+              );
+              setTimeout(() => {
+                onSync();
+                setIsProcessing(false);
+              }, 1500);
+            } else if (progress.status === "error") {
+              clearInterval(interval);
+              setProgressInterval(null);
+              setCurrentDownloadId(null);
+              throw new Error(
+                progress.error || "Erro desconhecido no download"
+              );
+            }
+          } catch (err) {
+            clearInterval(interval);
+            setProgressInterval(null);
+            setCurrentDownloadId(null);
+            setIsProcessing(false);
+            setError(
+              err instanceof Error
+                ? err.message
+                : "Erro desconhecido no progresso"
+            );
+          }
+        }, 2000);
+
+        setProgressInterval(interval);
+      } else {
+        throw new Error("Não foi possível iniciar a sincronização por módulos");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro desconhecido");
+      setIsProcessing(false);
     }
   };
 

@@ -88,6 +88,10 @@ active_downloads = {}
 
 # Global lock for download progress updates
 download_progress_lock = threading.Lock()
+# Sequential module sync tracking
+module_sync_progress: Dict[str, Dict[str, Any]] = {}
+module_sync_active: Dict[str, bool] = {}
+
 
 # Archive import progress tracking
 archive_imports_progress: Dict[str, Dict[str, Any]] = {}
@@ -3032,6 +3036,9 @@ class SelectiveModuleDownload(BaseModel):
     max_depth: Optional[int] = 2
     download_files: bool = True
     api_key: Optional[str] = None
+    # Novo: processar módulos em lotes (por nome/prefixo) sequencialmente
+    module_prefix: Optional[str] = None  # Ex.: "Módulo "
+    batch_size: Optional[int] = 3
 
 
 @app.post("/drive/download-module")
@@ -3086,38 +3093,49 @@ async def download_specific_module(
                     with download_progress_lock:
                         download_progress[download_id]["status"] = "analyzing"
 
-                    # First, analyze the folder structure to find the specific module
-                    if data.module_name:
-                        # Find the specific module folder
-                        folder_structure = task_handler.get_folder_structure(
-                            data.folder_id, max_depth=1)
+                    # First, analyze the folder structure to find modules
+                    folder_structure = task_handler.get_folder_structure(
+                        data.folder_id, max_depth=1)
 
-                        target_folder_id = None
-                        for item in folder_structure.get("items", []):
-                            if item.get("name") == data.module_name:
-                                target_folder_id = item.get("id")
-                                break
+                    # Build list of candidate modules (top-level subfolders)
+                    top_items = folder_structure.get('subfolders', {})
+                    candidates = []
+                    for fid, sub in top_items.items():
+                        name = sub.get('name', '')
+                        if data.module_name and name == data.module_name:
+                            candidates = [(fid, name)]
+                            break
+                        elif data.module_prefix and name.startswith(data.module_prefix):
+                            candidates.append((fid, name))
 
-                        if not target_folder_id:
-                            raise Exception(
-                                f"Module '{data.module_name}' not found")
+                    if not candidates and not data.module_name:
+                        # fallback: process root with limited depth
+                        candidates = [
+                            (data.folder_id, folder_structure.get('name', 'root'))]
 
-                        # Download only this module with limited depth
-                        result = task_handler.download_drive_recursive(
-                            target_folder_id, max_depth=data.max_depth)
-                    else:
-                        # Download with limited depth
-                        result = task_handler.download_drive_recursive(
-                            data.folder_id, max_depth=data.max_depth)
+                    # Process sequentially in batches
+                    batch_size = max(1, int(data.batch_size or 3))
+                    processed = 0
+                    total = len(candidates)
+                    for i in range(0, total, batch_size):
+                        batch = candidates[i:i+batch_size]
+                        for fid, name in batch:
+                            with download_progress_lock:
+                                download_progress[download_id]["current_module"] = name
+                            last_result = task_handler.download_drive_recursive(
+                                fid, max_depth=data.max_depth)
+                            processed += 1
+                            with download_progress_lock:
+                                download_progress[download_id]["processed_modules"] = processed
 
-                    if result["status"] == "success":
+                    if last_result and last_result.get("status") == "success":
                         # Update progress with thread safety
                         with download_progress_lock:
                             download_progress[download_id].update({
                                 "status": "processing",
                                 "progress": 95,
-                                "total_files": result["statistics"]["total_files"],
-                                "downloaded_files": result["statistics"]["downloaded_files"],
+                                "total_files": last_result["statistics"].get("total_files", 0),
+                                "downloaded_files": last_result["statistics"].get("downloaded_files", 0),
                             })
 
                         # Re-index materials in RAG server
@@ -3138,14 +3156,14 @@ async def download_specific_module(
                                 "status": "completed",
                                 "progress": 100,
                                 "completed_at": datetime.now().isoformat(),
-                                "result": result
+                                "result": last_result
                             })
                     else:
                         # Error update with thread safety
                         with download_progress_lock:
                             download_progress[download_id].update({
                                 "status": "error",
-                                "error": result.get("error", "Unknown error"),
+                                "error": (last_result or {}).get("error", "Unknown error"),
                                 "completed_at": datetime.now().isoformat()
                             })
                 except Exception as e:
