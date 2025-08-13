@@ -327,6 +327,20 @@ app.add_middleware(
 app.include_router(educational_agent_router, prefix="/chat")
 
 
+# Banner de funcionamento ao iniciar (semelhante ao api_server.py)
+@app.on_event("startup")
+async def startup_banner():
+    try:
+        port = int(os.getenv("PORT", "8001"))
+    except Exception:
+        port = 8001
+    logger.info("====================================================")
+    logger.info(
+        f"🚀 DNA da Força RAG Server v1.0.0 funcionando na porta {port}")
+    logger.info("Rotas: GET /health | GET /status | POST /process-materials | POST /reprocess-enhanced-materials | POST /query | /chat/*")
+    logger.info("====================================================")
+
+
 def _apply_config_to_rag_handler(cfg: Dict[str, Any]):
     """Atualiza o RAGHandler com a configuração recebida do frontend, se estiver inicializado."""
     global rag_handler
