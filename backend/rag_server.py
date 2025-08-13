@@ -306,14 +306,19 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configurar CORS para permitir o frontend no Vercel
+# Configurar CORS (permitir origem do frontend no Render e locais; também suportar regex e env var)
+cors_origins_env = os.getenv(
+    "CORS_ORIGINS",
+    "https://dna-forca-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000",
+)
+cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+cors_origin_regex = os.getenv(
+    "CORS_ORIGIN_REGEX", r"https://.*\\.onrender\\.com$")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://dna-forca-frontend.onrender.com",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=cors_origins,
+    allow_origin_regex=cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -651,7 +656,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="DNA da Força RAG Server")
     parser.add_argument("--host", default="0.0.0.0",
                         help="Host para o servidor")
-    parser.add_argument("--port", type=int, default=8001,
+    # Permitir que o Render defina a PORT
+    default_port = int(os.getenv("PORT", "8001"))
+    parser.add_argument("--port", type=int, default=default_port,
                         help="Porta para o servidor")
     parser.add_argument("--reload", action="store_true",
                         help="Habilitar reload automático")
