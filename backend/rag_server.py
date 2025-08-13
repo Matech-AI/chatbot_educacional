@@ -254,10 +254,16 @@ async def lifespan(app: FastAPI):
 
     logger.info("🚀 Iniciando servidor RAG...")
 
-    # Configurar diretórios (relativos ao diretório deste arquivo, não ao CWD)
+    # Configurar diretórios (usar variáveis de ambiente se definidas; caso contrário, relativos ao diretório deste arquivo)
     base_dir = Path(__file__).parent
-    chroma_persist_dir = base_dir / "data" / "chromadb"
-    materials_dir = base_dir / "data" / "materials"
+    default_chroma = base_dir / "data" / "chromadb"
+    default_materials = base_dir / "data" / "materials"
+
+    env_chroma = os.getenv("CHROMA_PERSIST_DIR")
+    env_materials = os.getenv("MATERIALS_DIR")
+
+    chroma_persist_dir = Path(env_chroma) if env_chroma else default_chroma
+    materials_dir = Path(env_materials) if env_materials else default_materials
 
     # Criar diretórios se não existirem
     chroma_persist_dir.mkdir(parents=True, exist_ok=True)
