@@ -588,11 +588,27 @@ class RAGHandler:
                             question, k=self.config.retrieval_k
                         )
                         retrieved = [(doc, score) for doc, score in vs_results]
+                        # If no results (e.g., thresholding in some backends), fallback to plain similarity search
+                        if not retrieved:
+                            logger.debug(
+                                "No results from relevance_scores; falling back to similarity_search")
+                            docs = self.vector_store.similarity_search(
+                                question, k=max(self.config.retrieval_k, 8)
+                            )
+                            retrieved = [(doc, None) for doc in docs]
                     except Exception as e:
                         logger.debug(
                             f"similarity_search_with_relevance_scores unavailable, falling back: {e}")
-                        docs = self.retriever.invoke(question)
-                        retrieved = [(doc, None) for doc in docs]
+                        try:
+                            docs = self.vector_store.similarity_search(
+                                question, k=max(self.config.retrieval_k, 8)
+                            )
+                            retrieved = [(doc, None) for doc in docs]
+                        except Exception as e2:
+                            logger.debug(
+                                f"similarity_search failed: {e2}; using retriever.invoke")
+                            docs = self.retriever.invoke(question)
+                            retrieved = [(doc, None) for doc in docs]
                 else:
                     docs = self.retriever.invoke(question)
                     retrieved = [(doc, None) for doc in docs]

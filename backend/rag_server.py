@@ -8,7 +8,7 @@ import os
 import logging
 import asyncio
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
@@ -19,6 +19,10 @@ from dotenv import load_dotenv
 from uuid import uuid4
 import time
 import json
+import zipfile
+import tarfile
+import tempfile
+import aiohttp
 
 # Importar componentes RAG
 from rag_system.rag_handler import RAGHandler, RAGConfig, Source
@@ -550,6 +554,127 @@ async def reprocess_enhanced_materials(background_tasks: BackgroundTasks):
         )
     except Exception as e:
         logger.error(f"❌ Error starting enhanced reprocessing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========================================
+# MATERIALS MANAGEMENT (RAG-SIDE)
+# ========================================
+
+@app.get("/materials/list")
+async def list_rag_materials():
+    """Listar materiais que o servidor RAG enxerga (debug)."""
+    try:
+        root = Path(materials_dir)
+        root.mkdir(parents=True, exist_ok=True)
+        files = []
+        for p in root.rglob("*"):
+            if p.is_file():
+                files.append(str(p.relative_to(root)))
+        return {
+            "root": str(root),
+            "count": len(files),
+            "files": files[:200],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/materials/upload-archive")
+async def upload_materials_archive_rag(
+    archive: UploadFile = File(...),
+    destination_subdir: Optional[str] = Form(None),
+):
+    """Enviar um .zip ou .tar.gz com materiais diretamente para o RAG e extrair em MATERIALS_DIR."""
+    try:
+        root = Path(materials_dir)
+        root.mkdir(parents=True, exist_ok=True)
+
+        # Salvar temporariamente
+        tmp_dir = Path(tempfile.mkdtemp())
+        tmp_path = tmp_dir / archive.filename
+        content = await archive.read()
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Empty archive")
+        tmp_path.write_bytes(content)
+
+        # Destino final
+        dest_dir = root / destination_subdir if destination_subdir else root
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # Extrair
+        name_lower = archive.filename.lower()
+        extracted_files = []
+        if name_lower.endswith(".zip"):
+            with zipfile.ZipFile(tmp_path, 'r') as zf:
+                zf.extractall(dest_dir)
+                extracted_files = zf.namelist()
+        elif name_lower.endswith(".tar.gz") or name_lower.endswith(".tgz"):
+            with tarfile.open(tmp_path, 'r:gz') as tf:
+                tf.extractall(dest_dir)
+                extracted_files = [
+                    m.name for m in tf.getmembers() if m.isfile()]
+        else:
+            raise HTTPException(
+                status_code=400, detail="Unsupported archive format. Use .zip or .tar.gz")
+
+        # Limpeza
+        try:
+            tmp_path.unlink(missing_ok=True)  # type: ignore
+            tmp_dir.rmdir()
+        except Exception:
+            pass
+
+        return {
+            "status": "success",
+            "message": "Archive extracted to RAG materials",
+            "destination": str(dest_dir),
+            "files_count": len(extracted_files),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/materials/sync-from-api")
+async def sync_materials_from_api(api_base_url: str = Form(...), token: Optional[str] = Form(None)):
+    """Baixa materials.tar.gz do API e extrai em MATERIALS_DIR (server-to-server)."""
+    try:
+        root = Path(materials_dir)
+        root.mkdir(parents=True, exist_ok=True)
+
+        archive_url = f"{api_base_url.rstrip('/')}/materials/archive"
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(archive_url, headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    raise HTTPException(
+                        status_code=resp.status, detail=f"API error: {text}")
+                content = await resp.read()
+
+        # Salvar temporário e extrair
+        tmp_dir = Path(tempfile.mkdtemp())
+        tmp_path = tmp_dir / "materials.tar.gz"
+        tmp_path.write_bytes(content)
+
+        with tarfile.open(tmp_path, 'r:gz') as tf:
+            tf.extractall(root)
+
+        try:
+            tmp_path.unlink(missing_ok=True)  # type: ignore
+            tmp_dir.rmdir()
+        except Exception:
+            pass
+
+        return {"status": "success", "message": "Materials synced from API"}
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 

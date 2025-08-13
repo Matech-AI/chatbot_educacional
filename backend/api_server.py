@@ -7,6 +7,7 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 import zipfile
 import tarfile
+import io
 import os
 import json
 import sys
@@ -2461,6 +2462,33 @@ async def browse_materials(
         "files": files,
         "root": str(materials_root),
     }
+
+
+@app.get("/materials/archive")
+async def download_materials_archive(current_user: User = Depends(get_current_user)):
+    """Stream .tar.gz com todos os materiais (server-to-server sync)."""
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
+        materials_dir.mkdir(parents=True, exist_ok=True)
+
+        # Empacotar em memória (evita arquivo temporário no disco)
+        import tarfile, io
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            # Adiciona mantendo estrutura relativa
+            tar.add(str(materials_dir), arcname="materials")
+        buf.seek(0)
+
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(buf, media_type="application/gzip", headers={
+            "Content-Disposition": "attachment; filename=materials.tar.gz"
+        })
+    except Exception as e:
+        logger.error(f"❌ Error creating materials archive: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/materials/upload-archive")
