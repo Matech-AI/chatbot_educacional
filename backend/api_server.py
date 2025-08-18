@@ -1308,6 +1308,17 @@ async def get_drive_stats_detailed(current_user: User = Depends(get_current_user
             Path(__file__).resolve().parent / "data" / "materials")))
         folder_structure = {}
 
+        # Calcular materials_count
+        materials_count = 0
+        try:
+            if materials_dir.exists():
+                materials_count = len([f for f in materials_dir.rglob("*") if f.is_file()])
+        except Exception as e:
+            logger.error(f"❌ Error counting materials: {e}")
+
+        # Atualizar o total_files com o materials_count
+        basic_stats['total_files'] = materials_count
+
         if materials_dir.exists():
             # Process root folder
             root_files = [f for f in materials_dir.iterdir() if f.is_file()]

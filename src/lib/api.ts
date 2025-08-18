@@ -5,7 +5,7 @@ const API_BASE = process.env.NODE_ENV === 'production'
 
 const RAG_API_BASE = process.env.NODE_ENV === 'production'
   ? (import.meta.env.VITE_RAG_API_BASE_URL || 'https://dna-forca-rag-server.onrender.com')
-  : 'http://localhost:8001'; // RAG server runs on a different port
+  : '/rag-api'; // Use proxy in development
 
 // Get auth token from memory (localStorage not supported in Claude artifacts)
 const AUTH_TOKEN_KEY = 'token';
