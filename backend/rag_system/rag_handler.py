@@ -38,8 +38,8 @@ logger = logging.getLogger(__name__)
 class RAGConfig:
     """Unified configuration for the RAG handler."""
     # Text processing
-    chunk_size: int = 1500
-    chunk_overlap: int = 300
+    chunk_size: int = 2000
+    chunk_overlap: int = 400
 
     # Model configuration
     model_name: str = "gpt-4o-mini"
@@ -127,7 +127,11 @@ class RAGHandler:
 
         self.course_structure: Optional[pd.DataFrame] = None
 
+        # Aliases/sinônimos para melhorar achabilidade
+        self.aliases: Dict[str, List[str]] = {}
+
         self._initialize_components()
+        self._load_aliases()
         logger.info("✅ Unified RAG Handler initialized successfully")
 
     def _initialize_components(self):
@@ -246,12 +250,47 @@ class RAGHandler:
             self.retriever = self.vector_store.as_retriever(
                 search_type=self.config.retrieval_search_type,
                 search_kwargs={
-                    "k": self.config.retrieval_k,
-                    "fetch_k": self.config.retrieval_fetch_k,
+                    "k": max(8, self.config.retrieval_k),
+                    "fetch_k": max(25, self.config.retrieval_fetch_k),
                     "lambda_mult": self.config.retrieval_lambda_mult,
                 },
             )
             logger.info("✅ Retriever configured")
+
+    def _load_aliases(self):
+        """Load aliases from optional JSON file backend/data/aliases.json."""
+        try:
+            base_dir = Path(__file__).parent.parent
+            aliases_path = base_dir / "data" / "aliases.json"
+            if aliases_path.exists():
+                data = json.loads(aliases_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    self.aliases = {str(k).lower(): [str(
+                        x) for x in v] for k, v in data.items() if isinstance(v, list)}
+                    logger.info(f"✅ Loaded {len(self.aliases)} alias entries")
+        except Exception as e:
+            logger.debug(f"No aliases loaded: {e}")
+
+    def _augment_query_with_aliases(self, question: str) -> str:
+        """Append aliases/synonyms related to the question to improve recall."""
+        try:
+            ql = (question or "").lower()
+            extras: List[str] = []
+            # Hardcoded fallbacks for common terms if no file provided
+            default_aliases: Dict[str, List[str]] = {
+                "hipertrofia regionalizada": ["crescimento localizado", "hipertrofia seletiva", "CSA localizada", "CSA do quadríceps"],
+                "amplitude": ["amplitude de movimento", "ROM", "range of motion"],
+                "quadríceps": ["quadriceps", "quadríceps femoral"],
+            }
+            alias_map = getattr(self, "aliases", None) or default_aliases
+            for key, syns in alias_map.items():
+                if key in ql:
+                    extras.extend([s for s in syns if s not in extras])
+            if extras:
+                return question + "\n\n" + " ".join(extras)
+            return question
+        except Exception:
+            return question
 
     def load_course_structure(self, spreadsheet_path: str = "data/catalog.xlsx"):
         """Load and process the course structure from a spreadsheet.
@@ -512,7 +551,9 @@ class RAGHandler:
         try:
             filename_stem = Path(file_path).stem
             # Extract the code (e.g., M01A01) from the filename
-            video_code = filename_stem.split(' ')[0].strip().lower()
+            parts = filename_stem.replace('-', ' ').replace('.', ' ').split()
+            video_code = parts[0].strip().lower(
+            ) if parts else filename_stem.strip().lower()
 
             match = self.course_structure[self.course_structure['código_normalized'] == video_code]
 
@@ -579,13 +620,19 @@ class RAGHandler:
 
         try:
             logger.info(f"🔍 Retrieving documents for question: '{question}'")
+            # Expand query with aliases/synonyms
+            try:
+                question_aug = self._augment_query_with_aliases(
+                    question)  # type: ignore[attr-defined]
+            except Exception:
+                question_aug = question
             retrieved: List[Tuple[Document, Optional[float]]] = []
             try:
                 if self.vector_store:
                     try:
                         # Prefer retriever with relevance scores when available
                         vs_results = self.vector_store.similarity_search_with_relevance_scores(
-                            question, k=self.config.retrieval_k
+                            question_aug, k=self.config.retrieval_k
                         )
                         retrieved = [(doc, score) for doc, score in vs_results]
                         # If no results (e.g., thresholding in some backends), fallback to plain similarity search
@@ -593,7 +640,7 @@ class RAGHandler:
                             logger.debug(
                                 "No results from relevance_scores; falling back to similarity_search")
                             docs = self.vector_store.similarity_search(
-                                question, k=max(self.config.retrieval_k, 8)
+                                question_aug, k=max(self.config.retrieval_k, 8)
                             )
                             retrieved = [(doc, None) for doc in docs]
                     except Exception as e:
@@ -601,16 +648,16 @@ class RAGHandler:
                             f"similarity_search_with_relevance_scores unavailable, falling back: {e}")
                         try:
                             docs = self.vector_store.similarity_search(
-                                question, k=max(self.config.retrieval_k, 8)
+                                question_aug, k=max(self.config.retrieval_k, 8)
                             )
                             retrieved = [(doc, None) for doc in docs]
                         except Exception as e2:
                             logger.debug(
                                 f"similarity_search failed: {e2}; using retriever.invoke")
-                            docs = self.retriever.invoke(question)
+                            docs = self.retriever.invoke(question_aug)
                             retrieved = [(doc, None) for doc in docs]
                 else:
-                    docs = self.retriever.invoke(question)
+                    docs = self.retriever.invoke(question_aug)
                     retrieved = [(doc, None) for doc in docs]
             except Exception as e:
                 logger.error(f"Failed during retrieval: {e}")
@@ -687,11 +734,12 @@ class RAGHandler:
 
             ESTRUTURA DAS RESPOSTAS:
             1. **Resposta Principal**: Explicação clara e didática da pergunta: {question}
-            2. **Fontes e Evidências**: Referências dos materiais consultados no contexto, citando arquivo e página quando aplicável
+            2. **Fontes e Evidências (formato DNA)**: "Módulo X, Aula Y — 'Título' (PDF), p. N" (citar página apenas quando existir metadado real). Nunca exibir caminhos de arquivos nem códigos internos (como M13A52).
 
             IMPORTANTE:
-            - Sempre baseie suas respostas no conteúdo dos materiais de estudo fornecidos no {context}
-            - Se não houver informação suficiente nos materiais, indique claramente
+            - Padrão DNA-only: responda com base exclusiva nos materiais do DNA da Força presentes no {context}.
+            - Se não houver informação suficiente no acervo, indique claramente: "Não encontrei essa informação nos materiais do DNA da Força" e, se útil, acrescente bloco separado "Informação complementar (fora do acervo)".
+            - Nunca exibir paths/códigos internos.
             """
             prompt = ChatPromptTemplate.from_template(prompt_template)
 
@@ -708,16 +756,25 @@ class RAGHandler:
             logger.info(f"🤖 LLM Answer: {answer}")
 
             final_sources = [s.model_dump() for s in selected_sources]
-            # Append a deterministic sources section to ensure references are visible
+            # Formatar citações amigáveis sem paths nem códigos internos
             try:
                 sources_lines = []
                 for s in selected_sources:
-                    file_name = Path(s.source).name if s.source else s.title
-                    page_info = f", página {s.page}" if s.page is not None else ""
-                    sources_lines.append(f"- {file_name}{page_info}")
+                    module = s.model_dump().get("module") if hasattr(s, "model_dump") else None
+                    class_number = s.model_dump().get(
+                        "class_number") if hasattr(s, "model_dump") else None
+                    class_name = s.model_dump().get("class_name") if hasattr(s, "model_dump") else None
+                    title = class_name or (
+                        Path(s.source).stem if s.source else s.title)
+                    cite = []
+                    if module is not None and class_number is not None:
+                        cite.append(f"Módulo {module}, Aula {class_number}")
+                    cite.append(f"'{title}' (PDF)")
+                    page_info = f", p. {s.page}" if s.page is not None else ""
+                    sources_lines.append(" — ".join(cite) + page_info)
                 if sources_lines:
-                    answer = f"{answer}\n\nFontes:\n" + \
-                        "\n".join(sources_lines)
+                    answer = f"{answer}\n\nFontes (formato DNA):\n- " + \
+                        "\n- ".join(sources_lines)
             except Exception:
                 pass
             logger.info(
@@ -753,10 +810,19 @@ class RAGHandler:
                     vector_store_count = self.vector_store._collection.count()
                 except Exception:
                     vector_store_count = 0
+            
+            # Calcular materials_count
+            materials_count = 0
+            try:
+                if self.materials_dir.exists():
+                    materials_count = len([f for f in self.materials_dir.rglob("*") if f.is_file()])
+            except Exception as e:
+                logger.error(f"❌ Error counting materials: {e}")
 
             return {
                 "vector_store_ready": vector_store_count > 0,
                 "vector_store_count": vector_store_count,
+                "materials_count": materials_count,
                 "collection_name": collection_name or self.config.collection_name,
                 "persist_dir": self.persist_dir,
                 "config": self.config.__dict__,

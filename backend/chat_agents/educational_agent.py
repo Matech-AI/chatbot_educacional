@@ -215,12 +215,12 @@ class EducationalAgent:
 
         base_prompt += """
 
-        IMPORTANTE: 
-        - Sempre baseie suas respostas no conteúdo dos materiais de estudo quando disponível utilizando a tool
-          name: str = "search_educational_materials"
-        - Se não houver informação suficiente nos materiais, indique claramente
-        - Gere perguntas de acompanhamento que ajudem o aluno a explorar mais profundamente
-        - Mantenha o foco educacional e pedagógico em todas as interações
+        IMPORTANTE:
+        - Padrão DNA-only: responda com base exclusiva nos materiais do DNA da Força quando disponíveis.
+        - Se não houver cobertura suficiente no acervo, diga explicitamente: "Não encontrei essa informação nos materiais do DNA da Força" e, se útil, inclua um bloco separado "Informação complementar (fora do acervo)".
+        - Nunca exiba caminhos de arquivos ou códigos internos (ex.: M13A52). Para o aluno, utilize: "Módulo X, Aula Y — 'Título' (PDF)" e inclua a página apenas quando houver metadado real.
+        - Gere perguntas de acompanhamento que ajudem o aluno a explorar mais profundamente.
+        - Mantenha o foco educacional, precisão biomecânica e coerência com o curso.
         """
 
         return base_prompt
