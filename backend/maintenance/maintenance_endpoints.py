@@ -163,7 +163,7 @@ async def reset_chromadb(current_user: User = Depends(get_current_user)):
             logger.info("🔄 RAG handler reset")
         
         # Remove ChromaDB directory
-        chromadb_dir = Path(".chromadb")
+        chromadb_dir = Path("data/.chromadb")
         if chromadb_dir.exists():
             shutil.rmtree(chromadb_dir)
             logger.info("🗑️ Removed ChromaDB directory")
@@ -207,7 +207,7 @@ async def generate_system_report(current_user: User = Depends(get_current_user))
         
         # Directory analysis
         materials_dir = Path("data/materials")
-        chromadb_dir = Path(".chromadb")
+        chromadb_dir = Path("data/.chromadb")
         
         if materials_dir.exists():
             all_files = list(materials_dir.rglob("*"))
