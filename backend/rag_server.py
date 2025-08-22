@@ -278,6 +278,17 @@ async def lifespan(app: FastAPI):
     logger.info(f"   - ChromaDB: {chroma_persist_dir}")
     logger.info(f"   - Materiais: {materials_dir}")
 
+    # Verificar integridade do ChromaDB existente
+    chromadb_status = check_chromadb_integrity(chroma_persist_dir)
+    logger.info(f"🔍 Status do ChromaDB: {chromadb_status['reason']}")
+    
+    if chromadb_status['valid']:
+        logger.info(f"✅ ChromaDB válido encontrado com {chromadb_status['total_documents']} documentos")
+        for col_info in chromadb_status['collections']:
+            logger.info(f"   - Coleção '{col_info['name']}': {col_info['count']} documentos")
+    else:
+        logger.info(f"⚠️  ChromaDB não encontrado ou vazio: {chromadb_status['reason']}")
+
     # Tentar inicializar RAG handler automaticamente se OPENAI_API_KEY estiver disponível
     openai_api_key = os.getenv("OPENAI_API_KEY")
     if openai_api_key and openai_api_key != "your_openai_api_key_here":
@@ -288,6 +299,19 @@ async def lifespan(app: FastAPI):
                 persist_dir=str(chroma_persist_dir),
                 materials_dir=str(materials_dir)
             )
+            
+            # Verificar se o RAG handler carregou dados existentes
+            if rag_handler.vector_store:
+                try:
+                    current_count = rag_handler.vector_store._collection.count()
+                    if current_count > 0:
+                        logger.info(f"✅ RAG handler carregou automaticamente {current_count} documentos do ChromaDB existente")
+                        logger.info(f"📚 Coleção ativa: '{rag_handler.config.collection_name}'")
+                    else:
+                        logger.info("📝 RAG handler inicializado com ChromaDB vazio - pronto para receber novos materiais")
+                except Exception as e:
+                    logger.warning(f"⚠️  Não foi possível verificar contagem de documentos: {e}")
+            
             logger.info("✅ RAG handler inicializado automaticamente")
         except Exception as e:
             logger.warning(
@@ -793,6 +817,224 @@ async def chat(question: Question):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/chromadb/upload")
+async def upload_chromadb_archive(
+    archive: UploadFile = File(...),
+    replace_existing: bool = Form(True)
+):
+    """Upload e substituição do banco ChromaDB treinado."""
+    global rag_handler
+    
+    try:
+        # Verificar se o arquivo é um .tar.gz válido
+        if not archive.filename.lower().endswith(('.tar.gz', '.tgz')):
+            raise HTTPException(
+                status_code=400, 
+                detail="Arquivo deve ser .tar.gz contendo o diretório .chromadb"
+            )
+        
+        # Ler o conteúdo do arquivo
+        content = await archive.read()
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Arquivo vazio")
+        
+        # Backup do ChromaDB atual se existir
+        chroma_path = Path(chroma_persist_dir)
+        backup_path = None
+        
+        if chroma_path.exists() and replace_existing:
+            backup_path = chroma_path.parent / f".chromadb_backup_{int(time.time())}"
+            logger.info(f"📦 Fazendo backup do ChromaDB atual para {backup_path}")
+            import shutil
+            shutil.move(str(chroma_path), str(backup_path))
+        
+        # Criar diretório temporário para extração
+        tmp_dir = Path(tempfile.mkdtemp())
+        tmp_archive = tmp_dir / archive.filename
+        tmp_archive.write_bytes(content)
+        
+        # Extrair o arquivo
+        logger.info(f"📂 Extraindo ChromaDB para {chroma_path}")
+        chroma_path.mkdir(parents=True, exist_ok=True)
+        
+        with tarfile.open(tmp_archive, 'r:gz') as tf:
+            tf.extractall(chroma_path)
+        
+        # Limpeza do arquivo temporário
+        try:
+            tmp_archive.unlink(missing_ok=True)
+            tmp_dir.rmdir()
+        except Exception:
+            pass
+        
+        # Verificar integridade do ChromaDB carregado
+        integrity_check = check_chromadb_integrity(chroma_path)
+        
+        if not integrity_check["is_valid"]:
+            # Restaurar backup se a verificação falhar
+            if backup_path and backup_path.exists():
+                logger.error(f"❌ ChromaDB inválido, restaurando backup")
+                if chroma_path.exists():
+                    import shutil
+                    shutil.rmtree(chroma_path)
+                shutil.move(str(backup_path), str(chroma_path))
+            
+            raise HTTPException(
+                status_code=400, 
+                detail=f"ChromaDB inválido: {integrity_check['reason']}"
+            )
+        
+        # Reinicializar o RAG handler se estiver ativo
+        if rag_handler:
+            logger.info("🔄 Reinicializando RAG handler com novo ChromaDB")
+            try:
+                old_api_key = rag_handler.config.api_key
+                rag_handler = RAGHandler(
+                    api_key=old_api_key,
+                    persist_dir=str(chroma_path)
+                )
+                logger.info("✅ RAG handler reinicializado com sucesso")
+            except Exception as e:
+                logger.error(f"❌ Erro ao reinicializar RAG handler: {e}")
+        
+        # Remover backup se tudo deu certo
+        if backup_path and backup_path.exists():
+            import shutil
+            shutil.rmtree(backup_path)
+            logger.info("🗑️ Backup removido após sucesso")
+        
+        return {
+            "status": "success",
+            "message": "ChromaDB carregado com sucesso",
+            "collections": integrity_check.get("collections", []),
+            "total_documents": sum(c.get("count", 0) for c in integrity_check.get("collections", [])),
+            "rag_reinitialized": rag_handler is not None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro no upload do ChromaDB: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/chromadb/status")
+async def get_chromadb_status():
+    """Verificar status e integridade do ChromaDB atual."""
+    try:
+        chroma_path = Path(chroma_persist_dir)
+        
+        if not chroma_path.exists():
+            return {
+                "status": "not_found",
+                "message": "ChromaDB não encontrado",
+                "path": str(chroma_path)
+            }
+        
+        integrity_check = check_chromadb_integrity(chroma_path)
+        
+        return {
+            "status": "found" if integrity_check["is_valid"] else "invalid",
+            "path": str(chroma_path),
+            "is_valid": integrity_check["is_valid"],
+            "reason": integrity_check.get("reason"),
+            "collections": integrity_check.get("collections", []),
+            "total_documents": sum(c.get("count", 0) for c in integrity_check.get("collections", [])),
+            "rag_handler_active": rag_handler is not None
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao verificar status do ChromaDB: {e}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+@app.post("/initialize")
+async def initialize_rag(api_key: str):
+    """Inicializar RAG handler"""
+    global rag_handler
+
+    try:
+        logger.info("🔧 Inicializando RAG handler...")
+
+        rag_handler = RAGHandler(
+            api_key=api_key,
+            persist_dir=str(chroma_persist_dir)
+        )
+
+        logger.info("✅ RAG handler inicializado com sucesso")
+        return {"success": True, "message": "RAG handler inicializado"}
+
+    except Exception as e:
+        logger.error(f"❌ Erro ao inicializar RAG: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro na inicialização: {str(e)}")
+
+
+@app.post("/reset")
+async def reset_rag():
+    """Resetar RAG handler"""
+    global rag_handler
+
+    try:
+        if rag_handler:
+            rag_handler.reset()
+            logger.info("🔄 RAG handler resetado")
+
+        return {"success": True, "message": "RAG handler resetado"}
+
+    except Exception as e:
+        logger.error(f"❌ Erro ao resetar RAG: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro no reset: {str(e)}")
+
+
+@app.get("/stats")
+async def get_rag_stats():
+    """Obter estatísticas do RAG"""
+    global rag_handler
+
+    if not rag_handler:
+        raise HTTPException(
+            status_code=503, detail="RAG handler não inicializado")
+
+    try:
+        stats = rag_handler.get_system_stats()
+        return stats
+
+    except Exception as e:
+        logger.error(f"❌ Erro ao obter estatísticas: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao obter estatísticas: {str(e)}")
+
+
+# ========================================
+# CHAT ENDPOINTS
+# ========================================
+
+@app.post("/chat", response_model=Response)
+async def chat(question: Question):
+    """Simplified chat endpoint"""
+    logger.info(f"💬 Chat request: {question.content[:50]}...")
+
+    if not rag_handler:
+        simulated_answer = f"Sistema não inicializado. Esta é uma resposta simulada para: '{question.content}'. Configure uma chave OpenAI válida para funcionalidades completas."
+        return Response(
+            answer=simulated_answer,
+            sources=[{"title": "Sistema de Teste",
+                      "source": "rag_server.py", "page": 1, "relevance": 0.9}],
+            response_time=0.1
+        )
+
+    try:
+        response = rag_handler.generate_response(question.content)
+        return response
+    except Exception as e:
+        logger.error(f"❌ Chat error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -816,3 +1058,49 @@ if __name__ == "__main__":
         reload=args.reload,
         log_level="info"
     )
+
+
+def check_chromadb_integrity(persist_dir: Path) -> Dict[str, Any]:
+    """Verificar integridade e conteúdo do ChromaDB"""
+    try:
+        if not persist_dir.exists():
+            return {"valid": False, "reason": "Directory does not exist", "collections": []}
+        
+        # Verificar se há arquivos do ChromaDB
+        chromadb_files = list(persist_dir.rglob("*.sqlite*")) + list(persist_dir.rglob("chroma.sqlite3"))
+        if not chromadb_files:
+            return {"valid": False, "reason": "No ChromaDB files found", "collections": []}
+        
+        # Tentar conectar e listar coleções
+        client = chromadb.PersistentClient(path=str(persist_dir))
+        collections = client.list_collections()
+        
+        collections_info = []
+        total_documents = 0
+        
+        for collection in collections:
+            try:
+                count = collection.count()
+                collections_info.append({
+                    "name": collection.name,
+                    "count": count,
+                    "metadata": getattr(collection, 'metadata', {})
+                })
+                total_documents += count
+            except Exception as e:
+                logger.warning(f"Erro ao verificar coleção {collection.name}: {e}")
+                collections_info.append({
+                    "name": collection.name,
+                    "count": 0,
+                    "error": str(e)
+                })
+        
+        return {
+            "valid": total_documents > 0,
+            "reason": f"Found {len(collections)} collections with {total_documents} total documents",
+            "collections": collections_info,
+            "total_documents": total_documents
+        }
+        
+    except Exception as e:
+        return {"valid": False, "reason": f"Error checking ChromaDB: {str(e)}", "collections": []}

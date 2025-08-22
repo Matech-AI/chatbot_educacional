@@ -506,3 +506,37 @@ export const api = {
     drive: () => apiRequestJson('/debug/drive'),
   },
 };
+
+// Adicionar função para requisições ao RAG server
+export const ragApiRequest = async (
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<Response> => {
+  const ragBaseUrl = import.meta.env.VITE_RAG_API_BASE_URL;
+  
+  if (!ragBaseUrl) {
+    throw new Error("RAG API base URL not configured");
+  }
+
+  const url = `${ragBaseUrl}${endpoint}`;
+  
+  const defaultHeaders: HeadersInit = {
+    "Content-Type": "application/json",
+  };
+
+  // Adicionar token de autenticação se disponível
+  const token = localStorage.getItem("token");
+  if (token) {
+    defaultHeaders.Authorization = `Bearer ${token}`;
+  }
+
+  const config: RequestInit = {
+    ...options,
+    headers: {
+      ...defaultHeaders,
+      ...options.headers,
+    },
+  };
+
+  return fetch(url, config);
+};

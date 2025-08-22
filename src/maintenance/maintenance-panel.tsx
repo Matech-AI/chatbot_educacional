@@ -18,6 +18,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { apiRequestJson } from "../lib/api";
 import { EnhancedReprocessingPanel } from "./enhanced-reprocessing-panel";
+import { ChromaDBUpload } from "../components/materials/chromadb-upload";
 
 interface MaintenancePanelProps {
   onRefresh?: () => void;
@@ -443,6 +444,14 @@ export const MaintenancePanel: React.FC<MaintenancePanelProps> = ({
 
       {/* Enhanced Reprocessing Panel */}
       <EnhancedReprocessingPanel onSuccess={generateSystemReport} />
+
+      {/* ChromaDB Upload Section */}
+      <ChromaDBUpload
+        onUploadSuccess={() => {
+          generateSystemReport();
+          onRefresh?.();
+        }}
+      />
 
       {/* Detailed Report */}
       {systemReport && (
