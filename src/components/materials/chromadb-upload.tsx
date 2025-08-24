@@ -10,6 +10,7 @@ import {
   FileText,
   Info,
   X,
+  Download,
 } from "lucide-react";
 import { formatFileSize } from "../../lib/utils";
 import { ragApiRequest } from "@/lib/api";
@@ -37,6 +38,8 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [status, setStatus] = useState<ChromaDBStatus | null>(null);
   const [message, setMessage] = useState<{
@@ -87,12 +90,19 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
     setMessage(null);
 
     try {
+      // Escolher endpoint baseado no tipo de arquivo
+      const isZipFile = file.name.toLowerCase().endsWith(".zip");
+      const endpoint = isZipFile
+        ? "/chromadb/upload-folder"
+        : "/chromadb/upload";
+
       const formData = new FormData();
-      formData.append("archive", file);
+      const fieldName = isZipFile ? "folder" : "archive";
+      formData.append(fieldName, file);
       formData.append("replace_existing", "true");
 
       const response = await fetch(
-        `${import.meta.env.VITE_RAG_API_BASE_URL}/chromadb/upload`,
+        `${import.meta.env.VITE_RAG_API_BASE_URL}${endpoint}`,
         {
           method: "POST",
           body: formData,
@@ -125,6 +135,104 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
     }
   };
 
+  // Download do ChromaDB
+  const handleDownloadChromaDB = async () => {
+    setIsDownloading(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_RAG_API_BASE_URL}/chromadb/download`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        // Criar blob e fazer download
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `chromadb_complete_${Date.now()}.tar.gz`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        setMessage({
+          type: "success",
+          text: "Download do ChromaDB iniciado com sucesso!",
+        });
+      } else {
+        const error = await response.json();
+        setMessage({
+          type: "error",
+          text: error.detail || "Erro ao fazer download do ChromaDB",
+        });
+      }
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: "Erro de conexão durante o download",
+      });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  // Compactar pasta .chromadb em .tar.gz
+  const handleCompressChromaDB = async () => {
+    setIsCompressing(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_RAG_API_BASE_URL}/chromadb/compress`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        // Criar blob e fazer download
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `chromadb_compressed_${Date.now()}.tar.gz`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        setMessage({
+          type: "success",
+          text: "ChromaDB compactado e download iniciado com sucesso!",
+        });
+      } else {
+        const error = await response.json();
+        setMessage({
+          type: "error",
+          text: error.detail || "Erro ao compactar ChromaDB",
+        });
+      }
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: "Erro de conexão durante a compactação",
+      });
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
   // Handlers para drag & drop
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -150,11 +258,12 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
   const handleFileSelect = (selectedFile: File) => {
     if (
       !selectedFile.name.toLowerCase().endsWith(".tar.gz") &&
-      !selectedFile.name.toLowerCase().endsWith(".tgz")
+      !selectedFile.name.toLowerCase().endsWith(".tgz") &&
+      !selectedFile.name.toLowerCase().endsWith(".zip")
     ) {
       setMessage({
         type: "error",
-        text: "Arquivo deve ser .tar.gz contendo o diretório .chromadb",
+        text: "Arquivo deve ser .tar.gz ou .zip contendo o diretório .chromadb",
       });
       return;
     }
@@ -180,19 +289,53 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
           </p>
         </div>
 
-        <Button
-          onClick={checkChromaDBStatus}
-          disabled={isCheckingStatus}
-          variant="outline"
-          size="sm"
-          className="flex items-center gap-2"
-        >
-          <RefreshCw
-            size={16}
-            className={isCheckingStatus ? "animate-spin" : ""}
-          />
-          Verificar Status
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={checkChromaDBStatus}
+            disabled={isCheckingStatus}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2"
+          >
+            <RefreshCw
+              size={16}
+              className={isCheckingStatus ? "animate-spin" : ""}
+            />
+            Verificar Status
+          </Button>
+
+          {status?.is_valid && (
+            <>
+              <Button
+                onClick={handleCompressChromaDB}
+                disabled={isCompressing}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+              >
+                <RefreshCw
+                  size={16}
+                  className={isCompressing ? "animate-spin" : ""}
+                />
+                {isCompressing ? "Compactando..." : "Compactar .chromadb"}
+              </Button>
+
+              <Button
+                onClick={handleDownloadChromaDB}
+                disabled={isDownloading}
+                variant="default"
+                size="sm"
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
+              >
+                <Download
+                  size={16}
+                  className={isDownloading ? "animate-spin" : ""}
+                />
+                {isDownloading ? "Gerando..." : "Download ChromaDB"}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Status Atual */}
@@ -257,7 +400,7 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
             e.target.files?.[0] && handleFileSelect(e.target.files[0])
           }
           className="hidden"
-          accept=".tar.gz,.tgz"
+          accept=".tar.gz,.tgz,.zip"
         />
 
         <AnimatePresence mode="wait">
@@ -312,7 +455,8 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
                 Selecione o arquivo ChromaDB
               </p>
               <p className="text-sm text-gray-500 mb-4">
-                Arraste e solte ou clique para selecionar um arquivo .tar.gz
+                Arraste e solte ou clique para selecionar um arquivo .tar.gz ou
+                .zip
               </p>
               <Button variant="outline" className="flex items-center gap-2">
                 <Upload size={16} />
@@ -330,7 +474,18 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
           Instruções de Uso
         </h4>
         <div className="text-sm text-blue-800 space-y-1">
-          <p>• O arquivo deve ser um .tar.gz contendo o diretório .chromadb</p>
+          <p>
+            • <strong>Upload:</strong> Aceita arquivos .tar.gz ou .zip contendo
+            o diretório .chromadb
+          </p>
+          <p>
+            • <strong>Compactar:</strong> Converte pasta .chromadb ativa em
+            arquivo .tar.gz para download
+          </p>
+          <p>
+            • <strong>Download:</strong> Baixa o ChromaDB completo em formato
+            .tar.gz
+          </p>
           <p>• O sistema fará backup automático do ChromaDB atual</p>
           <p>• A integridade será verificada antes da substituição</p>
           <p>• O RAG handler será reinicializado automaticamente</p>

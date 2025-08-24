@@ -106,17 +106,27 @@ class EducationalAgent:
         self._build_graph()
 
     def _initialize_rag(self):
-        """Initialize RAG handler with enhanced retrieval"""
+        """Initialize RAG handler with enhanced retrieval and NVIDIA support"""
+        # Tentar NVIDIA primeiro, depois OpenAI, depois Gemini
+        nvidia_api_key = os.getenv("NVIDIA_API_KEY")
         openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key:
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+
+        if not any([nvidia_api_key, openai_api_key, gemini_api_key]):
             logger.warning(
-                "OPENAI_API_KEY not found. RAG capabilities disabled.")
+                "Nenhuma API key encontrada. RAG capabilities disabled.")
             return
 
         try:
-            self.rag_handler = RAGHandler(api_key=openai_api_key)
+            # Usar RAG handler unificado que suporta NVIDIA
+            self.rag_handler = RAGHandler(
+                api_key=openai_api_key,  # Parâmetro correto
+                nvidia_api_key=nvidia_api_key,
+                gemini_api_key=gemini_api_key
+            )
             self.rag_tool = RAGQueryTool(rag_handler=self.rag_handler)
-            logger.info("✅ RAG Query Tool initialized successfully")
+            logger.info(
+                "✅ RAG Query Tool initialized successfully with NVIDIA support")
         except Exception as e:
             logger.error(f"Error initializing RAG: {e}")
 
@@ -136,14 +146,49 @@ class EducationalAgent:
             logger.error(f"Error loading course catalog: {e}")
 
     def _initialize_model(self):
-        """Initialize the AI model with educational focus"""
-        # Try Gemini first, fallback to OpenAI
+        """Initialize the AI model with educational focus and NVIDIA support"""
+        # Usar o modelo do RAG handler se disponível, senão fallback para modelos individuais
+        if hasattr(self, 'rag_handler') and self.rag_handler and hasattr(self.rag_handler, 'llm'):
+            self.model = self.rag_handler.llm
+            self.model_provider = getattr(
+                self.rag_handler, 'current_llm_provider', 'Unknown')
+            self.model_name = getattr(
+                self.rag_handler, 'current_llm_model', 'Unknown')
+            logger.info(
+                f"✅ AI Model from RAG Handler: {self.model_provider} ({self.model_name})")
+            return
+
+        # Fallback para inicialização individual dos modelos
         gemini_api_key = os.getenv("GEMINI_API_KEY")
         openai_api_key = os.getenv("OPENAI_API_KEY")
-        
+        nvidia_api_key = os.getenv("NVIDIA_API_KEY")
+
         self.model_provider = None
         self.model_name = None
 
+        # Tentar NVIDIA primeiro
+        if nvidia_api_key:
+            try:
+                from rag_system.rag_handler import NVIDIAChatOpenAI
+                model_name = "openai/gpt-oss-120b"
+                self.model = NVIDIAChatOpenAI(
+                    nvidia_api_key=nvidia_api_key,
+                    model=model_name,
+                    base_url="https://integrate.api.nvidia.com/v1",
+                    temperature=0.3,
+                    retry_attempts=3,
+                    retry_delay=2.0
+                )
+                self.model_provider = "NVIDIA"
+                self.model_name = model_name
+                logger.info(
+                    f"✅ AI Model initialized: {self.model_provider} ({self.model_name})")
+                return
+            except Exception as e:
+                logger.warning(f"NVIDIA initialization failed: {e}")
+                self.model = None
+
+        # Tentar Gemini
         if gemini_api_key:
             try:
                 model_name = "gemini-2.5-flash"
@@ -154,12 +199,15 @@ class EducationalAgent:
                 )
                 self.model_provider = "Gemini"
                 self.model_name = model_name
-                logger.info(f"✅ AI Model initialized: {self.model_provider} ({self.model_name})")
+                logger.info(
+                    f"✅ AI Model initialized: {self.model_provider} ({self.model_name})")
+                return
             except Exception as e:
                 logger.warning(f"Gemini initialization failed: {e}")
                 self.model = None
 
-        if not self.model and openai_api_key:
+        # Tentar OpenAI como último recurso
+        if openai_api_key:
             try:
                 model_name = "gpt-4o-mini"
                 self.model = ChatOpenAI(
@@ -169,7 +217,9 @@ class EducationalAgent:
                 )
                 self.model_provider = "OpenAI"
                 self.model_name = model_name
-                logger.info(f"✅ AI Model initialized: {self.model_provider} ({self.model_name})")
+                logger.info(
+                    f"✅ AI Model initialized: {self.model_provider} ({self.model_name})")
+                return
             except Exception as e:
                 logger.error(f"OpenAI initialization failed: {e}")
 
@@ -269,9 +319,10 @@ class EducationalAgent:
             ))
 
             response = model_with_tools.invoke([insistence] + messages)
-            
+
             # Log which model is responding
-            logger.info(f"🤖 Generating response with: {self.model_provider} ({self.model_name})")
+            logger.info(
+                f"🤖 Generating response with: {self.model_provider} ({self.model_name})")
 
             return {"messages": [response]}
 
@@ -461,9 +512,10 @@ async def educational_chat(
     try:
         # Get educational agent
         agent = get_educational_agent()
-        
+
         # Log current model being used
-        logger.info(f"📊 Using AI Model: {agent.model_provider} ({agent.model_name})")
+        logger.info(
+            f"📊 Using AI Model: {agent.model_provider} ({agent.model_name})")
 
         # Prepare learning preferences
         learning_preferences = {

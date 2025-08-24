@@ -26,10 +26,19 @@ services:
     dockerfilePath: ./backend/Dockerfile.rag
     dockerContext: ./backend
     envVars:
+      # 🚀 NOVAS FUNCIONALIDADES - NVIDIA + Open Source
+      - key: NVIDIA_API_KEY
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      # 🧠 EMBEDDINGS OPEN SOURCE
+      - key: PREFER_OPEN_SOURCE_EMBEDDINGS
+        value: "true"
+      - key: OPEN_SOURCE_EMBEDDING_MODEL
+        value: "intfloat/multilingual-e5-large"
+      # 🗄️ CONFIGURAÇÕES DO SISTEMA
       - key: CHROMA_PERSIST_DIR
         value: /app/data/.chromadb
       - key: MATERIALS_DIR
@@ -61,12 +70,21 @@ services:
     dockerfilePath: ./backend/Dockerfile.api
     dockerContext: ./backend
     envVars:
+      # 🚀 NOVAS FUNCIONALIDADES - NVIDIA + Open Source
+      - key: NVIDIA_API_KEY
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: GOOGLE_DRIVE_API_KEY
         sync: false
+      # 🧠 EMBEDDINGS OPEN SOURCE
+      - key: PREFER_OPEN_SOURCE_EMBEDDINGS
+        value: "true"
+      - key: OPEN_SOURCE_EMBEDDING_MODEL
+        value: "intfloat/multilingual-e5-large"
+      # 🔗 CONFIGURAÇÕES DE CONEXÃO
       - key: RAG_SERVER_URL
         value: https://dna-forca-rag-server.onrender.com
       - key: DATABASE_URL
