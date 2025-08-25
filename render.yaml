@@ -26,14 +26,38 @@ services:
     dockerfilePath: ./backend/Dockerfile.rag
     dockerContext: ./backend
     envVars:
-      # 🚀 NOVAS FUNCIONALIDADES - NVIDIA + Open Source
+      # 🚀 NOVAS FUNCIONALIDADES - NVIDIA + OpenAI + Gemini
       - key: NVIDIA_API_KEY
         sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      # 🧠 EMBEDDINGS OPEN SOURCE
+      # 🎯 CONFIGURAÇÕES DO RAG HANDLER
+      - key: PREFER_NVIDIA
+        value: "true"
+      - key: PREFER_OPENAI
+        value: "true"
+      - key: PREFER_GEMINI
+        value: "true"
+      - key: NVIDIA_RETRY_ATTEMPTS
+        value: "2"
+      - key: NVIDIA_RETRY_DELAY
+        value: "0.5"
+      # 🤖 MODELOS ESPECÍFICOS
+      - key: NVIDIA_MODEL_NAME
+        value: "openai/gpt-oss-120b"
+      - key: OPENAI_MODEL_NAME
+        value: "gpt-4o-mini"
+      - key: GEMINI_MODEL_NAME
+        value: "gemini-2.5-flash"
+      # 🧠 EMBEDDINGS
+      - key: NVIDIA_EMBEDDING_MODEL
+        value: "nvidia-embed-qa-v2"
+      - key: OPENAI_EMBEDDING_MODEL
+        value: "text-embedding-3-small"
+      - key: GEMINI_EMBEDDING_MODEL
+        value: "embedding-001"
       - key: PREFER_OPEN_SOURCE_EMBEDDINGS
         value: "true"
       - key: OPEN_SOURCE_EMBEDDING_MODEL
@@ -70,7 +94,7 @@ services:
     dockerfilePath: ./backend/Dockerfile.api
     dockerContext: ./backend
     envVars:
-      # 🚀 NOVAS FUNCIONALIDADES - NVIDIA + Open Source
+      # 🚀 NOVAS FUNCIONALIDADES - NVIDIA + OpenAI + Gemini
       - key: NVIDIA_API_KEY
         sync: false
       - key: OPENAI_API_KEY
@@ -79,7 +103,31 @@ services:
         sync: false
       - key: GOOGLE_DRIVE_API_KEY
         sync: false
-      # 🧠 EMBEDDINGS OPEN SOURCE
+      # 🎯 CONFIGURAÇÕES DO RAG HANDLER
+      - key: PREFER_NVIDIA
+        value: "true"
+      - key: PREFER_OPENAI
+        value: "true"
+      - key: PREFER_GEMINI
+        value: "true"
+      - key: NVIDIA_RETRY_ATTEMPTS
+        value: "2"
+      - key: NVIDIA_RETRY_DELAY
+        value: "0.5"
+      # 🤖 MODELOS ESPECÍFICOS
+      - key: NVIDIA_MODEL_NAME
+        value: "openai/gpt-oss-120b"
+      - key: OPENAI_MODEL_NAME
+        value: "gpt-4o-mini"
+      - key: GEMINI_MODEL_NAME
+        value: "gemini-2.5-flash"
+      # 🧠 EMBEDDINGS
+      - key: NVIDIA_EMBEDDING_MODEL
+        value: "nvidia-embed-qa-v2"
+      - key: OPENAI_EMBEDDING_MODEL
+        value: "text-embedding-3-small"
+      - key: GEMINI_EMBEDDING_MODEL
+        value: "embedding-001"
       - key: PREFER_OPEN_SOURCE_EMBEDDINGS
         value: "true"
       - key: OPEN_SOURCE_EMBEDDING_MODEL
