@@ -43,6 +43,7 @@ interface EducationalMessage {
   video_suggestions?: any[];
   educational_metadata?: any;
   isLoading?: boolean;
+  isHidden?: boolean; // ✅ NOVA PROPRIEDADE: para mensagens invisíveis na UI
 }
 
 interface LearningPreferences {
@@ -167,16 +168,23 @@ const EnhancedChatPage: React.FC = () => {
       addMessage(activeSessionId, content, "user");
     }
 
-    // Add loading message
+    // ✅ ADICIONAR MENSAGEM DE CARREGAMENTO SIMPLES na UI principal
     const loadingMessage: EducationalMessage = {
-      id: `assistant_${Date.now()}`,
-      content: "Analisando sua pergunta e buscando as melhores fontes...",
+      id: `loading_${Date.now()}`,
+      content: "⏳ Processando sua pergunta...",
       role: "assistant",
       timestamp: new Date(),
-      isLoading: true,
+      isLoading: true, // ✅ É uma mensagem de loading (true)
+      isHidden: true, // ✅ VISÍVEL na UI
     };
 
+    // ✅ MOSTRAR AMBAS as mensagens na UI
     setEducationalMessages((prev) => [...prev, loadingMessage]);
+
+    // ✅ ADICIONAR mensagem detalhada ao store para exportação
+    if (activeSessionId) {
+      addMessage(activeSessionId, loadingMessage.content, "assistant");
+    }
 
     try {
       const response = await api.educationalChat({
@@ -188,24 +196,23 @@ const EnhancedChatPage: React.FC = () => {
         learning_objectives: preferences?.learning_objectives || [],
       });
 
-      // Replace loading message with actual response
-      setEducationalMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === loadingMessage.id
-            ? {
-                ...msg,
-                content: response.response,
-                sources: response.sources,
-                follow_up_questions: response.follow_up_questions,
-                learning_suggestions: response.learning_suggestions,
-                related_topics: response.related_topics,
-                video_suggestions: response.video_suggestions,
-                educational_metadata: response.educational_metadata,
-                isLoading: false,
-              }
-            : msg
-        )
-      );
+      // ✅ REMOVER AMBAS as mensagens de loading e adicionar resposta real
+      setEducationalMessages((prev) => [
+        ...prev.filter((msg) => msg.id !== loadingMessage.id), // Remove ambas as mensagens
+        {
+          id: `assistant_${Date.now()}`,
+          content: response.response,
+          role: "assistant",
+          timestamp: new Date(),
+          sources: response.sources,
+          follow_up_questions: response.follow_up_questions,
+          learning_suggestions: response.learning_suggestions,
+          related_topics: response.related_topics,
+          video_suggestions: response.video_suggestions,
+          educational_metadata: response.educational_metadata,
+          isLoading: false,
+        },
+      ]);
 
       // Adicionar resposta do assistente ao store persistente
       if (activeSessionId) {
@@ -227,18 +234,31 @@ const EnhancedChatPage: React.FC = () => {
     } catch (error) {
       console.error("Error in educational chat:", error);
 
-      // Replace loading message with error
-      setEducationalMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === loadingMessage.id
-            ? {
-                ...msg,
-                content: "Desculpe, ocorreu um erro. Pode tentar novamente?",
-                isLoading: false,
-              }
-            : msg
-        )
-      );
+      // ✅ REMOVER AMBAS as mensagens de loading e adicionar mensagem de erro
+      setEducationalMessages((prev) => [
+        ...prev.filter((msg) => msg.id !== loadingMessage.id), // Remove ambas as mensagens
+        {
+          id: `assistant_${Date.now()}`,
+          content: `❌ **ERRO AO PROCESSAR PERGUNTA**
+
+Desculpe, ocorreu um erro ao processar sua pergunta. 
+
+**Possíveis causas:**
+- Problemas temporários de conexão
+- Sistema sobrecarregado
+- Erro interno do servidor
+
+**Sugestões:**
+1. Tente novamente em alguns minutos
+2. Verifique sua conexão com a internet
+3. Se o problema persistir, entre em contato com o suporte
+
+**Tempo estimado para resolução:** 5-15 minutos`,
+          role: "assistant",
+          timestamp: new Date(),
+          isLoading: false,
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -498,16 +518,18 @@ const EnhancedChatPage: React.FC = () => {
                 </div>
               </motion.div>
             ) : (
-              educationalMessages.map((message) => (
-                <EducationalMessageBubble
-                  key={message.id}
-                  message={message}
-                  onFollowUpClick={handleFollowUpClick}
-                  onTopicExplore={handleTopicExplore}
-                  onSourceClick={handleSourceClick}
-                  onVideoPlay={handleVideoPlay}
-                />
-              ))
+              educationalMessages
+                .filter((message) => !message.isHidden) // ✅ FILTRAR mensagens ocultas
+                .map((message) => (
+                  <EducationalMessageBubble
+                    key={message.id}
+                    message={message}
+                    onFollowUpClick={handleFollowUpClick}
+                    onTopicExplore={handleTopicExplore}
+                    onSourceClick={handleSourceClick}
+                    onVideoPlay={handleVideoPlay}
+                  />
+                ))
             )}
           </AnimatePresence>
           <div ref={messagesEndRef} />

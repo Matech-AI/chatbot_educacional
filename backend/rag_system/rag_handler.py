@@ -1,3 +1,16 @@
+from chromadb.config import Settings
+import chromadb
+from langchain.load import dumps, loads
+from langchain_core.output_parsers import StrOutputParser
+from langchain.prompts import ChatPromptTemplate
+from langchain_core.documents import Document
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_community.document_loaders import (
+    PyPDFLoader,
+    DirectoryLoader,
+)
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_chroma import Chroma
 import os
 import logging
 import openai
@@ -5,12 +18,16 @@ import time
 import hashlib
 import json
 import random
+import re
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any, Type
 from dataclasses import dataclass, field
 from pydantic import BaseModel, SecretStr, Field
 from langchain_core.tools import BaseTool
 import pandas as pd
+
+# Configure logging FIRST
+logger = logging.getLogger(__name__)
 
 # Importar sistema de guardrails
 try:
@@ -22,23 +39,9 @@ except ImportError:
         GUARDRAILS_AVAILABLE = True
     except ImportError:
         GUARDRAILS_AVAILABLE = False
-        logger = logging.getLogger(__name__)
         logger.warning(
             "⚠️ Sistema de guardrails não disponível. Instale o módulo guardrails.py")
 
-from langchain_chroma import Chroma
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import (
-    PyPDFLoader,
-    DirectoryLoader,
-)
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_core.documents import Document
-from langchain.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain.load import dumps, loads
-import chromadb
-from chromadb.config import Settings
 
 # Importações para Gemini
 try:
@@ -46,7 +49,6 @@ try:
 except ImportError:
     ChatGoogleGenerativeAI = None
     GoogleGenerativeAIEmbeddings = None
-    logger = logging.getLogger(__name__)
     logger.warning(
         "⚠️ Google Generative AI not available. Install with: pip install langchain-google-genai")
 
@@ -61,6 +63,12 @@ class NVIDIAChatOpenAI(ChatOpenAI):
         if 'stream' in kwargs:
             del kwargs['stream']
 
+        # Definir atributos ANTES de chamar super()
+        self._nvidia_retry_attempts = retry_attempts
+        self._nvidia_retry_delay = retry_delay
+        self._nvidia_max_retry_delay = 10.0
+
+        # ✅ CORREÇÃO: Usar base_url diretamente em vez de openai_client_config
         super().__init__(
             api_key=SecretStr(nvidia_api_key),
             model=model,
@@ -68,10 +76,17 @@ class NVIDIAChatOpenAI(ChatOpenAI):
             **kwargs
         )
 
-        # Configurações de retry
-        self.retry_attempts = retry_attempts
-        self.retry_delay = retry_delay
-        self.max_retry_delay = 10.0  # Delay máximo para evitar esperas muito longas
+    @property
+    def retry_attempts(self):
+        return getattr(self, '_nvidia_retry_attempts', 3)
+
+    @property
+    def retry_delay(self):
+        return getattr(self, '_nvidia_retry_delay', 2.0)
+
+    @property
+    def max_retry_delay(self):
+        return getattr(self, '_nvidia_max_retry_delay', 10.0)
 
     def _call_with_retry(self, *args, **kwargs):
         """Execute API call with exponential backoff retry logic."""
@@ -131,15 +146,26 @@ class NVIDIAChatOpenAI(ChatOpenAI):
 class NVIDIAEmbeddings(OpenAIEmbeddings):
     """Custom OpenAI Embeddings class for NVIDIA API with retry logic."""
 
-    def __init__(self, nvidia_api_key: str, model: str, base_url: str, retry_attempts: int = 3, retry_delay: float = 2.0, **kwargs):
+    def __init__(self, nvidia_api_key: str, model: str, model_name: str, base_url: str, retry_attempts: int = 3, retry_delay: float = 2.0, **kwargs):
+        # Definir atributos ANTES de chamar super()
+        self._nvidia_retry_attempts = retry_attempts
+        self._nvidia_retry_delay = retry_delay
+
+        # ✅ CORREÇÃO: Usar base_url diretamente em vez de openai_client_config
         super().__init__(
             api_key=SecretStr(nvidia_api_key),
-            model=model,
-            base_url=base_url,
+            model=model_name,
+            base_url=base_url,  # ✅ CORRETO: usar base_url diretamente
             **kwargs
         )
-        self.retry_attempts = retry_attempts
-        self.retry_delay = retry_delay
+
+    @property
+    def retry_attempts(self):
+        return getattr(self, '_nvidia_retry_attempts', 3)
+
+    @property
+    def retry_delay(self):
+        return getattr(self, '_nvidia_retry_delay', 2.0)
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Embed documents with retry logic."""
@@ -219,9 +245,6 @@ try:
     import tiktoken  # for token estimation
 except Exception:
     tiktoken = None
-
-# Configure logging
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -517,7 +540,9 @@ class RAGHandler:
                         model=self.config.nvidia_model_name,
                         base_url=self.config.nvidia_base_url,
                         temperature=self.config.temperature,
-                        max_tokens=self.config.max_tokens
+                        max_tokens=self.config.max_tokens,
+                        retry_attempts=self.config.nvidia_retry_attempts,
+                        retry_delay=self.config.nvidia_retry_delay
                     )
                     self.current_llm_provider = "NVIDIA"
                     logger.info(
@@ -1328,15 +1353,41 @@ class RAGHandler:
             logger.error(f"Failed during retrieval: {e}")
             return []
 
-    def generate_response(self, question: str, user_level: str = "intermediate") -> Dict[str, Any]:
+    def generate_response(self, question: str, user_level: str = "intermediate", return_immediate: bool = False) -> Dict[str, Any]:
         """Generate a response using the RAG system."""
         # 🎯 LOG INICIAL MOSTRANDO QUAL MODELO SERÁ USADO
         logger.info(
             f"🚀 Starting response generation with: {self.current_llm_provider} ({getattr(self.llm, 'model', 'Unknown')})")
 
+        # ⏱️ MENSAGEM IMEDIATA PARA O USUÁRIO SOBRE TEMPO DE PROCESSAMENTO
+        immediate_processing_message = """⏱️ **PROCESSANDO SUA PERGUNTA...**
+
+💡 **Dica sobre tempo de resposta:** Dependendo da complexidade, as respostas podem levar:
+   - **Perguntas simples:** 5-15 segundos
+   - **Perguntas complexas:** 15-30 segundos  
+   - **Análises detalhadas:** 30-60 segundos
+
+🔄 **O que está acontecendo agora:**
+   1. Busca nos 53.000+ documentos do DNA da Força
+   2. Análise de relevância e contexto
+   3. Geração de resposta personalizada pela IA
+   4. Verificação de acurácia e segurança
+
+⏳ **Aguarde com paciência para respostas de qualidade!**\n\n"""
+
+        # 🚀 RESPOSTA IMEDIATA - Se solicitado, retornar apenas a mensagem de processamento
+        if return_immediate:
+            logger.info("⚡ Retornando mensagem de processamento imediata")
+            return {
+                "answer": immediate_processing_message,
+                "sources": [],
+                "status": "processing",
+                "message": "Iniciando processamento da pergunta..."
+            }
+
         if not self.retriever:
             logger.error("Retriever not initialized.")
-            return {"answer": "System not ready.", "sources": []}
+            return {"answer": immediate_processing_message + "System not ready.", "sources": []}
 
         try:
             # Expand query with aliases/synonyms
@@ -1387,7 +1438,7 @@ class RAGHandler:
 
             if not retrieved:
                 logger.warning("No documents found for the question.")
-                return {"answer": "No relevant information found.", "sources": []}
+                return {"answer": immediate_processing_message + "No relevant information found.", "sources": []}
 
             sources = []
             for i, (doc, score) in enumerate(retrieved):
@@ -1442,7 +1493,7 @@ class RAGHandler:
                 logger.warning(
                     "⚠️ Contexto muito pequeno - risco de resposta imprecisa")
                 return {
-                    "answer": f"""❌ **INFORMAÇÃO INSUFICIENTE**
+                    "answer": immediate_processing_message + f"""❌ **INFORMAÇÃO INSUFICIENTE**
 
 Sua pergunta: "{question}"
 
@@ -1473,7 +1524,7 @@ Não encontrei informações suficientes nos materiais do DNA da Força para res
                 logger.warning(
                     f"⚠️ Baixa relevância do contexto ({relevance_score:.2f}) - risco de resposta imprecisa")
                 return {
-                    "answer": f"""❌ **CONTEXTO NÃO RELEVANTE**
+                    "answer": immediate_processing_message + f"""❌ **CONTEXTO NÃO RELEVANTE**
 
 Sua pergunta: "{question}"
 
@@ -1496,6 +1547,12 @@ Os materiais encontrados não são suficientemente relevantes para sua pergunta 
 
             prompt_template = """
             Você é um Professor de Educação Física e Treinamento Esportivo especializado em força e condicionamento físico.
+
+            🌍 **IDIOMA OBRIGATÓRIO:**
+            - SEMPRE responda APENAS em PORTUGUÊS BRASILEIRO
+            - NUNCA use inglês ou outros idiomas
+            - Use terminologia técnica em português quando disponível
+            - Mantenha o tom formal mas acessível, típico do português brasileiro
 
             🚨 REGRAS CRÍTICAS DE ACURÁCIA:
             - NUNCA invente informações que não estejam nos materiais fornecidos
@@ -1527,11 +1584,63 @@ Os materiais encontrados não são suficientemente relevantes para sua pergunta 
             - NUNCA exiba paths, códigos internos ou metadados técnicos
             - SEMPRE verifique se cada afirmação está respaldada pelo contexto
 
+            🚫 FORMATO OBRIGATÓRIO - NUNCA QUEBRAR:
+            - NUNCA use símbolos | (pipe) em nenhuma circunstância
+            - NUNCA tente criar tabelas ou colunas
+            - NUNCA use linhas de separação ----- ou =====
+            - NUNCA organize dados em formato tabular
+            - SEMPRE use APENAS texto corrido e listas simples
+            
+            🚨 **PROIBIDO ABSOLUTAMENTE:**
+            - NUNCA use | (pipe) - nem mesmo para separar conceitos
+            - NUNCA use ----- ou ===== para separar seções
+            - NUNCA tente organizar dados em colunas
+            - NUNCA use formato tabular de qualquer tipo
+            - SEMPRE use texto corrido, parágrafos e listas com • ou -
+            
+            💡 **EXEMPLO DO QUE NÃO FAZER:**
+            ❌ "Conceito A | Conceito B | Conceito C"
+            ❌ "-----"
+            ❌ "====="
+            ❌ "Coluna1 | Coluna2 | Coluna3"
+            
+            ✅ **EXEMPLO DO QUE FAZER:**
+            ✅ "**Conceito A:** Descrição detalhada do conceito.
+            **Conceito B:** Descrição detalhada do conceito.
+            **Conceito C:** Descrição detalhada do conceito."
+
+            📝 FORMATO CORRETO:
+            - Use títulos com ** (ex: **Título Principal**)
+            - Use listas com • ou - para itens
+            - Use texto corrido para explicar conceitos
+            - Se precisar organizar informações, use listas numeradas ou com bullets
+            - Mantenha a formatação limpa e legível
+
+            📊 EXEMPLO DE ORGANIZAÇÃO CORRETA:
+            **Pilares da Hipertrofia:**
+            • **Tensão Mecânica:** Use carga que permita 6-12 repetições com esforço próximo ao máximo
+            • **Volume de Treino:** 10-20 séries por grupo muscular por semana
+            • **Frequência:** Treine cada músculo 2-3 vezes por semana
+            • **Recuperação:** 60-90 segundos entre séries para hipertrofia
+
             EXEMPLO DE RESPOSTA SEGURA:
             "Com base nos materiais do DNA da Força consultados, posso explicar que [conceito específico encontrado]. 
             Fonte: Módulo X, Aula Y — 'Título da Aula' (PDF), p. N.
             
-            ⚠️ IMPORTANTE: Esta resposta é baseada APENAS nos materiais fornecidos. Não posso confirmar ou negar informações que não estejam presentes no acervo consultado."
+            ⚠️ IMPORTANTE: Esta resposta é baseada APENAS nos materiais fornecidos. Não posso confirmar ou negar informações que não estejam presentes no acervo consultado.
+            
+            🌍 **Lembrete:** Todas as respostas são fornecidas em português brasileiro para melhor compreensão.
+            
+            🚫 **LEMBRE-SE:** NUNCA use |, -----, ===== ou formato tabular. Use APENAS texto corrido e listas com • ou -.
+            
+            🔒 **VERIFICAÇÃO FINAL ANTES DE RESPONDER:**
+            Antes de enviar sua resposta, verifique se NÃO contém:
+            - Nenhum símbolo | (pipe)
+            - Nenhuma linha ----- ou =====
+            - Nenhuma tentativa de tabela
+            - Nenhum formato tabular
+            
+            Se encontrar qualquer um desses elementos, reformule completamente a resposta usando APENAS texto corrido e listas simples."
             """
             prompt = ChatPromptTemplate.from_template(prompt_template)
 
@@ -1608,12 +1717,23 @@ Infelizmente, estou enfrentando dificuldades técnicas para processar sua pergun
 
 **Sugestão:** Tente novamente em alguns minutos ou reformule sua pergunta de forma mais específica.
 
-⚠️ **Compromisso de Acurácia:** Prefiro não responder do que fornecer informações incorretas ou inventadas."""
+⚠️ **Compromisso de Acurácia:** Prefiro não responder do que fornecer informações incorretas ou inventadas.
+
+⏱️ **SOBRE TEMPO DE RESPOSTA:**
+💡 **Normalmente as respostas levam:**
+   - **Perguntas simples:** 5-15 segundos
+   - **Perguntas complexas:** 15-30 segundos
+   - **Análises detalhadas:** 30-60 segundos
+
+🔄 **O sistema processa 53.000+ documentos para garantir acurácia!**"""
 
             # 🎯 LOG CLARO DO MODELO UTILIZADO
             logger.info(
                 f"🤖 LLM Answer generated by: {self.current_llm_provider} ({getattr(self.llm, 'model', 'Unknown')})")
             logger.info(f"🤖 LLM Answer: {answer}")
+
+            # ✅ RESPOSTA FINAL SEM MENSAGEM DE PROCESSAMENTO DUPLICADA
+            # A mensagem já foi mostrada ao usuário anteriormente
 
             final_sources = [s.model_dump() for s in selected_sources]
             # Formatar citações amigáveis sem paths nem códigos internos
@@ -1640,9 +1760,10 @@ Infelizmente, estou enfrentando dificuldades técnicas para processar sua pergun
             logger.info(
                 f"✅ Successfully generated response with {len(final_sources)} sources (selected).")
             return {"answer": answer, "sources": final_sources}
+
         except Exception as e:
             logger.error(f"❌ Error generating response: {e}", exc_info=True)
-            return {"answer": "An error occurred while generating the response.", "sources": []}
+            return {"answer": immediate_processing_message + "An error occurred while generating the response.", "sources": []}
 
     def _apply_content_guardrails(self, answer: str, question: str) -> str:
         """Aplica guardrails de segurança ao conteúdo da resposta."""
@@ -1757,6 +1878,9 @@ Para informações mais detalhadas, consulte os materiais originais."""
                 answer += source_warning
                 logger.info("✅ Aviso de fonte adicionado à resposta")
 
+            # 7. 🚫 REMOVER QUALQUER TENTATIVA DE TABELA - Garantir texto limpo
+            answer = self._remove_table_attempts(answer)
+
             return answer
 
         except Exception as e:
@@ -1769,6 +1893,62 @@ Esta resposta foi gerada pelo sistema. Para máxima acurácia,
 recomendo consultar diretamente os materiais do DNA da Força."""
 
             return answer + safety_warning
+
+    def _remove_table_attempts(self, answer: str) -> str:
+        """Remove QUALQUER tentativa de criar tabelas e converte para texto limpo."""
+        try:
+            # Padrões para detectar tentativas de tabelas (mais abrangentes)
+            table_patterns = [
+                r'\|.*\|.*\|',      # Padrão |col1|col2|col3|
+                r'-{3,}',           # Linhas de separação -----
+                r'={3,}',           # Linhas de separação =====
+                r'\|\s*\|\s*\|',    # Colunas vazias ||
+                r'\|[^|]*\|',       # Qualquer coisa entre |
+                r'[|]{2,}',         # Múltiplos | consecutivos
+                r'[-\s]{5,}',       # Múltiplos - com espaços
+                r'[=\s]{5,}',       # Múltiplos = com espaços
+            ]
+
+            # Verificar se há padrões de tabela na resposta
+            has_table_patterns = any(re.search(pattern, answer)
+                                     for pattern in table_patterns)
+
+            if not has_table_patterns:
+                return answer
+
+            logger.info(
+                "🚫 Detectadas tentativas de tabelas - convertendo para texto limpo")
+
+            # 🚫 REMOÇÃO AGRESSIVA de todos os símbolos problemáticos
+
+            # 1. Remover TODAS as linhas de separação
+            answer = re.sub(r'-{3,}', '', answer)
+            answer = re.sub(r'={3,}', '', answer)
+            answer = re.sub(r'[-\s]{5,}', '', answer)
+            answer = re.sub(r'[=\s]{5,}', '', answer)
+
+            # 2. Converter QUALQUER padrão |texto| em • texto
+            answer = re.sub(r'\|\s*([^|]+)\s*\|', r'• \1', answer)
+
+            # 3. Remover TODOS os | restantes (mesmo isolados)
+            answer = answer.replace('|', '')
+
+            # 4. Remover múltiplos | consecutivos
+            answer = re.sub(r'[|]{2,}', '', answer)
+
+            # 5. Limpar espaços extras e quebras de linha
+            answer = re.sub(r'\n\s*\n', '\n\n', answer)
+            answer = re.sub(r' +', ' ', answer)
+            answer = re.sub(r'\n\s*-\s*\n', '\n\n', answer)
+            answer = re.sub(r'\n\s*=\s*\n', '\n\n', answer)
+
+            logger.info(
+                "✅ Tentativas de tabelas removidas AGESSIVAMENTE - texto limpo gerado")
+            return answer
+
+        except Exception as e:
+            logger.warning(f"⚠️ Erro na remoção de tentativas de tabela: {e}")
+            return answer
 
     def _calculate_educational_value(self, source: Source, user_level: str) -> float:
         """Calculate educational value score for a source."""
