@@ -58,7 +58,7 @@ except ImportError:
 class NVIDIAChatOpenAI(ChatOpenAI):
     """Custom ChatOpenAI class for NVIDIA API with robust retry logic and fallback."""
 
-    def __init__(self, nvidia_api_key: str, model: str, base_url: str, retry_attempts: int = 3, retry_delay: float = 2.0, **kwargs):
+    def __init__(self, nvidia_api_key: str, model: str, base_url: str, retry_attempts: int = 2, retry_delay: float = 0.5, **kwargs):
         # Remover stream=True se estiver presente para evitar conflitos com LangChain
         if 'stream' in kwargs:
             del kwargs['stream']
@@ -131,22 +131,17 @@ class NVIDIAChatOpenAI(ChatOpenAI):
         except Exception as e:
             logger.error(f"❌ Error in NVIDIA _generate: {e}")
 
-            # Se falhou completamente, tentar uma última vez com delay maior
-            try:
-                logger.info("🔄 Tentativa final com delay maior...")
-                time.sleep(self.retry_delay * 2)
-                result = super()._generate(messages, stop, run_manager, **kwargs)
-                logger.info("✅ Tentativa final bem-sucedida!")
-                return result
-            except Exception as final_e:
-                logger.error(f"❌ Tentativa final também falhou: {final_e}")
-                raise final_e
+            # ❌ REMOVIDO: Não tentar mais uma vez - deixar o fallback atuar
+            # Se falhou 2 vezes, é hora de usar o fallback
+            logger.info(
+                "🔄 NVIDIA falhou 2 vezes - ativando fallback automático...")
+            raise e  # Deixar a exceção propagar para ativar o fallback
 
 
 class NVIDIAEmbeddings(OpenAIEmbeddings):
     """Custom OpenAI Embeddings class for NVIDIA API with retry logic."""
 
-    def __init__(self, nvidia_api_key: str, model: str, model_name: str, base_url: str, retry_attempts: int = 3, retry_delay: float = 2.0, **kwargs):
+    def __init__(self, nvidia_api_key: str, model: str, model_name: str, base_url: str, retry_attempts: int = 2, retry_delay: float = 0.5, **kwargs):
         # Definir atributos ANTES de chamar super()
         self._nvidia_retry_attempts = retry_attempts
         self._nvidia_retry_delay = retry_delay
@@ -161,11 +156,11 @@ class NVIDIAEmbeddings(OpenAIEmbeddings):
 
     @property
     def retry_attempts(self):
-        return getattr(self, '_nvidia_retry_attempts', 3)
+        return getattr(self, '_nvidia_retry_attempts', 2)
 
     @property
     def retry_delay(self):
-        return getattr(self, '_nvidia_retry_delay', 2.0)
+        return getattr(self, '_nvidia_retry_delay', 0.5)
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Embed documents with retry logic."""
@@ -181,7 +176,10 @@ class NVIDIAEmbeddings(OpenAIEmbeddings):
                 else:
                     logger.error(
                         f"❌ NVIDIA Embeddings failed after {self.retry_attempts} attempts: {e}")
-                    raise e
+                    # ❌ REMOVIDO: Não tentar mais - deixar o fallback atuar
+                    logger.info(
+                        "🔄 NVIDIA Embeddings falhou 2 vezes - ativando fallback automático...")
+                    raise e  # Deixar a exceção propagar para ativar o fallback
 
     def embed_query(self, text: str) -> List[float]:
         """Embed query with retry logic."""
@@ -197,7 +195,10 @@ class NVIDIAEmbeddings(OpenAIEmbeddings):
                 else:
                     logger.error(
                         f"❌ NVIDIA Query Embedding failed after {self.retry_attempts} attempts: {e}")
-                    raise e
+                    # ❌ REMOVIDO: Não tentar mais - deixar o fallback atuar
+                    logger.info(
+                        "🔄 NVIDIA Query Embedding falhou 2 vezes - ativando fallback automático...")
+                    raise e  # Deixar a exceção propagar para ativar o fallback
 
 
 # NOVO: Classe para embeddings open source
@@ -277,8 +278,8 @@ class RAGConfig:
     ) == "true"  # NOVO: Preferir embeddings open source
 
     # NVIDIA specific settings
-    nvidia_retry_attempts: int = 3  # NOVO: Tentativas de retry
-    nvidia_retry_delay: float = 2.0  # NOVO: Delay entre tentativas
+    nvidia_retry_attempts: int = 2  # NOVO: Tentativas de retry
+    nvidia_retry_delay: float = 0.5  # NOVO: Delay entre tentativas
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"  # NOVO: URL base NVIDIA
 
     # Retrieval configuration - OTIMIZADO para melhor precisão

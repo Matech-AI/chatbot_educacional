@@ -175,7 +175,7 @@ const EnhancedChatPage: React.FC = () => {
       role: "assistant",
       timestamp: new Date(),
       isLoading: true, // ✅ É uma mensagem de loading (true)
-      isHidden: true, // ✅ VISÍVEL na UI
+      isHidden: false, // ✅ VISÍVEL na UI
     };
 
     // ✅ MOSTRAR AMBAS as mensagens na UI

@@ -177,7 +177,7 @@ class EducationalAgent:
                     base_url="https://integrate.api.nvidia.com/v1",
                     temperature=0.3,
                     retry_attempts=3,
-                    retry_delay=2.0
+                    retry_delay=0.5
                 )
                 self.model_provider = "NVIDIA"
                 self.model_name = model_name
