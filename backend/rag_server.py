@@ -23,6 +23,7 @@ import zipfile
 import tarfile
 import tempfile
 import aiohttp
+from datetime import datetime
 
 # Importar componentes RAG
 from rag_system.rag_handler import RAGHandler, RAGConfig, Source
@@ -1099,91 +1100,64 @@ async def compress_chromadb_folder():
     global chroma_persist_dir
 
     try:
+        logger.info("📦 Iniciando compressão do ChromaDB...")
+
+        if not chroma_persist_dir:
+            raise HTTPException(
+                status_code=500,
+                detail="ChromaDB persist directory não configurado"
+            )
+
         chroma_path = Path(chroma_persist_dir)
+        logger.info(f"🔍 Caminho do ChromaDB: {chroma_path}")
 
         if not chroma_path.exists():
+            logger.error(f"❌ Diretório ChromaDB não encontrado: {chroma_path}")
             raise HTTPException(
                 status_code=404,
-                detail="Diretório ChromaDB não encontrado"
+                detail=f"Diretório ChromaDB não encontrado: {chroma_path}"
             )
 
-        # Verificar se há dados no ChromaDB
-        try:
-            client = chromadb.PersistentClient(path=str(chroma_path))
-            collections = client.list_collections()
+        # Verificar se já existe arquivo compactado
+        parent_dir = chroma_path.parent
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_name = f"chromadb_backup_{timestamp}.tar.gz"
+        archive_path = parent_dir / archive_name
 
-            if not collections:
-                raise HTTPException(
-                    status_code=404,
-                    detail="ChromaDB está vazio - não há dados para compactar"
-                )
+        logger.info(f"📁 Pasta pai: {parent_dir}")
+        logger.info(f"📦 Arquivo será salvo em: {archive_path}")
 
-            total_documents = sum(col.count() for col in collections)
-            logger.info(
-                f"📊 ChromaDB contém {len(collections)} coleções com {total_documents} documentos")
+        if archive_path.exists():
+            logger.warning(f"⚠️ Arquivo já existe, removendo: {archive_path}")
+            archive_path.unlink()
 
-        except Exception as e:
-            logger.warning(f"⚠️ Erro ao verificar ChromaDB: {e}")
-            # Continuar mesmo com erro de verificação
+        # Criar arquivo tar.gz na pasta do ChromaDB
+        logger.info("🔧 Criando arquivo tar.gz...")
+        with tarfile.open(archive_path, "w:gz") as tar:
+            tar.add(chroma_path, arcname=chroma_path.name)
 
-        # Criar arquivo temporário para o tar.gz
-        import tempfile
-        import shutil
+        file_size = archive_path.stat().st_size
+        logger.info(f"✅ Arquivo criado com sucesso: {archive_path}")
+        logger.info(
+            f"📏 Tamanho: {file_size:,} bytes ({file_size / (1024*1024):.2f} MB)")
 
-        with tempfile.NamedTemporaryFile(suffix='.tar.gz', delete=False) as tmp_file:
-            tmp_path = Path(tmp_file.name)
+        # Retornar informações do arquivo criado
+        return {
+            "status": "success",
+            "message": "ChromaDB compactado com sucesso",
+            "file_path": str(archive_path),
+            "file_name": archive_name,
+            "file_size": file_size,
+            "file_size_mb": round(file_size / (1024*1024), 2),
+            "created_at": timestamp,
+            "location": "local_folder"
+        }
 
-        try:
-            # Criar o arquivo tar.gz
-            logger.info(
-                f"📦 Compactando pasta .chromadb em .tar.gz: {chroma_path}")
-
-            with tarfile.open(tmp_path, 'w:gz') as tar:
-                tar.add(chroma_path, arcname='.chromadb')
-
-            # Verificar tamanho do arquivo
-            file_size = tmp_path.stat().st_size
-            logger.info(
-                f"✅ Arquivo .tar.gz criado: {file_size / (1024*1024):.2f} MB")
-
-            # Retornar o arquivo para download
-            def generate_file():
-                try:
-                    with open(tmp_path, 'rb') as f:
-                        while chunk := f.read(8192):
-                            yield chunk
-                finally:
-                    # Limpar arquivo temporário após download
-                    try:
-                        tmp_path.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-
-            filename = f"chromadb_compressed_{int(time.time())}.tar.gz"
-
-            return StreamingResponse(
-                generate_file(),
-                media_type="application/gzip",
-                headers={
-                    "Content-Disposition": f"attachment; filename={filename}"
-                }
-            )
-
-        except Exception as e:
-            # Limpar arquivo temporário em caso de erro
-            try:
-                tmp_path.unlink(missing_ok=True)
-            except Exception:
-                pass
-            raise e
-
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"❌ Erro ao compactar ChromaDB: {e}")
+        logger.error(f"❌ Erro durante compressão: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Erro interno ao compactar ChromaDB: {str(e)}"
+            detail=f"Erro durante compressão: {str(e)}"
         )
 
 
@@ -1522,6 +1496,100 @@ async def upload_chromadb_folder(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/debug/system")
+async def debug_system():
+    """Debug detalhado do sistema para troubleshooting"""
+    try:
+        # Verificar variáveis de ambiente
+        env_vars = {
+            "RENDER": os.getenv("RENDER"),
+            "RENDER_ENVIRONMENT": os.getenv("RENDER_ENVIRONMENT"),
+            "CHROMA_PERSIST_DIR": os.getenv("CHROMA_PERSIST_DIR"),
+            "MATERIALS_DIR": os.getenv("MATERIALS_DIR"),
+            "PORT": os.getenv("PORT"),
+            "CORS_ORIGINS": os.getenv("CORS_ORIGINS"),
+            "NVIDIA_API_KEY": "***" if os.getenv("NVIDIA_API_KEY") else None,
+            "OPENAI_API_KEY": "***" if os.getenv("OPENAI_API_KEY") else None,
+            "GEMINI_API_KEY": "***" if os.getenv("GEMINI_API_KEY") else None,
+        }
+
+        # Verificar diretórios
+        dir_status = {}
+        if chroma_persist_dir:
+            dir_status["chroma_persist_dir"] = {
+                "path": str(chroma_persist_dir),
+                "exists": chroma_persist_dir.exists(),
+                "is_dir": chroma_persist_dir.is_dir() if chroma_persist_dir.exists() else False,
+                "size": sum(f.stat().st_size for f in chroma_persist_dir.rglob('*') if f.is_file()) if chroma_persist_dir.exists() else 0
+            }
+
+        if materials_dir:
+            dir_status["materials_dir"] = {
+                "path": str(materials_dir),
+                "exists": materials_dir.exists(),
+                "is_dir": materials_dir.is_dir() if materials_dir.exists() else False,
+                "file_count": len(list(materials_dir.rglob('*'))) if materials_dir.exists() else 0
+            }
+
+        # Verificar RAG handler
+        rag_status = {
+            "initialized": rag_handler is not None,
+            "vector_store_ready": rag_handler.vector_store is not None if rag_handler else False,
+            "embeddings_ready": rag_handler.embeddings is not None if rag_handler else False,
+            "llm_ready": rag_handler.llm is not None if rag_handler else False
+        }
+
+        if rag_handler:
+            try:
+                rag_status["vector_store_count"] = rag_handler.vector_store._collection.count(
+                ) if rag_handler.vector_store else 0
+            except Exception as e:
+                rag_status["vector_store_count_error"] = str(e)
+
+        return {
+            "status": "success",
+            "timestamp": time.time(),
+            "environment_variables": env_vars,
+            "directory_status": dir_status,
+            "rag_handler_status": rag_status,
+            "system_info": {
+                "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
+                "platform": os.sys.platform,
+                "current_working_directory": str(Path.cwd()),
+                "script_location": str(Path(__file__).parent)
+            }
+        }
+    except Exception as e:
+        logger.error(f"❌ Erro no debug do sistema: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "timestamp": time.time()
+        }
+
+
+@app.get("/test-connection")
+async def test_connection():
+    """Teste de conectividade e status básico do servidor"""
+    try:
+        return {
+            "status": "success",
+            "message": "Servidor RAG funcionando",
+            "timestamp": time.time(),
+            "chroma_persist_dir": str(chroma_persist_dir) if chroma_persist_dir else None,
+            "materials_dir": str(materials_dir) if materials_dir else None,
+            "rag_handler_active": rag_handler is not None,
+            "environment": "RENDER" if os.getenv("RENDER") else "LOCAL"
+        }
+    except Exception as e:
+        logger.error(f"❌ Erro no teste de conexão: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "timestamp": time.time()
+        }
+
+
 @app.get("/chromadb/status")
 async def get_chromadb_status():
     """Verificar status e integridade do ChromaDB atual."""
@@ -1637,6 +1705,52 @@ async def chat(question: Question):
     except Exception as e:
         logger.error(f"❌ Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/chromadb/backups")
+async def list_chromadb_backups():
+    """Listar arquivos de backup do ChromaDB"""
+    global chroma_persist_dir
+
+    try:
+        if not chroma_persist_dir:
+            raise HTTPException(
+                status_code=500,
+                detail="ChromaDB persist directory não configurado"
+            )
+
+        chroma_path = Path(chroma_persist_dir)
+        parent_dir = chroma_path.parent
+
+        # Buscar arquivos .tar.gz de backup
+        backup_files = []
+        for file_path in parent_dir.glob("chromadb_backup_*.tar.gz"):
+            stat = file_path.stat()
+            backup_files.append({
+                "filename": file_path.name,
+                "file_path": str(file_path),
+                "size_bytes": stat.st_size,
+                "size_mb": round(stat.st_size / (1024*1024), 2),
+                "created_at": datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S"),
+                "modified_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            })
+
+        # Ordenar por data de criação (mais recente primeiro)
+        backup_files.sort(key=lambda x: x["created_at"], reverse=True)
+
+        return {
+            "status": "success",
+            "backup_dir": str(parent_dir),
+            "total_backups": len(backup_files),
+            "backups": backup_files
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Erro ao listar backups: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao listar backups: {str(e)}"
+        )
 
 
 if __name__ == "__main__":

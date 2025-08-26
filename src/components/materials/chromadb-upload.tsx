@@ -204,47 +204,92 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
     setMessage(null);
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_RAG_API_BASE_URL}/chromadb/compress`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
+      console.log("🚀 Iniciando compressão do ChromaDB...");
+
+      // Verificar se a URL da API RAG está configurada
+      const ragApiUrl = import.meta.env.VITE_RAG_API_BASE_URL;
+      if (!ragApiUrl) {
+        throw new Error("URL da API RAG não configurada");
+      }
+
+      console.log(`🔗 URL da API RAG: ${ragApiUrl}`);
+      console.log(`📡 Endpoint: ${ragApiUrl}/chromadb/compress`);
+
+      const response = await fetch(`${ragApiUrl}/chromadb/compress`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+        },
+      });
+
+      console.log(
+        `📊 Status da resposta: ${response.status} ${response.statusText}`
       );
 
-      if (response.ok) {
-        // Criar blob e fazer download
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `chromadb_compressed_${Date.now()}.tar.gz`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.detail || `Erro ${response.status}: ${response.statusText}`
+        );
+      }
 
+      // Agora o backend retorna informações do arquivo criado
+      const data = await response.json();
+      console.log("📊 Resposta do servidor:", data);
+
+      if (data.status === "success") {
         setMessage({
           type: "success",
-          text: "ChromaDB compactado e download iniciado com sucesso!",
+          text: `✅ ChromaDB compactado com sucesso! Arquivo: ${data.file_name} (${data.file_size_mb} MB) - Salvo em: ${data.file_path}`,
         });
+
+        // Mostrar informações detalhadas no console
+        console.log("🎉 Compressão concluída!");
+        console.log(`📁 Arquivo: ${data.file_name}`);
+        console.log(`📏 Tamanho: ${data.file_size_mb} MB`);
+        console.log(`📍 Localização: ${data.file_path}`);
+        console.log(`🕒 Criado em: ${data.created_at}`);
       } else {
-        const error = await response.json();
-        setMessage({
-          type: "error",
-          text: error.detail || "Erro ao compactar ChromaDB",
-        });
+        throw new Error(data.message || "Erro desconhecido na compressão");
       }
     } catch (error) {
+      console.error("💥 Erro durante compressão:", error);
+
+      let errorMessage = "Erro de conexão durante a compactação";
+
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        errorMessage = "Erro de rede - verifique a conexão com o servidor RAG";
+      } else if (error instanceof Error && error.name === "AbortError") {
+        errorMessage = "Timeout - a operação demorou muito tempo";
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+
       setMessage({
         type: "error",
-        text: "Erro de conexão durante a compactação",
+        text: errorMessage,
       });
     } finally {
       setIsCompressing(false);
     }
+  };
+
+  // Função auxiliar para fazer download de blob
+  const downloadBlob = async (blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = url;
+    a.download = filename;
+
+    // Adicionar ao DOM e clicar
+    document.body.appendChild(a);
+    a.click();
+
+    // Limpeza
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   };
 
   // 🆕 NOVO: Compactar pasta .chromadb local em .tar.gz
@@ -307,6 +352,58 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
     }
   };
 
+  // Listar backups do ChromaDB
+  const handleListBackups = async () => {
+    try {
+      const ragApiUrl = import.meta.env.VITE_RAG_API_BASE_URL;
+      if (!ragApiUrl) {
+        setMessage({
+          type: "error",
+          text: "URL da API RAG não configurada",
+        });
+        return;
+      }
+
+      console.log("📋 Listando backups do ChromaDB...");
+
+      const response = await fetch(`${ragApiUrl}/chromadb/backups`);
+      const data = await response.json();
+
+      console.log("📊 Lista de backups:", data);
+
+      if (data.status === "success") {
+        if (data.total_backups > 0) {
+          const backupInfo = data.backups
+            .map(
+              (backup: any) =>
+                `📦 ${backup.filename} (${backup.size_mb} MB) - ${backup.created_at}`
+            )
+            .join("\n");
+
+          setMessage({
+            type: "success",
+            text: `✅ ${data.total_backups} backup(s) encontrado(s):\n${backupInfo}`,
+          });
+        } else {
+          setMessage({
+            type: "info",
+            text: "ℹ️ Nenhum backup encontrado",
+          });
+        }
+      } else {
+        throw new Error(data.detail || "Erro ao listar backups");
+      }
+    } catch (error) {
+      console.error("💥 Erro ao listar backups:", error);
+      setMessage({
+        type: "error",
+        text: `Erro ao listar backups: ${
+          error instanceof Error ? error.message : "Erro desconhecido"
+        }`,
+      });
+    }
+  };
+
   // Handlers para drag & drop
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -363,13 +460,13 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap gap-2 mb-4">
           <Button
             onClick={checkChromaDBStatus}
             disabled={isCheckingStatus}
             variant="outline"
             size="sm"
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 flex-shrink-0"
           >
             <RefreshCw
               size={16}
@@ -378,45 +475,52 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
             Verificar Status
           </Button>
 
-          {status?.is_valid && (
-            <>
-              <Button
-                onClick={handleCompressChromaDB}
-                disabled={isCompressing}
-                variant="outline"
-                size="sm"
-                className="flex items-center gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
-              >
-                <RefreshCw
-                  size={16}
-                  className={isCompressing ? "animate-spin" : ""}
-                />
-                {isCompressing ? "Compactando..." : "Compactar .chromadb"}
-              </Button>
+          {/* Botões que aparecem sempre, independente do status */}
+          <Button
+            onClick={handleCompressChromaDB}
+            disabled={isCompressing || !status?.is_valid}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2 border-blue-300 text-blue-700 hover:bg-blue-50 flex-shrink-0"
+            title={
+              !status?.is_valid
+                ? "ChromaDB não está ativo"
+                : "Compactar pasta .chromadb"
+            }
+          >
+            <RefreshCw
+              size={16}
+              className={isCompressing ? "animate-spin" : ""}
+            />
+            {isCompressing ? "Compactando..." : "Compactar .chromadb"}
+          </Button>
 
-              <Button
-                onClick={handleDownloadChromaDB}
-                disabled={isDownloading}
-                variant="default"
-                size="sm"
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
-              >
-                <Download
-                  size={16}
-                  className={isDownloading ? "animate-spin" : ""}
-                />
-                {isDownloading ? "Gerando..." : "Download ChromaDB"}
-              </Button>
-            </>
-          )}
+          <Button
+            onClick={handleDownloadChromaDB}
+            disabled={isDownloading || !status?.is_valid}
+            variant="default"
+            size="sm"
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 flex-shrink-0"
+            title={
+              !status?.is_valid
+                ? "ChromaDB não está ativo"
+                : "Download do ChromaDB completo"
+            }
+          >
+            <Download
+              size={16}
+              className={isDownloading ? "animate-spin" : ""}
+            />
+            {isDownloading ? "Gerando..." : "Download ChromaDB"}
+          </Button>
 
-          {/* 🆕 NOVO: Botão para compactar pasta .chromadb local */}
+          {/* Botões de instruções - sempre visíveis */}
           <Button
             onClick={handleCompressLocalChromaDB}
             disabled={isCompressing}
             variant="outline"
             size="sm"
-            className="flex items-center gap-2 border-purple-300 text-purple-700 hover:bg-purple-50"
+            className="flex items-center gap-2 border-purple-300 text-purple-700 hover:bg-purple-50 flex-shrink-0"
             title="Compactar pasta .chromadb local em .tar.gz"
           >
             <RefreshCw
@@ -426,17 +530,29 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
             {isCompressing ? "Processando..." : "📋 Instruções Local"}
           </Button>
 
-          {/* 🆕 NOVO: Botão para compactar e fazer upload automático */}
           <Button
             onClick={handleCompressAndUploadLocalChromaDB}
             disabled={isCompressing}
             variant="default"
             size="sm"
-            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white"
+            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white flex-shrink-0"
             title="Compactar pasta .chromadb local e fazer upload automático para o servidor"
           >
             <Upload size={16} className={isCompressing ? "animate-spin" : ""} />
             {isCompressing ? "Processando..." : "📋 Instruções + Upload"}
+          </Button>
+
+          {/* Botão de listar backups - sempre visível */}
+          <Button
+            onClick={handleListBackups}
+            disabled={isCompressing}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2 border-teal-300 text-teal-700 hover:bg-teal-50 flex-shrink-0"
+            title="Listar backups do ChromaDB"
+          >
+            📋
+            {isCompressing ? "Processando..." : "Listar Backups"}
           </Button>
         </div>
       </div>
