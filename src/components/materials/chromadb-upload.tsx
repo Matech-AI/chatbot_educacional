@@ -233,6 +233,169 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
     }
   };
 
+  // 🆕 NOVO: Compactar pasta .chromadb local em .tar.gz
+  const handleCompressLocalChromaDB = async () => {
+    setIsCompressing(true);
+    setMessage(null);
+
+    try {
+      // Permitir que o usuário especifique o caminho da pasta .chromadb
+      const chromaPath = prompt(
+        "Digite o caminho completo da pasta .chromadb (ex: C:\\projetos\\.chromadb ou /home/user/.chromadb):",
+        ".chromadb"
+      );
+
+      if (!chromaPath) {
+        setMessage({
+          type: "info",
+          text: "Operação cancelada pelo usuário",
+        });
+        return;
+      }
+
+      // Usar a API para compactar a pasta .chromadb local
+      const response = await fetch(
+        `${import.meta.env.VITE_RAG_API_BASE_URL}/chromadb/compress-local-path`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({
+            source_path: chromaPath,
+            output_filename: `chromadb_local_${Date.now()}.tar.gz`,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        // Criar blob e fazer download
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `chromadb_local_${Date.now()}.tar.gz`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        setMessage({
+          type: "success",
+          text: `Pasta .chromadb local compactada com sucesso! Arquivo .tar.gz gerado e download iniciado. Caminho: ${chromaPath}`,
+        });
+      } else {
+        const error = await response.json();
+        setMessage({
+          type: "error",
+          text: error.detail || "Erro ao compactar pasta .chromadb local",
+        });
+      }
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: "Erro de conexão durante a compactação local",
+      });
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
+  // 🆕 NOVO: Compactar pasta .chromadb local e fazer upload automático para o servidor
+  const handleCompressAndUploadLocalChromaDB = async () => {
+    setIsCompressing(true);
+    setMessage(null);
+
+    try {
+      // Permitir que o usuário especifique o caminho da pasta .chromadb
+      const chromaPath = prompt(
+        "Digite o caminho completo da pasta .chromadb (ex: C:\\projetos\\.chromadb ou /home/user/.chromadb):",
+        ".chromadb"
+      );
+
+      if (!chromaPath) {
+        setMessage({
+          type: "info",
+          text: "Operação cancelada pelo usuário",
+        });
+        return;
+      }
+
+      // 1. Compactar pasta .chromadb local
+      setMessage({
+        type: "info",
+        text: "🔄 Compactando pasta .chromadb local...",
+      });
+
+      const compressResponse = await fetch(
+        `${import.meta.env.VITE_RAG_API_BASE_URL}/chromadb/compress-local-path`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({
+            source_path: chromaPath,
+            output_filename: `chromadb_local_${Date.now()}.tar.gz`,
+          }),
+        }
+      );
+
+      if (!compressResponse.ok) {
+        throw new Error("Erro ao compactar pasta local");
+      }
+
+      // 2. Fazer upload automático para o servidor
+      setMessage({
+        type: "info",
+        text: "📤 Fazendo upload automático para o servidor...",
+      });
+
+      const uploadResponse = await fetch(
+        `${import.meta.env.VITE_RAG_API_BASE_URL}/chromadb/upload-folder`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({
+            local_file_path: `.chromadb_local_${Date.now()}.tar.gz`,
+            replace_existing: true,
+            auto_upload: true,
+          }),
+        }
+      );
+
+      if (uploadResponse.ok) {
+        const result = await uploadResponse.json();
+        setMessage({
+          type: "success",
+          text: `🎉 ChromaDB local compactado e enviado para o servidor com sucesso! ${result.total_documents} documentos em ${result.collections.length} coleções. Caminho: ${chromaPath}`,
+        });
+
+        // Atualizar status
+        await checkChromaDBStatus();
+        onUploadSuccess?.();
+      } else {
+        const error = await uploadResponse.json();
+        throw new Error(error.detail || "Erro no upload automático");
+      }
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: `❌ Erro: ${
+          error instanceof Error
+            ? error.message
+            : "Falha na operação de compactação e upload"
+        }`,
+      });
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
   // Handlers para drag & drop
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -335,6 +498,35 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
               </Button>
             </>
           )}
+
+          {/* 🆕 NOVO: Botão para compactar pasta .chromadb local */}
+          <Button
+            onClick={handleCompressLocalChromaDB}
+            disabled={isCompressing}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2 border-purple-300 text-purple-700 hover:bg-purple-50"
+            title="Compactar pasta .chromadb local em .tar.gz"
+          >
+            <RefreshCw
+              size={16}
+              className={isCompressing ? "animate-spin" : ""}
+            />
+            {isCompressing ? "Compactando..." : "Compactar Local"}
+          </Button>
+
+          {/* 🆕 NOVO: Botão para compactar e fazer upload automático */}
+          <Button
+            onClick={handleCompressAndUploadLocalChromaDB}
+            disabled={isCompressing}
+            variant="default"
+            size="sm"
+            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white"
+            title="Compactar pasta .chromadb local e fazer upload automático para o servidor"
+          >
+            <Upload size={16} className={isCompressing ? "animate-spin" : ""} />
+            {isCompressing ? "Processando..." : "Compactar + Upload"}
+          </Button>
         </div>
       </div>
 
@@ -483,12 +675,54 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
             arquivo .tar.gz para download
           </p>
           <p>
+            • <strong>Compactar Local:</strong> 🆕 Converte pasta .chromadb
+            local em .tar.gz para download (permite especificar caminho)
+          </p>
+          <p>
+            • <strong>Compactar + Upload:</strong> 🆕 Converte pasta .chromadb
+            local e faz upload automático para o servidor (permite especificar
+            caminho)
+          </p>
+          <p>
             • <strong>Download:</strong> Baixa o ChromaDB completo em formato
             .tar.gz
           </p>
           <p>• O sistema fará backup automático do ChromaDB atual</p>
           <p>• A integridade será verificada antes da substituição</p>
           <p>• O RAG handler será reinicializado automaticamente</p>
+        </div>
+      </div>
+
+      {/* 🆕 NOVO: Informações sobre Compactação Local */}
+      <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+        <h4 className="font-medium text-purple-900 mb-2 flex items-center gap-2">
+          <Info size={16} />
+          🆕 Compactação Local - .chromadb → .tar.gz
+        </h4>
+        <div className="text-sm text-purple-800 space-y-1">
+          <p>
+            • <strong>Funcionalidade:</strong> Converte automaticamente a pasta
+            .chromadb local em arquivo .tar.gz
+          </p>
+          <p>
+            • <strong>Uso:</strong> Ideal para atualizar o ChromaDB do servidor
+            com dados locais
+          </p>
+          <p>
+            • <strong>Processo:</strong>
+            1. Clique em "Compactar Local" ou "Compactar + Upload" 2. Digite o
+            caminho completo da pasta .chromadb 3. Sistema compacta pasta
+            .chromadb 4. Download automático do .tar.gz ou upload para servidor
+          </p>
+          <p>
+            • <strong>Vantagens:</strong> Mantém integridade dos dados, permite
+            especificar caminho exato e facilita sincronização
+          </p>
+          <p>
+            • <strong>Exemplos de caminhos:</strong>- Windows:
+            C:\projetos\.chromadb ou C:\Users\usuario\.chromadb - Linux/Mac:
+            /home/usuario/.chromadb ou /opt/projetos/.chromadb
+          </p>
         </div>
       </div>
 

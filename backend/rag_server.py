@@ -78,6 +78,11 @@ class AssistantConfigRequest(BaseModel):
     title: Optional[str] = None
 
 
+class CompressLocalRequest(BaseModel):
+    source_path: str = ".chromadb"
+    output_filename: Optional[str] = None
+
+
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
@@ -1181,6 +1186,242 @@ async def compress_chromadb_folder():
         raise HTTPException(
             status_code=500,
             detail=f"Erro interno ao compactar ChromaDB: {str(e)}"
+        )
+
+
+@app.post("/chromadb/compress-local")
+async def compress_local_chromadb_folder(request: CompressLocalRequest):
+    """Compactar pasta .chromadb local em arquivo .tar.gz"""
+    try:
+        # Extrair parâmetros da requisição
+        source_path = request.source_path
+        output_filename = request.output_filename or f"chromadb_local_{int(time.time())}.tar.gz"
+
+        logger.info(f"📦 Compactando pasta local: {source_path}")
+
+        # Resolver o caminho da pasta .chromadb local
+        # Se for caminho relativo, tentar diferentes localizações
+        local_chroma_path = None
+
+        # Tentar diferentes caminhos possíveis
+        possible_paths = [
+            Path(source_path),  # Caminho exato fornecido
+            Path.cwd() / source_path,  # Caminho relativo ao diretório atual
+            Path.cwd().parent / source_path,  # Um nível acima
+            Path.cwd().parent.parent / source_path,  # Dois níveis acima
+        ]
+
+        for path in possible_paths:
+            if path.exists() and path.is_dir():
+                local_chroma_path = path
+                logger.info(
+                    f"✅ Pasta .chromadb encontrada em: {local_chroma_path.absolute()}")
+                break
+
+        if not local_chroma_path:
+            # Listar diretórios disponíveis para debug
+            current_dir = Path.cwd()
+            logger.error(
+                f"❌ Pasta .chromadb não encontrada. Diretório atual: {current_dir}")
+            logger.error(f"❌ Tentou os seguintes caminhos:")
+            for path in possible_paths:
+                logger.error(
+                    f"   - {path.absolute()} (existe: {path.exists()}, é_dir: {path.is_dir() if path.exists() else 'N/A'})")
+
+            raise HTTPException(
+                status_code=404,
+                detail=f"Pasta .chromadb não encontrada. Verifique se está no diretório correto."
+            )
+
+        # Verificar se há dados na pasta local
+        try:
+            # Tentar conectar ao ChromaDB local para verificar integridade
+            client = chromadb.PersistentClient(path=str(local_chroma_path))
+            collections = client.list_collections()
+
+            if not collections:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Pasta local está vazia - não há dados para compactar"
+                )
+
+            total_documents = sum(col.count() for col in collections)
+            logger.info(
+                f"📊 Pasta local contém {len(collections)} coleções com {total_documents} documentos")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao verificar pasta local: {e}")
+            # Continuar mesmo com erro de verificação
+
+        # Criar arquivo temporário para o tar.gz
+        import tempfile
+        import shutil
+
+        with tempfile.NamedTemporaryFile(suffix='.tar.gz', delete=False) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+
+        try:
+            # Criar o arquivo tar.gz
+            logger.info(
+                f"📦 Compactando pasta local {source_path} em .tar.gz: {local_chroma_path}")
+
+            with tarfile.open(tmp_path, 'w:gz') as tar:
+                # Compactar a pasta inteira .chromadb
+                tar.add(local_chroma_path, arcname='.chromadb')
+
+            # Verificar tamanho do arquivo
+            file_size = tmp_path.stat().st_size
+            logger.info(
+                f"✅ Arquivo .tar.gz criado: {file_size / (1024*1024):.2f} MB")
+
+            # Retornar o arquivo para download
+            def generate_file():
+                try:
+                    with open(tmp_path, 'rb') as f:
+                        while chunk := f.read(8192):
+                            yield chunk
+                finally:
+                    # Limpar arquivo temporário após download
+                    try:
+                        tmp_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+            return StreamingResponse(
+                generate_file(),
+                media_type="application/gzip",
+                headers={
+                    "Content-Disposition": f"attachment; filename={output_filename}",
+                    "Content-Length": str(file_size)
+                }
+            )
+
+        except Exception as e:
+            # Limpar arquivo temporário em caso de erro
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise e
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro ao compactar pasta local: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno ao compactar pasta local: {str(e)}"
+        )
+
+
+@app.post("/chromadb/compress-local-path")
+async def compress_local_chromadb_folder_by_path(request: CompressLocalRequest):
+    """Compactar pasta .chromadb local especificando caminho completo"""
+    try:
+        # Extrair parâmetros da requisição
+        source_path = request.source_path
+        output_filename = request.output_filename or f"chromadb_local_{int(time.time())}.tar.gz"
+
+        logger.info(f"📦 Compactando pasta local por caminho: {source_path}")
+
+        # Usar o caminho exato fornecido
+        local_chroma_path = Path(source_path)
+
+        if not local_chroma_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Pasta não encontrada: {source_path}"
+            )
+
+        if not local_chroma_path.is_dir():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Caminho não é uma pasta válida: {source_path}"
+            )
+
+        # Verificar se é realmente uma pasta .chromadb
+        if not local_chroma_path.name == ".chromadb":
+            logger.warning(
+                f"⚠️ Pasta não se chama '.chromadb': {local_chroma_path.name}")
+
+        # Verificar se há dados na pasta local
+        try:
+            # Tentar conectar ao ChromaDB local para verificar integridade
+            client = chromadb.PersistentClient(path=str(local_chroma_path))
+            collections = client.list_collections()
+
+            if not collections:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Pasta local está vazia - não há dados para compactar"
+                )
+
+            total_documents = sum(col.count() for col in collections)
+            logger.info(
+                f"📊 Pasta local contém {len(collections)} coleções com {total_documents} documentos")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao verificar pasta local: {e}")
+            # Continuar mesmo com erro de verificação
+
+        # Criar arquivo temporário para o tar.gz
+        import tempfile
+        import shutil
+
+        with tempfile.NamedTemporaryFile(suffix='.tar.gz', delete=False) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+
+        try:
+            # Criar o arquivo tar.gz
+            logger.info(
+                f"📦 Compactando pasta local {source_path} em .tar.gz: {local_chroma_path}")
+
+            with tarfile.open(tmp_path, 'w:gz') as tar:
+                # Compactar a pasta inteira .chromadb
+                tar.add(local_chroma_path, arcname='.chromadb')
+
+            # Verificar tamanho do arquivo
+            file_size = tmp_path.stat().st_size
+            logger.info(
+                f"✅ Arquivo .tar.gz criado: {file_size / (1024*1024):.2f} MB")
+
+            # Retornar o arquivo para download
+            def generate_file():
+                try:
+                    with open(tmp_path, 'rb') as f:
+                        while chunk := f.read(8192):
+                            yield chunk
+                finally:
+                    # Limpar arquivo temporário após download
+                    try:
+                        tmp_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+            return StreamingResponse(
+                generate_file(),
+                media_type="application/gzip",
+                headers={
+                    "Content-Disposition": f"attachment; filename={output_filename}",
+                    "Content-Length": str(file_size)
+                }
+            )
+
+        except Exception as e:
+            # Limpar arquivo temporário em caso de erro
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise e
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro ao compactar pasta local por caminho: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno ao compactar pasta local: {str(e)}"
         )
 
 
