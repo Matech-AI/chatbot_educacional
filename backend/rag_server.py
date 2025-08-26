@@ -295,9 +295,15 @@ async def lifespan(app: FastAPI):
     logger.info(f"   - Default Materials: {default_materials}")
     logger.info(f"   - Base dir exists: {base_dir.exists()}")
     logger.info(f"   - Data dir exists: {(base_dir / 'data').exists()}")
-    logger.info(f"   - ChromaDB dir exists: {default_chroma.exists()}")
+
+    # Verificar ChromaDB apenas se existir
+    if default_chroma:
+        logger.info(f"   - ChromaDB dir exists: {default_chroma.exists()}")
+        logger.info(f"   - ChromaDB path resolved: {default_chroma.resolve()}")
+    else:
+        logger.info(f"   - ChromaDB: Não configurado (ambiente RENDER)")
+
     logger.info(f"   - Materials dir exists: {default_materials.exists()}")
-    logger.info(f"   - ChromaDB path resolved: {default_chroma.resolve()}")
     logger.info(f"   - Materials path resolved: {default_materials.resolve()}")
 
     env_chroma = os.getenv("CHROMA_PERSIST_DIR")
@@ -435,6 +441,9 @@ async def lifespan(app: FastAPI):
 
     logger.info("✅ Servidor RAG iniciado com sucesso")
 
+    # Exibir banner de funcionamento
+    startup_banner()
+
     yield
 
     logger.info("🛑 Encerrando servidor RAG...")
@@ -470,9 +479,8 @@ app.add_middleware(
 app.include_router(educational_agent_router, prefix="/chat")
 
 
-# Banner de funcionamento ao iniciar (semelhante ao api_server.py)
-@app.on_event("startup")
-async def startup_banner():
+# Banner de funcionamento ao iniciar (movido para dentro do lifespan)
+def startup_banner():
     try:
         port = int(os.getenv("PORT", "8001"))
     except Exception:
