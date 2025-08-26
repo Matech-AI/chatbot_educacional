@@ -63,8 +63,9 @@ services:
       - key: OPEN_SOURCE_EMBEDDING_MODEL
         value: "intfloat/multilingual-e5-large"
       # 🗄️ CONFIGURAÇÕES DO SISTEMA
-      - key: CHROMA_PERSIST_DIR
-        value: /app/data/.chromadb
+      # 🚨 IMPORTANTE: ChromaDB não será criado automaticamente
+      # - key: CHROMA_PERSIST_DIR
+      #   value: /app/data/.chromadb
       - key: MATERIALS_DIR
         value: /app/data/materials
       - key: LOG_LEVEL
@@ -149,8 +150,9 @@ services:
         value: https://dna-forca-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000
       - key: LOG_LEVEL
         value: INFO
-      - key: CHROMA_PERSIST_DIR
-        value: /app/data/.chromadb
+      # 🚨 IMPORTANTE: ChromaDB não será criado automaticamente
+      # - key: CHROMA_PERSIST_DIR
+      #   value: /app/data/.chromadb
       - key: MATERIALS_DIR
         value: /app/data/materials
       # Configurações de Email

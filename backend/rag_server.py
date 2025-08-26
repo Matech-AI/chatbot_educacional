@@ -277,8 +277,8 @@ async def lifespan(app: FastAPI):
     )
 
     if is_render:
-        # 🚀 RENDER: app/data/.chromadb e app/data/materials
-        default_chroma = base_dir / "data" / ".chromadb"
+        # 🚀 RENDER: app/data (sem .chromadb automático) e app/data/materials
+        default_chroma = None  # Não criar .chromadb automaticamente
         default_materials = base_dir / "data" / "materials"
         logger.info("🌐 Ambiente detectado: RENDER")
     else:
@@ -303,19 +303,34 @@ async def lifespan(app: FastAPI):
     env_chroma = os.getenv("CHROMA_PERSIST_DIR")
     env_materials = os.getenv("MATERIALS_DIR")
 
-    chroma_persist_dir = Path(env_chroma) if env_chroma else default_chroma
+    # 🎯 CORREÇÃO: Não criar .chromadb automaticamente no Render
+    if env_chroma:
+        chroma_persist_dir = Path(env_chroma)
+    elif default_chroma:
+        chroma_persist_dir = default_chroma
+    else:
+        chroma_persist_dir = None  # Render: deixar None até ser necessário
+
     materials_dir = Path(env_materials) if env_materials else default_materials
 
     # Criar diretórios se não existirem (apenas estrutura básica, sem .chromadb)
     materials_dir.mkdir(parents=True, exist_ok=True)
     Path("/app/logs").mkdir(parents=True, exist_ok=True)
 
+    # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente
+    if chroma_persist_dir and not str(chroma_persist_dir).endswith('.chromadb'):
+        chroma_persist_dir.mkdir(parents=True, exist_ok=True)
+
     # 🎯 VERIFICAÇÃO: Garantir que o caminho está correto
     logger.info(f"🔍 Verificando caminhos:")
     logger.info(f"   - Base dir: {base_dir}")
     logger.info(f"   - ChromaDB path: {chroma_persist_dir}")
-    logger.info(f"   - ChromaDB exists: {chroma_persist_dir.exists()}")
-    logger.info(f"   - ChromaDB is_dir: {chroma_persist_dir.is_dir()}")
+    if chroma_persist_dir:
+        logger.info(f"   - ChromaDB exists: {chroma_persist_dir.exists()}")
+        logger.info(f"   - ChromaDB is_dir: {chroma_persist_dir.is_dir()}")
+    else:
+        logger.info(
+            f"   - ChromaDB: Não configurado (será criado quando necessário)")
 
     # Carregar configurações do assistente
     load_assistant_configs()
@@ -325,88 +340,98 @@ async def lifespan(app: FastAPI):
     logger.info(f"   - Materiais: {materials_dir}")
 
     # Verificar integridade do ChromaDB existente (se houver)
-    chromadb_status = check_chromadb_integrity(chroma_persist_dir)
-    logger.info(f"🔍 Status do ChromaDB: {chromadb_status['reason']}")
+    if chroma_persist_dir:
+        chromadb_status = check_chromadb_integrity(chroma_persist_dir)
+        logger.info(f"🔍 Status do ChromaDB: {chromadb_status['reason']}")
 
-    if chromadb_status['valid']:
-        logger.info(
-            f"✅ ChromaDB válido encontrado com {chromadb_status['total_documents']} documentos")
-        for col_info in chromadb_status['collections']:
+        if chromadb_status['valid']:
             logger.info(
-                f"   - Coleção '{col_info['name']}': {col_info['count']} documentos")
+                f"✅ ChromaDB válido encontrado com {chromadb_status['total_documents']} documentos")
+            for col_info in chromadb_status['collections']:
+                logger.info(
+                    f"   - Coleção '{col_info['name']}': {col_info['count']} documentos")
+        else:
+            logger.info(
+                f"ℹ️ ChromaDB não encontrado ou vazio: {chromadb_status['reason']}")
+            logger.info(
+                f"💡 Use a interface para fazer upload de um arquivo .chromadb existente")
     else:
         logger.info(
-            f"ℹ️ ChromaDB não encontrado ou vazio: {chromadb_status['reason']}")
-        logger.info(
-            f"💡 Use a interface para fazer upload de um arquivo .chromadb existente")
-        logger.info(
-            f"💡 Ou crie a pasta .chromadb via terminal: mkdir -p {chroma_persist_dir}")
+            f"ℹ️ ChromaDB não configurado - será criado quando necessário")
+        chromadb_status = {"valid": False,
+                           "reason": "Not configured", "collections": []}
 
     # 🎯 CORREÇÃO: Inicializar RAG handler com NVIDIA_API_KEY (prioridade) ou OPENAI_API_KEY
     nvidia_api_key = os.getenv("NVIDIA_API_KEY")
     openai_api_key = os.getenv("OPENAI_API_KEY")
 
-    if nvidia_api_key and nvidia_api_key != "your_nvidia_api_key_here":
-        try:
-            logger.info("🚀 Inicializando RAG handler com NVIDIA API...")
-            rag_handler = RAGHandler(
-                api_key=nvidia_api_key,
-                persist_dir=str(chroma_persist_dir),
-                materials_dir=str(materials_dir)
-            )
-            logger.info("✅ RAG handler inicializado com NVIDIA API")
-        except Exception as e:
-            logger.warning(f"⚠️  Falha ao inicializar com NVIDIA: {e}")
-            # Fallback para OpenAI se NVIDIA falhar
-            if openai_api_key and openai_api_key != "your_openai_api_key_here":
-                try:
+    # 🚨 IMPORTANTE: Só inicializar RAG handler se chroma_persist_dir estiver configurado
+    if not chroma_persist_dir:
+        logger.info(
+            "💡 ChromaDB não configurado - RAG handler será inicializado quando necessário")
+        logger.info("💡 Use a rota /initialize para configurar manualmente")
+    else:
+        if nvidia_api_key and nvidia_api_key != "your_nvidia_api_key_here":
+            try:
+                logger.info("🚀 Inicializando RAG handler com NVIDIA API...")
+                rag_handler = RAGHandler(
+                    api_key=nvidia_api_key,
+                    persist_dir=str(chroma_persist_dir),
+                    materials_dir=str(materials_dir)
+                )
+                logger.info("✅ RAG handler inicializado com NVIDIA API")
+            except Exception as e:
+                logger.warning(f"⚠️  Falha ao inicializar com NVIDIA: {e}")
+                # Fallback para OpenAI se NVIDIA falhar
+                if openai_api_key and openai_api_key != "your_openai_api_key_here":
+                    try:
+                        logger.info(
+                            "🔄 Fallback: Inicializando RAG handler com OpenAI...")
+                        rag_handler = RAGHandler(
+                            api_key=openai_api_key,
+                            persist_dir=str(chroma_persist_dir),
+                            materials_dir=str(materials_dir)
+                        )
+                        logger.info(
+                            "✅ RAG handler inicializado com OpenAI (fallback)")
+                    except Exception as e2:
+                        logger.warning(f"⚠️  Falha no fallback OpenAI: {e2}")
+                else:
                     logger.info(
-                        "🔄 Fallback: Inicializando RAG handler com OpenAI...")
-                    rag_handler = RAGHandler(
-                        api_key=openai_api_key,
-                        persist_dir=str(chroma_persist_dir),
-                        materials_dir=str(materials_dir)
-                    )
-                    logger.info(
-                        "✅ RAG handler inicializado com OpenAI (fallback)")
-                except Exception as e2:
-                    logger.warning(f"⚠️  Falha no fallback OpenAI: {e2}")
-            else:
+                        "💡 Use a rota /initialize para inicializar manualmente")
+        elif openai_api_key and openai_api_key != "your_openai_api_key_here":
+            try:
+                logger.info("🔧 Inicializando RAG handler com OpenAI API...")
+                rag_handler = RAGHandler(
+                    api_key=openai_api_key,
+                    persist_dir=str(chroma_persist_dir),
+                    materials_dir=str(materials_dir)
+                )
+
+                # Verificar se o RAG handler carregou dados existentes
+                if rag_handler.vector_store:
+                    try:
+                        current_count = rag_handler.vector_store._collection.count()
+                        if current_count > 0:
+                            logger.info(
+                                f"✅ RAG handler carregou automaticamente {current_count} documentos do ChromaDB existente")
+                            logger.info(
+                                f"📚 Coleção ativa: '{rag_handler.config.collection_name}'")
+                        else:
+                            logger.info(
+                                "📝 RAG handler inicializado com ChromaDB vazio - pronto para receber novos materiais")
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️  Não foi possível verificar contagem de documentos: {e}")
+
+                logger.info("✅ RAG handler inicializado com OpenAI")
+            except Exception as e:
+                logger.warning(f"⚠️  Falha ao inicializar com OpenAI: {e}")
                 logger.info(
                     "💡 Use a rota /initialize para inicializar manualmente")
-    elif openai_api_key and openai_api_key != "your_openai_api_key_here":
-        try:
-            logger.info("🔧 Inicializando RAG handler com OpenAI API...")
-            rag_handler = RAGHandler(
-                api_key=openai_api_key,
-                persist_dir=str(chroma_persist_dir),
-                materials_dir=str(materials_dir)
-            )
-
-            # Verificar se o RAG handler carregou dados existentes
-            if rag_handler.vector_store:
-                try:
-                    current_count = rag_handler.vector_store._collection.count()
-                    if current_count > 0:
-                        logger.info(
-                            f"✅ RAG handler carregou automaticamente {current_count} documentos do ChromaDB existente")
-                        logger.info(
-                            f"📚 Coleção ativa: '{rag_handler.config.collection_name}'")
-                    else:
-                        logger.info(
-                            "📝 RAG handler inicializado com ChromaDB vazio - pronto para receber novos materiais")
-                except Exception as e:
-                    logger.warning(
-                        f"⚠️  Não foi possível verificar contagem de documentos: {e}")
-
-            logger.info("✅ RAG handler inicializado com OpenAI")
-        except Exception as e:
-            logger.warning(f"⚠️  Falha ao inicializar com OpenAI: {e}")
+        else:
             logger.info(
-                "💡 Use a rota /initialize para inicializar manualmente")
-    else:
-        logger.info(
-            "💡 Nenhuma API key configurada. Use a rota /initialize para inicializar o RAG handler")
+                "💡 Nenhuma API key configurada. Use a rota /initialize para inicializar o RAG handler")
 
     logger.info("✅ Servidor RAG iniciado com sucesso")
 

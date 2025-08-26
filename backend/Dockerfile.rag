@@ -35,6 +35,7 @@ COPY config/ ./config/
 
 # Criar apenas diretórios básicos (SEM .chromadb automático)
 RUN mkdir -p /app/data/materials /app/logs
+# NOTA: .chromadb será criado apenas quando necessário, não automaticamente
 
 # Copiar script de inicialização do RAG
 COPY rag_server.py .

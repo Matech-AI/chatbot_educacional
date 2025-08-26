@@ -168,7 +168,7 @@ async def count_users_by_role_alt(current_user: User = Depends(get_current_user)
     for user in users:
         if user.role in counts:
             counts[user.role] += 1
-    
+
     counts["total"] = sum(counts.values())
 
     return counts
@@ -460,7 +460,7 @@ async def handle_user_create(webhook_user: WebhookUser):
     if not webhook_user.email:
         print(f"User {webhook_user.username} has no email, skipping creation.")
         return
-        
+
     user_data = UserCreate(
         username=webhook_user.username,
         email=webhook_user.email,
@@ -594,18 +594,12 @@ async def get_user_password(
 async def restore_default_passwords(
     current_user: User = Depends(get_current_user)
 ):
-    """Restore default passwords for admin and instructor (admin only)"""
+    """🚨 SEGURANÇA: Esta funcionalidade foi removida por questões de segurança"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    # Restaurar senha do admin
-    admin_success = reset_password("admin", "adminpass")
-
-    # Restaurar senha do instrutor
-    instructor_success = reset_password("instrutor", "instrutorpass")
-
-    if not admin_success or not instructor_success:
-        raise HTTPException(
-            status_code=500, detail="Failed to restore default passwords")
-
-    return {"message": "Senhas padrão restauradas com sucesso"}
+    raise HTTPException(
+        status_code=410,
+        detail="Funcionalidade removida por questões de segurança. "
+               "Use o sistema de redefinição de senha padrão ou crie usuários manualmente."
+    )

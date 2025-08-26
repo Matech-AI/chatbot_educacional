@@ -103,36 +103,9 @@ class WebhookUser(BaseModel):
 def initialize_database():
     """Initialize the user database files if they don't exist"""
     if not USERS_DB_FILE.exists():
-        default_users = {
-            "admin": {
-                "id": "admin",
-                "username": "admin",
-                "email": "admin@dnadaforca.com",
-                "full_name": "Administrator",
-                "role": "admin",
-                "hashed_password": pwd_context.hash("adminpass"),
-                "disabled": False,
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
-                "external_id": None,
-                "approved": True,
-                "last_login": None
-            },
-            "instrutor": {
-                "id": "instrutor",
-                "username": "instrutor",
-                "email": "instrutor@dnadaforca.com",
-                "full_name": "Instrutor Padrão",
-                "role": "instructor",
-                "hashed_password": pwd_context.hash("instrutorpass"),
-                "disabled": False,
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
-                "external_id": None,
-                "approved": True,
-                "last_login": None
-            }
-        }
+        # 🚨 SEGURANÇA: Não criar usuários com senhas padrão
+        # Os usuários devem ser criados manualmente ou via sistema de registro
+        default_users = {}
         save_users_db(default_users)
 
     if not APPROVED_USERS_FILE.exists():
