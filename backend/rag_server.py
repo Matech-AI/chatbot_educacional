@@ -1071,8 +1071,7 @@ async def download_chromadb_archive():
                 generate_file(),
                 media_type="application/gzip",
                 headers={
-                    "Content-Disposition": f"attachment; filename={filename}",
-                    "Content-Length": str(file_size)
+                    "Content-Disposition": f"attachment; filename={filename}"
                 }
             )
 
@@ -1166,8 +1165,7 @@ async def compress_chromadb_folder():
                 generate_file(),
                 media_type="application/gzip",
                 headers={
-                    "Content-Disposition": f"attachment; filename={filename}",
-                    "Content-Length": str(file_size)
+                    "Content-Disposition": f"attachment; filename={filename}"
                 }
             )
 
@@ -1291,8 +1289,7 @@ async def compress_local_chromadb_folder(request: CompressLocalRequest):
                 generate_file(),
                 media_type="application/gzip",
                 headers={
-                    "Content-Disposition": f"attachment; filename={output_filename}",
-                    "Content-Length": str(file_size)
+                    "Content-Disposition": f"attachment; filename={output_filename}"
                 }
             )
 
@@ -1402,8 +1399,7 @@ async def compress_local_chromadb_folder_by_path(request: CompressLocalRequest):
                 generate_file(),
                 media_type="application/gzip",
                 headers={
-                    "Content-Disposition": f"attachment; filename={output_filename}",
-                    "Content-Length": str(file_size)
+                    "Content-Disposition": f"attachment; filename={output_filename}"
                 }
             )
 

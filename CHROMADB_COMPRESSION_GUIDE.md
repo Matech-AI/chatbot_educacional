@@ -2,7 +2,7 @@
 
 ## 📋 Visão Geral
 
-Este guia documenta a funcionalidade implementada para **compactar pastas `.chromadb` locais** e fazer **upload automático para servidores Render**. A funcionalidade permite que usuários sincronizem seus dados locais com servidores de produção de forma simples e eficiente.
+Este guia documenta a funcionalidade implementada para **compactar pastas `.chromadb` locais** e fazer **upload para servidores Render**. A funcionalidade foi adaptada para funcionar tanto em desenvolvimento local quanto em produção.
 
 ## 🎯 Funcionalidades Implementadas
 
@@ -12,6 +12,7 @@ Este guia documenta a funcionalidade implementada para **compactar pastas `.chro
 - Busca automática da pasta em diferentes localizações
 - Validação de integridade dos dados
 - Download automático do arquivo compactado
+- **⚠️ Funciona apenas em desenvolvimento local**
 
 ### 2. **Compactação com Caminho Específico** (`/chromadb/compress-local-path`)
 
@@ -19,19 +20,20 @@ Este guia documenta a funcionalidade implementada para **compactar pastas `.chro
 - Validação completa do caminho fornecido
 - Logs detalhados para debug
 - Compactação da pasta inteira (não apenas entrada)
+- **⚠️ Funciona apenas em desenvolvimento local**
 
-### 3. **Upload Automático para Servidor** (Integrado)
+### 3. **Instruções para Produção** (Frontend)
 
-- Compactação local + upload automático em uma operação
-- Atualização automática do servidor Render
-- Reinicialização automática do RAG handler
-- Feedback em tempo real do processo
+- Botões que mostram instruções detalhadas para compactação manual
+- Funciona em qualquer ambiente (desenvolvimento e produção)
+- Guia o usuário através do processo manual
+- Não depende de acesso direto ao sistema de arquivos do usuário
 
 ## 🔧 Implementação Técnica
 
 ### Backend - Endpoints
 
-#### `POST /chromadb/compress-local`
+#### `POST /chromadb/compress-local` (Desenvolvimento Local)
 
 ```python
 @app.post("/chromadb/compress-local")
@@ -45,8 +47,9 @@ async def compress_local_chromadb_folder(request: CompressLocalRequest):
 - Validação de integridade via ChromaDB client
 - Geração de arquivo `.tar.gz` temporário
 - Streaming response para download
+- **⚠️ Não funciona em produção (Render)**
 
-#### `POST /chromadb/compress-local-path`
+#### `POST /chromadb/compress-local-path` (Desenvolvimento Local)
 
 ```python
 @app.post("/chromadb/compress-local-path")
@@ -60,34 +63,48 @@ async def compress_local_chromadb_folder_by_path(request: CompressLocalRequest):
 - Validação rigorosa do caminho
 - Verificação de nome da pasta (`.chromadb`)
 - Tratamento de erros detalhado
+- **⚠️ Não funciona em produção (Render)**
 
 ### Frontend - Componentes
 
 #### Botões Disponíveis
 
-1. **"Compactar Local"** (Roxo)
+1. **"📋 Instruções Local"** (Roxo)
 
-   - Apenas compactação e download
-   - Não faz upload automático
+   - Mostra instruções para compactação manual
+   - Funciona em qualquer ambiente
+   - Não executa operações automáticas
 
-2. **"Compactar + Upload"** (Roxo Escuro)
-   - Compactação + upload automático para servidor
-   - Funcionalidade principal implementada
+2. **"📋 Instruções + Upload"** (Roxo Escuro)
+   - Mostra instruções para sincronização completa
+   - Funciona em qualquer ambiente
+   - Guia o usuário através do processo
 
 #### Funções Principais
 
 ```typescript
-// Compactação local com caminho personalizado
+// Mostra instruções para compactação local
 const handleCompressLocalChromaDB = async () => {
-  const chromaPath = prompt("Digite o caminho completo da pasta .chromadb:");
-  // ... lógica de compactação
+  setMessage({
+    type: "info",
+    text: `📋 Para compactar sua pasta .chromadb local:
+    1. **Windows**: Use 7-Zip ou WinRAR para criar um arquivo .tar.gz
+    2. **Linux/Mac**: Use o comando: tar -czf chromadb.tar.gz .chromadb/
+    3. **Faça upload** do arquivo .tar.gz usando o botão "Upload ChromaDB" acima
+    ⚠️ O servidor não pode acessar arquivos do seu PC diretamente.`,
+  });
 };
 
-// Compactação + upload automático
+// Mostra instruções para sincronização completa
 const handleCompressAndUploadLocalChromaDB = async () => {
-  // 1. Compactar pasta local
-  // 2. Upload automático para servidor
-  // 3. Atualizar status
+  setMessage({
+    type: "info",
+    text: `📋 Para sincronizar sua pasta .chromadb local:
+    1. **Compacte manualmente** sua pasta .chromadb
+    2. **Faça upload** do arquivo .tar.gz usando o botão "Upload ChromaDB" acima
+    3. **O sistema** fará o resto automaticamente!
+    ⚠️ O servidor não pode acessar arquivos do seu PC diretamente.`,
+  });
 };
 ```
 
@@ -99,20 +116,19 @@ const handleCompressAndUploadLocalChromaDB = async () => {
 
    - Navegue para a seção de sincronização ChromaDB
 
-2. **Clique em "Compactar + Upload"**
+2. **Clique em "📋 Instruções Local" ou "📋 Instruções + Upload"**
 
-   - Botão roxo escuro com ícone de upload
+   - Botões roxos com ícone de instruções
 
-3. **Digite o caminho da pasta `.chromadb`**
+3. **Siga as instruções exibidas**
 
-   - **Windows**: `C:\projetos\.chromadb`
-   - **Linux/Mac**: `/home/usuario/.chromadb`
-   - **Exemplo específico**: `C:\repos_github\projetos_matheus\Dashs_BD_IA\chatbot_educacao_fisica\backend\.chromadb`
+   - **Windows**: Use 7-Zip ou WinRAR para criar um arquivo .tar.gz
+   - **Linux/Mac**: Use o comando: `tar -czf chromadb.tar.gz .chromadb/`
 
-4. **Aguarde o processo automático**
-   - Sistema compacta pasta local
-   - Faz upload para servidor Render
-   - Atualiza status automaticamente
+4. **Faça upload do arquivo .tar.gz**
+
+   - Use o botão "Upload ChromaDB" na área de upload
+   - Sistema processa e atualiza automaticamente
 
 ### Exemplos de Caminhos
 
@@ -149,29 +165,15 @@ VITE_RAG_API_BASE_URL=http://localhost:8001
 ##### **Produção (Render)**
 
 ```bash
-# Frontend Environment Variables (PRODUÇÃO)
-VITE_API_URL=https://dna-forca-api-server.onrender.com
+# Frontend Environment Variables (PRODUCTION)
+VITE_API_URL=https://dna-forca-api.onrender.com
 VITE_RAG_API_BASE_URL=https://dna-forca-rag-server.onrender.com
 ```
 
 #### Backend (`.env`)
 
-##### **Desenvolvimento Local**
-
 ```bash
-# Configurações do servidor RAG (LOCAL)
-RAG_SERVER_URL=http://localhost:8001
-
-# Rotas das pastas locais
-CHROMA_PERSIST_DIR=C:/repos_github/projetos_matheus/Dashs_BD_IA/chatbot_educacao_fisica/backend/data/.chromadb
-MATERIALS_DIR=C:/repos_github/projetos_matheus/Dashs_BD_IA/backend/data/materials
-```
-
-##### **Produção (Render)**
-
-```bash
-# Configurações do servidor RAG (PRODUÇÃO)
-RAG_SERVER_URL=https://dna-forca-rag-server.onrender.com
+# Backend Environment Variables
 CHROMA_PERSIST_DIR=/app/data/.chromadb
 MATERIALS_DIR=/app/data/materials
 ```
@@ -257,10 +259,10 @@ src/
 
 ## 🔄 Fluxo de Funcionamento
 
-### 1. Compactação Local
+### 1. Instruções para Compactação Manual
 
 ```
-Usuário especifica caminho → Validação → Conexão ChromaDB → Compactação → .tar.gz
+Usuário clica no botão → Instruções são exibidas → Usuário segue passos manuais
 ```
 
 ### 2. Upload para Servidor
@@ -277,15 +279,15 @@ Servidor atualizado → ChromaDB funcional → RAG handler ativo → Sistema ope
 
 ## 📊 Endpoints Disponíveis
 
-| Endpoint                        | Método | Descrição                                  | Servidor   |
-| ------------------------------- | ------ | ------------------------------------------ | ---------- |
-| `/chromadb/upload`              | POST   | Upload de arquivo .tar.gz                  | RAG (8001) |
-| `/chromadb/upload-folder`       | POST   | Upload de pasta .zip                       | RAG (8001) |
-| `/chromadb/download`            | GET    | Download do ChromaDB                       | RAG (8001) |
-| `/chromadb/compress`            | POST   | Compactar ChromaDB ativo                   | RAG (8001) |
-| `/chromadb/compress-local`      | POST   | Compactar pasta local (busca automática)   | RAG (8001) |
-| `/chromadb/compress-local-path` | POST   | Compactar pasta local (caminho específico) | RAG (8001) |
-| `/chromadb/status`              | GET    | Status do ChromaDB                         | RAG (8001) |
+| Endpoint                        | Método | Descrição                                  | Servidor   | Ambiente |
+| ------------------------------- | ------ | ------------------------------------------ | ---------- | -------- |
+| `/chromadb/upload`              | POST   | Upload de arquivo .tar.gz                  | RAG (8001) | Ambos    |
+| `/chromadb/upload-folder`       | POST   | Upload de pasta .zip                       | RAG (8001) | Ambos    |
+| `/chromadb/download`            | GET    | Download do ChromaDB                       | RAG (8001) | Ambos    |
+| `/chromadb/compress`            | POST   | Compactar ChromaDB ativo                   | RAG (8001) | Ambos    |
+| `/chromadb/compress-local`      | POST   | Compactar pasta local (busca automática)   | RAG (8001) | Local    |
+| `/chromadb/compress-local-path` | POST   | Compactar pasta local (caminho específico) | RAG (8001) | Local    |
+| `/chromadb/status`              | GET    | Status do ChromaDB                         | RAG (8001) | Ambos    |
 
 ## 🛠️ Troubleshooting
 
@@ -306,505 +308,67 @@ VITE_RAG_API_BASE_URL=http://localhost:8001
 VITE_RAG_API_BASE_URL=https://dna-forca-rag-server.onrender.com
 ```
 
-#### 2. Pasta .chromadb não encontrada
+#### 2. Funcionalidade de compactação local não funciona
 
-**Causa**: Caminho incorreto ou pasta inexistente
-**Solução**: Verificar caminho e usar caminho absoluto
+**Causa**: Servidor em produção (Render) não pode acessar arquivos locais
+**Solução**: Use os botões de instruções e siga o processo manual
+
+**Verificação:**
+
+- Se estiver usando Render, use compactação manual
+- Se estiver em desenvolvimento local, os endpoints funcionam normalmente
 
 #### 3. Erro de conexão
 
 **Causa Local**: Servidor RAG não está rodando
 **Solução Local**: Verificar se servidor está ativo na porta 8001
 
-**Causa Produção**: Servidor Render não está respondendo
-**Solução Produção**:
+**Causa Produção**: Problemas de rede ou servidor indisponível
+**Solução Produção**: Verificar status do servidor Render
 
-- Verificar status dos serviços no dashboard do Render
-- Confirmar se as variáveis de ambiente estão configuradas
-- Verificar logs do servidor no Render
+## 🔒 Limitações de Segurança
 
-#### 4. Erro de CORS (Produção)
+### Produção (Render)
 
-**Causa**: Configuração de CORS incorreta no servidor
-**Solução**: Verificar se `CORS_ORIGINS` inclui o domínio do frontend
+- **❌ Sem acesso direto** ao sistema de arquivos do usuário
+- **❌ Não pode** compactar pastas locais automaticamente
+- **✅ Funciona** com upload de arquivos já compactados
+- **✅ Seguro** para ambientes de produção
 
-```bash
-# Backend .env (Produção)
-CORS_ORIGINS=https://dna-forca-frontend.onrender.com,http://localhost:3000
-```
+### Desenvolvimento Local
 
-#### 5. Timeout de Conexão (Produção)
+- **✅ Acesso direto** ao sistema de arquivos local
+- **✅ Pode** compactar pastas automaticamente
+- **⚠️ Cuidado** com permissões e caminhos
+- **✅ Ideal** para desenvolvimento e testes
 
-**Causa**: Servidor Render demorando para responder
-**Solução**:
+## 📝 Resumo da Solução
 
-- Verificar se o servidor não está "dormindo" (Render free tier)
-- Aguardar primeira requisição para "acordar" o servidor
-- Considerar upgrade para plano pago se necessário
+### Problema Original
 
-### Logs de Debug
+O endpoint `/chromadb/compress-local-path` tentava acessar caminhos locais do usuário a partir do servidor Render, o que é impossível por questões de segurança e arquitetura.
 
-#### Backend
+### Solução Implementada
 
-##### **Local**
+1. **Mantidos** os endpoints de compactação local para desenvolvimento
+2. **Substituídos** os botões de execução automática por instruções
+3. **Adicionadas** mensagens claras sobre limitações de produção
+4. **Preservada** a funcionalidade de upload de arquivos compactados
 
-```bash
-📦 Compactando pasta local: C:\projetos\.chromadb
-✅ Pasta .chromadb encontrada em: C:\projetos\.chromadb
-📊 Pasta local contém 3 coleções com 150 documentos
-✅ Arquivo .tar.gz criado: 45.67 MB
-```
+### Benefícios
 
-##### **Produção (Render)**
+- ✅ **Funciona em qualquer ambiente** (desenvolvimento e produção)
+- ✅ **Seguro** para ambientes de produção
+- ✅ **Claro** para o usuário sobre o que fazer
+- ✅ **Mantém** funcionalidade de upload e processamento
+- ✅ **Educativo** sobre limitações de arquitetura
 
-```bash
-📦 Compactando pasta local: /app/data/.chromadb
-✅ Pasta .chromadb encontrada em: /app/data/.chromadb
-📊 Pasta local contém 5 coleções com 300 documentos
-✅ Arquivo .tar.gz criado: 67.89 MB
-```
+## 🎯 Próximos Passos
 
-#### Frontend
+### Melhorias Futuras
 
-##### **Verificar Variáveis de Ambiente**
-
-```typescript
-// Verificar variáveis de ambiente
-console.log("VITE_RAG_API_BASE_URL:", import.meta.env.VITE_RAG_API_BASE_URL);
-console.log("VITE_API_URL:", import.meta.env.VITE_API_URL);
-
-// Verificar se está apontando para produção
-if (import.meta.env.VITE_RAG_API_BASE_URL.includes("onrender.com")) {
-  console.log("✅ Configurado para PRODUÇÃO (Render)");
-} else {
-  console.log("🔄 Configurado para DESENVOLVIMENTO LOCAL");
-}
-```
-
-##### **Testar Conectividade**
-
-```typescript
-// Testar se o servidor está respondendo
-const testConnection = async () => {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_RAG_API_BASE_URL}/chromadb/status`
-    );
-    if (response.ok) {
-      console.log("✅ Servidor RAG respondendo");
-    } else {
-      console.log("❌ Servidor RAG com erro:", response.status);
-    }
-  } catch (error) {
-    console.log("❌ Erro de conexão:", error);
-  }
-};
-```
-
-## 🧪 Testando em Produção (Render)
-
-### Preparação para Teste
-
-#### **1. Verificar Configuração**
-
-- Confirmar se todos os serviços estão rodando no Render
-- Verificar se as variáveis de ambiente estão configuradas
-- Confirmar se as chaves API estão válidas
-
-#### **2. Testar Conectividade**
-
-```typescript
-// No console do navegador (frontend do Render)
-const testRenderConnection = async () => {
-  try {
-    const response = await fetch(
-      "https://dna-forca-rag-server.onrender.com/chromadb/status"
-    );
-    if (response.ok) {
-      console.log("✅ Servidor RAG do Render respondendo");
-      const data = await response.json();
-      console.log("📊 Status:", data);
-    } else {
-      console.log("❌ Erro no servidor:", response.status);
-    }
-  } catch (error) {
-    console.log("❌ Erro de conexão:", error);
-  }
-};
-
-testRenderConnection();
-```
-
-### Teste da Funcionalidade de Compactação
-
-#### **1. Teste Básico - Status do ChromaDB**
-
-- Acessar: `https://dna-forca-frontend.onrender.com`
-- Navegar para página de Materiais
-- Clicar em "Verificar Status"
-- Confirmar se está conectando ao servidor do Render
-
-#### **2. Teste de Compactação Local**
-
-- Clicar em "Compactar + Upload"
-- Digite um caminho de teste (ex: `C:\teste\.chromadb`)
-- Observar logs no console do navegador
-- Verificar se está apontando para URLs do Render
-
-#### **3. Verificar URLs nos Logs**
-
-```typescript
-// Deve mostrar URLs do Render, não localhost
-console.log("URLs configuradas:");
-console.log("VITE_RAG_API_BASE_URL:", import.meta.env.VITE_RAG_API_BASE_URL);
-console.log("VITE_API_URL:", import.meta.env.VITE_API_URL);
-
-// Deve mostrar:
-// VITE_RAG_API_BASE_URL: https://dna-forca-rag-server.onrender.com
-// VITE_API_URL: https://dna-forca-api-server.onrender.com
-```
-
-### Monitoramento Durante o Teste
-
-#### **Dashboard do Render**
-
-- **Frontend**: Verificar se está recebendo requisições
-- **API Server**: Monitorar logs de autenticação
-- **RAG Server**: Acompanhar logs de compactação
-
-#### **Logs Esperados no RAG Server**
-
-```bash
-# Durante teste de compactação
-📦 Compactando pasta local: C:\teste\.chromadb
-✅ Pasta .chromadb encontrada em: C:\teste\.chromadb
-📊 Pasta local contém X coleções com Y documentos
-✅ Arquivo .tar.gz criado: X.XX MB
-```
-
-### Troubleshooting de Teste
-
-#### **Problemas Comuns Durante Teste**
-
-1. **Erro 404 - Endpoint não encontrado**
-
-   - Verificar se `VITE_RAG_API_BASE_URL` está apontando para Render
-   - Confirmar se o servidor RAG está rodando
-
-2. **Timeout de Conexão**
-
-   - Aguardar primeira requisição (servidor pode estar "dormindo")
-   - Verificar se não há bloqueio de firewall
-
-3. **Erro de CORS**
-
-   - Verificar se `CORS_ORIGINS` inclui o domínio do frontend
-   - Confirmar se está configurado no servidor RAG
-
-4. **Erro de Autenticação**
-   - Verificar se o token JWT está sendo enviado
-   - Confirmar se o sistema de auth está funcionando
-
-#### **Comandos de Debug no Render**
-
-```bash
-# No servidor RAG do Render
-# Verificar variáveis de ambiente
-env | grep VITE
-env | grep RAG
-
-# Verificar se diretórios existem
-ls -la /app/data/
-ls -la /app/data/.chromadb/
-
-# Ver logs em tempo real
-tail -f /var/log/app.log
-```
-
-### Validação do Teste
-
-#### **✅ Teste Bem-Sucedido**
-
-- Frontend conecta ao servidor RAG do Render
-- Funcionalidade de compactação responde
-- Logs mostram URLs corretas (onrender.com)
-- Sistema processa requisições sem erros
-
-#### **❌ Teste Falhou**
-
-- Verificar configuração das variáveis de ambiente
-- Confirmar se serviços estão rodando no Render
-- Verificar logs de erro no dashboard
-- Testar conectividade básica entre serviços
-
-### Próximos Passos Após Teste
-
-#### **Se Teste Passou**
-
-- Funcionalidade está pronta para uso em produção
-- Usuários podem compactar e fazer upload de ChromaDB local
-- Sistema sincroniza dados automaticamente com servidor Render
-
-#### **Se Teste Falhou**
-
-- Revisar configuração das variáveis de ambiente
-- Verificar status dos serviços no Render
-- Consultar logs de erro para diagnóstico
-- Ajustar configuração conforme necessário
-
-## 🚀 Deploy para Render
-
-### Configuração do Render
-
-#### **render.yaml Completo**
-
-```yaml
-services:
-  - type: web
-    name: dna-forca-frontend
-    envVars:
-      - key: VITE_API_URL
-        value: "https://dna-forca-api-server.onrender.com"
-      - key: VITE_RAG_API_BASE_URL
-        value: "https://dna-forca-rag-server.onrender.com"
-      - key: VITE_SUPABASE_URL
-        value: "https://bqvhtyodlsjcjitunmvs.supabase.co"
-      - key: VITE_SUPABASE_ANON_KEY
-        value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-
-  - type: web
-    name: dna-forca-api-server
-    envVars:
-      - key: API_SERVER_URL
-        value: "https://dna-forca-api-server.onrender.com"
-      - key: RAG_SERVER_URL
-        value: "https://dna-forca-rag-server.onrender.com"
-      - key: OPENAI_API_KEY
-        value: "sk-proj-..."
-      - key: NVIDIA_API_KEY
-        value: "nvapi-..."
-      - key: GEMINI_API_KEY
-        value: "AIzaSyC..."
-      - key: CORS_ORIGINS
-        value: "https://dna-forca-frontend.onrender.com,http://localhost:3000"
-
-  - type: web
-    name: dna-forca-rag-server
-    envVars:
-      - key: RAG_SERVER_URL
-        value: "https://dna-forca-rag-server.onrender.com"
-      - key: CHROMA_PERSIST_DIR
-        value: "/app/data/.chromadb"
-      - key: MATERIALS_DIR
-        value: "/app/data/materials"
-      - key: OPENAI_API_KEY
-        value: "sk-proj-..."
-      - key: NVIDIA_API_KEY
-        value: "nvapi-..."
-      - key: GEMINI_API_KEY
-        value: "AIzaSyC..."
-      - key: CORS_ORIGINS
-        value: "https://dna-forca-frontend.onrender.com,http://localhost:3000"
-```
-
-### Estrutura no Render
-
-#### **Diretórios do Servidor RAG**
-
-```
-/app/data/
-├── .chromadb/          ← ChromaDB principal (destino do upload)
-├── materials/          ← Materiais de treinamento
-├── assistant_configs.json
-├── users_db.json
-└── approved_users.json
-```
-
-#### **Diretórios do Servidor API**
-
-```
-/app/
-├── data/
-│   ├── .chromadb/      ← Backup do ChromaDB
-│   └── materials/      ← Materiais processados
-├── auth/               ← Sistema de autenticação
-├── rag_system/         ← Sistema RAG
-└── main.py             ← Servidor principal
-```
-
-### Processo de Deploy
-
-#### **1. Configuração das Variáveis de Ambiente**
-
-- Acessar dashboard do Render
-- Configurar variáveis para cada serviço
-- Verificar se todas as chaves API estão configuradas
-
-#### **2. Deploy dos Serviços**
-
-```bash
-# 1. Frontend
-git push origin main  # Render detecta automaticamente
-
-# 2. API Server
-cd backend
-git push origin main
-
-# 3. RAG Server
-cd backend
-git push origin main
-```
-
-#### **3. Verificação Pós-Deploy**
-
-- Verificar se todos os serviços estão rodando
-- Testar conectividade entre serviços
-- Verificar logs de inicialização
-- Testar funcionalidade de compactação local
-
-### Monitoramento e Logs
-
-#### **Dashboard do Render**
-
-- **Status dos Serviços**: Verde = Rodando, Vermelho = Erro
-- **Logs em Tempo Real**: Ver erros e informações de debug
-- **Métricas de Performance**: CPU, memória, tempo de resposta
-
-#### **Logs Importantes para Monitorar**
-
-```bash
-# Inicialização do RAG Server
-✅ RAG handler inicializado com sucesso
-📊 ChromaDB contém X coleções com Y documentos
-
-# Operações de Compactação
-📦 Compactando pasta local: /app/data/.chromadb
-✅ Arquivo .tar.gz criado: X.XX MB
-
-# Uploads e Processamento
-📤 Upload iniciado para /app/data/.chromadb
-🔄 RAG handler reinicializado com sucesso
-```
-
-### Troubleshooting de Produção
-
-#### **Problemas Comuns no Render**
-
-1. **Servidor "Dormindo" (Free Tier)**
-
-   - Primeira requisição pode demorar 30-60 segundos
-   - Solução: Aguardar ou fazer upgrade para plano pago
-
-2. **Timeout de Conexão**
-
-   - Verificar se serviços estão respondendo
-   - Verificar logs de erro no dashboard
-
-3. **Erro de CORS**
-
-   - Confirmar se `CORS_ORIGINS` está configurado corretamente
-   - Incluir domínio do frontend na lista
-
-4. **Chave API Inválida**
-   - Verificar se todas as chaves estão configuradas
-   - Confirmar se as chaves não expiraram
-
-#### **Comandos de Debug no Render**
-
-```bash
-# Verificar variáveis de ambiente
-echo $VITE_RAG_API_BASE_URL
-echo $CHROMA_PERSIST_DIR
-
-# Verificar se diretórios existem
-ls -la /app/data/
-ls -la /app/data/.chromadb/
-
-# Verificar logs do sistema
-tail -f /var/log/syslog
-```
-
-## 📈 Benefícios da Implementação
-
-### 1. **Automatização**
-
-- Compactação e upload em uma operação
-- Sem necessidade de upload manual
-- Processo simplificado para o usuário
-
-### 2. **Flexibilidade**
-
-- Caminhos personalizados
-- Suporte a diferentes sistemas operacionais
-- Validação robusta de caminhos
-
-### 3. **Confiabilidade**
-
-- Verificação de integridade dos dados
-- Backup automático antes de substituição
-- Logs detalhados para debug
-
-### 4. **Integração**
-
-- Funciona com sistema RAG existente
-- Atualização automática do handler
-- Status em tempo real
-
-## 🔮 Próximas Melhorias
-
-### Funcionalidades Futuras
-
-1. **Interface de Seleção de Pasta**
-
-   - Browser de arquivos nativo
-   - Histórico de caminhos utilizados
-   - Favoritos para caminhos frequentes
-
-2. **Validação Avançada**
-
-   - Verificação de tamanho da pasta
-   - Análise de conteúdo antes do upload
-   - Estimativa de tempo de processamento
-
-3. **Sincronização Bidirecional**
-
-   - Download de dados do servidor
-   - Merge automático de dados
-   - Resolução de conflitos
-
-4. **Monitoramento**
-   - Progress bar em tempo real
-   - Notificações de conclusão
-   - Histórico de operações
-
-## 📚 Referências
-
-### Documentação Relacionada
-
-- [RAG System Guide](./backend/RAG_SYSTEM_GUIDE.md)
-- [Docker Deployment Guide](./backend/DOCKER_DEPLOYMENT.md)
-- [Render Deployment Guide](./backend/RENDER_DEPLOYMENT.md)
-
-### Tecnologias Utilizadas
-
-- **Backend**: FastAPI, Python, ChromaDB
-- **Frontend**: React, TypeScript, Tailwind CSS
-- **Compactação**: tarfile, gzip
-- **Deploy**: Render, Docker
-
----
-
-## 📞 Suporte
-
-Para dúvidas ou problemas com a funcionalidade de compactação local do ChromaDB:
-
-1. **Verificar logs** do servidor RAG
-2. **Confirmar configuração** das variáveis de ambiente
-3. **Validar caminhos** das pastas locais
-4. **Testar conectividade** com servidores
-
----
-
-_Documentação criada em: 25/08/2025_  
-_Versão: 1.0_  
-_Última atualização: Implementação inicial da funcionalidade_
+1. **Validação de arquivos** antes do upload
+2. **Progress bar** durante upload de arquivos grandes
+3. **Histórico** de uploads realizados
+4. **Notificações** de conclusão de processamento
+5. **Integração** com sistemas de backup automático
