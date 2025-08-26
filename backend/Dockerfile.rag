@@ -33,8 +33,8 @@ COPY utils/ ./utils/
 COPY video_processing/ ./video_processing/
 COPY config/ ./config/
 
-# Criar diretórios necessários
-RUN mkdir -p /app/data/.chromadb /app/data/materials /app/logs
+# Criar apenas diretórios básicos (SEM .chromadb automático)
+RUN mkdir -p /app/data/materials /app/logs
 
 # Copiar script de inicialização do RAG
 COPY rag_server.py .

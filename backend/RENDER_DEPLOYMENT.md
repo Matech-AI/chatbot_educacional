@@ -23,6 +23,7 @@ NVIDIA_RETRY_DELAY=0.5       # Delay de 0.5s (não mais 2.0s)
 ### 🔧 **Implementação Técnica:**
 
 #### **1. RAG Handler com Fallback:**
+
 ```python
 # Em rag_handler.py
 def _try_llm_fallback(self, messages, **kwargs):
@@ -33,6 +34,7 @@ def _try_llm_fallback(self, messages, **kwargs):
 ```
 
 #### **2. Educational Agent Integrado:**
+
 ```python
 # Em educational_agent.py
 def _initialize_model(self):
@@ -51,6 +53,7 @@ def _initialize_model(self):
 ### 🚨 **Problemas Resolvidos:**
 
 #### **❌ ANTES (Problema):**
+
 ```
 NVIDIA falha → tenta 3x → tenta "tentativa final" → demora 4.5 minutos
 Fallback NUNCA ativado
@@ -58,6 +61,7 @@ Usuário fica esperando indefinidamente
 ```
 
 #### **✅ AGORA (Solução):**
+
 ```
 NVIDIA falha → tenta 2x → ativa fallback automático → OpenAI responde em 15s
 Sistema sempre funcional
@@ -85,6 +89,7 @@ Usuário tem resposta rápida
 ### 📋 **Configuração no Render:**
 
 #### **Variáveis de Ambiente Necessárias:**
+
 ```yaml
 # No render.yaml, cada serviço precisa:
 envVars:
@@ -95,7 +100,7 @@ envVars:
     sync: false
   - key: GEMINI_API_KEY
     sync: false
-  
+
   # 🎯 CONFIGURAÇÕES DO RAG HANDLER
   - key: PREFER_NVIDIA
     value: "true"
@@ -107,7 +112,7 @@ envVars:
     value: "2"
   - key: NVIDIA_RETRY_DELAY
     value: "0.5"
-  
+
   # 🤖 MODELOS ESPECÍFICOS
   - key: NVIDIA_MODEL_NAME
     value: "openai/gpt-oss-120b"
@@ -120,6 +125,7 @@ envVars:
 ### 🧪 **Teste do Sistema de Fallback no Render:**
 
 #### **1. Teste NVIDIA Funcionando:**
+
 ```bash
 # Deve funcionar normalmente
 curl -X POST "https://dna-forca-rag-server.onrender.com/chat" \
@@ -128,6 +134,7 @@ curl -X POST "https://dna-forca-rag-server.onrender.com/chat" \
 ```
 
 #### **2. Teste Fallback (simular falha NVIDIA):**
+
 ```bash
 # No dashboard do Render, altere temporariamente:
 NVIDIA_API_KEY=invalid_key
@@ -141,6 +148,7 @@ curl -X POST "https://dna-forca-rag-server.onrender.com/chat" \
 ### 🔧 **Troubleshooting do Fallback no Render:**
 
 #### **❌ Fallback não ativa:**
+
 ```bash
 # Verificar logs no dashboard do Render
 # Procurar por: "fallback", "NVIDIA falhou", "LLM fallback activated"
@@ -153,6 +161,7 @@ curl https://dna-forca-rag-server.onrender.com/status
 ```
 
 #### **❌ OpenAI não funciona como fallback:**
+
 ```bash
 # Verificar se OPENAI_API_KEY está configurada no Render
 # Verificar se a chave é válida
@@ -162,6 +171,7 @@ curl -H "Authorization: Bearer $OPENAI_API_KEY" \
 ```
 
 #### **❌ Gemini não funciona como fallback:**
+
 ```bash
 # Verificar se GEMINI_API_KEY está configurada no Render
 # Verificar se a chave é válida
@@ -171,6 +181,7 @@ curl -H "Authorization: Bearer $OPENAI_API_KEY" \
 ### 📈 **Monitoramento do Fallback no Render:**
 
 #### **Endpoints de Status:**
+
 ```bash
 # Status geral do sistema
 curl https://dna-forca-rag-server.onrender.com/status
@@ -183,6 +194,7 @@ curl https://dna-forca-rag-server.onrender.com/stats
 ```
 
 #### **Métricas Importantes:**
+
 - **Taxa de sucesso NVIDIA**: Deve ser >95%
 - **Taxa de ativação do fallback**: Deve ser <5%
 - **Tempo médio de resposta**: Deve ser <30s
@@ -195,6 +207,164 @@ curl https://dna-forca-rag-server.onrender.com/stats
 3. **📈 Análise de performance** por modelo
 4. **🔄 A/B testing** entre diferentes modelos
 5. **💰 Monitoramento de custos** por API utilizada
+
+---
+
+## 🚀 **DEPLOY NO RENDER - SEM CRIAÇÃO AUTOMÁTICA DO CHROMADB**
+
+## 📋 **MUDANÇAS IMPLEMENTADAS**
+
+### **✅ ANTES (Problema):**
+
+- Sistema criava automaticamente pasta `.chromadb` vazia
+- Causava erro "no such table: tenants" no Render
+- Inicialização automática falhava
+
+### **✅ AGORA (Solução):**
+
+- Sistema **NÃO cria** automaticamente a pasta `.chromadb`
+- Apenas prepara a **estrutura básica** (materials, logs)
+- Usuário **cria manualmente** a pasta `.chromadb` via terminal ou frontend
+
+## 🎯 **COMO FUNCIONA AGORA:**
+
+### **1. INICIALIZAÇÃO DO SERVIDOR:**
+
+```
+📁 /app/data/
+├── materials/          # ✅ Diretório criado automaticamente
+└── logs/              # ✅ Diretório criado automaticamente
+
+# ❌ .chromadb/ NÃO é criado automaticamente
+```
+
+### **2. CRIAÇÃO MANUAL DO CHROMADB:**
+
+- **Opção 1**: Via terminal: `mkdir -p /app/data/.chromadb`
+- **Opção 2**: Via frontend: Upload de pasta `.chromadb` compactada
+- **Opção 3**: Via interface: Criação automática durante upload
+
+### **3. SISTEMA FUNCIONANDO:**
+
+- Pasta `.chromadb` criada manualmente
+- Materiais de treino carregados
+- RAG handler inicializado corretamente
+
+## 🔧 **ARQUIVOS MODIFICADOS:**
+
+### **✅ render.yaml:**
+
+- Configurações mantidas para estrutura
+- **`CHROMA_PERSIST_DIR=/app/data/.chromadb`** (pasta com ponto)
+
+### **✅ backend/rag_server.py:**
+
+- **NÃO cria** pasta `.chromadb` automaticamente
+- Apenas estrutura básica (materials, logs)
+- Mensagem informativa para criação manual
+
+### **✅ backend/Dockerfile.rag:**
+
+- **NÃO cria** pasta `.chromadb` automaticamente
+- Apenas `materials` e `logs`
+
+### **✅ backend/Dockerfile.api:**
+
+- **NÃO cria** pasta `.chromadb` automaticamente
+- Apenas `materials` e `logs`
+
+## 📱 **INTERFACE ATUALIZADA:**
+
+### **✅ TODOS OS 6 BOTÕES SEMPRE VISÍVEIS:**
+
+1. **"Verificar Status"** - Sempre ativo
+2. **"Compactar .chromadb"** - Desabilitado se ChromaDB inativo
+3. **"Download ChromaDB"** - Desabilitado se ChromaDB inativo
+4. **"📋 Instruções Local"** - Sempre ativo
+5. **"📋 Instruções + Upload"** - Sempre ativo
+6. **"Listar Backups"** - Sempre ativo
+
+### **✅ RESPONSIVIDADE:**
+
+- Botões se adaptam a telas pequenas
+- `flex flex-wrap` para quebra de linha
+- `flex-shrink-0` para tamanho consistente
+
+## 🚀 **PROCESSO DE DEPLOY:**
+
+### **1. BUILD E DEPLOY:**
+
+```bash
+# Render faz deploy automaticamente
+# Cria apenas estrutura básica (materials, logs)
+# Servidor inicia SEM pasta .chromadb
+```
+
+### **2. PRIMEIRO ACESSO:**
+
+```bash
+# Usuário acessa interface
+# Vê mensagem "ChromaDB Não Encontrado"
+# Todos os 6 botões estão visíveis
+```
+
+### **3. CRIAÇÃO DO CHROMADB:**
+
+```bash
+# Opção A: Via terminal
+mkdir -p /app/data/.chromadb
+
+# Opção B: Via frontend (upload)
+# Sistema cria automaticamente durante upload
+
+# Opção C: Via interface
+# Botão de criação manual disponível
+```
+
+## 🎉 **VANTAGENS DA NOVA ABORDAGEM:**
+
+### **✅ CONTROLE TOTAL:**
+
+- Usuário decide quando criar a pasta `.chromadb`
+- Flexibilidade para usar terminal ou frontend
+- Sem interferência automática do sistema
+
+### **✅ SIMPLICIDADE:**
+
+- Sem criação automática complexa
+- Sem erros de inicialização
+- Deploy mais confiável
+
+### **✅ ESTABILIDADE:**
+
+- Servidor sempre inicia
+- Sem dependências de dados externos
+- Funcionamento previsível
+
+## 🔍 **TROUBLESHOOTING:**
+
+### **❌ PROBLEMA: "ChromaDB Não Encontrado"**
+
+**✅ SOLUÇÃO:**
+
+1. Criar via terminal: `mkdir -p /app/data/.chromadb`
+2. Ou fazer upload via frontend (cria automaticamente)
+
+### **❌ PROBLEMA: Botões não funcionam**
+
+**✅ SOLUÇÃO:** Verificar se pasta `.chromadb` foi criada manualmente
+
+### **❌ PROBLEMA: Erro de conexão**
+
+**✅ SOLUÇÃO:** Verificar URLs das APIs no `render.yaml`
+
+## 📞 **SUPORTE:**
+
+Para dúvidas sobre o deploy:
+
+1. Verificar logs do servidor no Render
+2. Testar endpoints de saúde (`/health`, `/status`)
+3. Verificar se pasta `.chromadb` foi criada manualmente
 
 ---
 
@@ -798,7 +968,7 @@ Após o deploy, você terá:
 1. [ ] **NVIDIA API Key** obtida e configurada
 2. [ ] **OpenAI API Key** configurada (fallback)
 3. [ ] **Gemini API Key** configurada (fallback secundário)
-4. [ ] **Arquivo `chromadb_active.tar.gz`** compactado (269MB)
+4. [ ] **Pasta `.chromadb` compactada** (269MB) com materiais de treino
 5. [ ] **`catalog.xlsx`** renomeado e configurado
 6. [ ] **`render.yaml`** atualizado com novas variáveis
 7. [ ] **`requirements.txt`** inclui `sentence-transformers`
@@ -807,7 +977,7 @@ Após o deploy, você terá:
 ### 🚀 **DURANTE O DEPLOY:**
 
 1. [ ] **Variáveis de ambiente** configuradas no Render
-2. [ ] **Upload do ChromaDB** feito no serviço RAG
+2. [ ] **Upload da pasta .chromadb** feito no serviço RAG
 3. [ ] **Build command** executado com sucesso
 4. [ ] **Start command** funcionando
 5. [ ] **Health checks** passando

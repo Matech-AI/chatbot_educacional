@@ -306,9 +306,9 @@ async def lifespan(app: FastAPI):
     chroma_persist_dir = Path(env_chroma) if env_chroma else default_chroma
     materials_dir = Path(env_materials) if env_materials else default_materials
 
-    # Criar diretórios se não existirem
-    chroma_persist_dir.mkdir(parents=True, exist_ok=True)
+    # Criar diretórios se não existirem (apenas estrutura básica, sem .chromadb)
     materials_dir.mkdir(parents=True, exist_ok=True)
+    Path("/app/logs").mkdir(parents=True, exist_ok=True)
 
     # 🎯 VERIFICAÇÃO: Garantir que o caminho está correto
     logger.info(f"🔍 Verificando caminhos:")
@@ -324,7 +324,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"   - ChromaDB: {chroma_persist_dir}")
     logger.info(f"   - Materiais: {materials_dir}")
 
-    # Verificar integridade do ChromaDB existente
+    # Verificar integridade do ChromaDB existente (se houver)
     chromadb_status = check_chromadb_integrity(chroma_persist_dir)
     logger.info(f"🔍 Status do ChromaDB: {chromadb_status['reason']}")
 
@@ -336,7 +336,11 @@ async def lifespan(app: FastAPI):
                 f"   - Coleção '{col_info['name']}': {col_info['count']} documentos")
     else:
         logger.info(
-            f"⚠️  ChromaDB não encontrado ou vazio: {chromadb_status['reason']}")
+            f"ℹ️ ChromaDB não encontrado ou vazio: {chromadb_status['reason']}")
+        logger.info(
+            f"💡 Use a interface para fazer upload de um arquivo .chromadb existente")
+        logger.info(
+            f"💡 Ou crie a pasta .chromadb via terminal: mkdir -p {chroma_persist_dir}")
 
     # 🎯 CORREÇÃO: Inicializar RAG handler com NVIDIA_API_KEY (prioridade) ou OPENAI_API_KEY
     nvidia_api_key = os.getenv("NVIDIA_API_KEY")

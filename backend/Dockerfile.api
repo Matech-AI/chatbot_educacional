@@ -37,8 +37,8 @@ COPY rag_system/ ./rag_system/
 # Copiar arquivo principal da API
 COPY api_server.py .
 
-# Criar diretórios necessários (mantenha esta parte)
-RUN mkdir -p /app/data/materials /app/logs /app/data/.chromadb
+# Criar apenas diretórios básicos (SEM .chromadb automático)
+RUN mkdir -p /app/data/materials /app/logs
 
 # Expor porta
 EXPOSE 8000
