@@ -815,7 +815,15 @@ class RAGHandler:
 
     def _initialize_vector_store(self):
         try:
-            os.makedirs(self.persist_dir, exist_ok=True)
+            # 🚨 CORREÇÃO: NÃO criar diretório automaticamente no Render
+            # Verificar se o diretório existe antes de tentar usar
+            if not os.path.exists(self.persist_dir):
+                logger.warning(
+                    f"⚠️ Diretório ChromaDB não encontrado: {self.persist_dir}")
+                logger.warning(
+                    "💡 Crie manualmente o diretório ou faça upload via frontend")
+                # Não criar automaticamente - deixar o usuário decidir
+                return
             # Tenta carregar a coleção configurada (default: "langchain")
             try:
                 self.vector_store = Chroma(

@@ -334,7 +334,8 @@ async def get_status():
         "ai_enabled": rag_handler is not None,
         "materials_count": len(list(materials_dir.rglob("*")) if materials_dir.exists() else []),
         "materials_directory_exists": materials_dir.exists(),
-        "chromadb_exists": chromadb_dir.exists(),
+        "chromadb_exists": chromadb_dir.exists() if chromadb_dir else False,
+        "chromadb_path": str(chromadb_dir) if chromadb_dir else None,
         "drive_handler_initialized": drive_handler is not None,
         "drive_authenticated": drive_handler.service is not None if drive_handler else False,
         "uptime": "Running",
@@ -1695,8 +1696,9 @@ async def generate_system_report(current_user: User = Depends(get_current_user))
             report["directories"]["materials"] = {"exists": False}
 
         report["directories"]["chromadb"] = {
-            "exists": chromadb_dir.exists(),
-            "size_bytes": sum(f.stat().st_size for f in chromadb_dir.rglob("*") if f.is_file()) if chromadb_dir.exists() else 0
+            "exists": chromadb_dir.exists() if chromadb_dir else False,
+            "size_bytes": sum(f.stat().st_size for f in chromadb_dir.rglob("*") if f.is_file()) if chromadb_dir and chromadb_dir.exists() else 0,
+            "path": str(chromadb_dir) if chromadb_dir else None
         }
 
         # Drive status

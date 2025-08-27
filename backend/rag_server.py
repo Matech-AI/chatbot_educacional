@@ -323,9 +323,17 @@ async def lifespan(app: FastAPI):
     materials_dir.mkdir(parents=True, exist_ok=True)
     Path("/app/logs").mkdir(parents=True, exist_ok=True)
 
-    # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente
+    # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente no Render
     if chroma_persist_dir and not str(chroma_persist_dir).endswith('.chromadb'):
-        chroma_persist_dir.mkdir(parents=True, exist_ok=True)
+        # Verificar se estamos no Render
+        is_render = os.getenv("RENDER", "").lower() == "true"
+        if not is_render:
+            chroma_persist_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            logger.info(
+                "🚨 Render detectado - NÃO criando diretório .chromadb automaticamente")
+            logger.info(
+                "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
 
     # 🎯 VERIFICAÇÃO: Garantir que o caminho está correto
     logger.info(f"🔍 Verificando caminhos:")
@@ -976,7 +984,15 @@ async def upload_chromadb_archive(
 
         # Extrair o arquivo
         logger.info(f"📂 Extraindo ChromaDB para {chroma_path}")
-        chroma_path.mkdir(parents=True, exist_ok=True)
+        # 🚨 CORREÇÃO: NÃO criar diretório automaticamente no Render
+        is_render = os.getenv("RENDER", "").lower() == "true"
+        if not is_render:
+            chroma_path.mkdir(parents=True, exist_ok=True)
+        else:
+            logger.info(
+                "🚨 Render detectado - NÃO criando diretório .chromadb automaticamente")
+            logger.info(
+                "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
 
         with tarfile.open(tmp_archive, 'r:gz') as tf:
             tf.extractall(chroma_path)
@@ -991,7 +1007,7 @@ async def upload_chromadb_archive(
         # Verificar integridade do ChromaDB carregado
         integrity_check = check_chromadb_integrity(chroma_path)
 
-        if not integrity_check["is_valid"]:
+        if not integrity_check["valid"]:
             # Restaurar backup se a verificação falhar
             if backup_path and backup_path.exists():
                 logger.error(f"❌ ChromaDB inválido, restaurando backup")
@@ -1472,7 +1488,15 @@ async def upload_chromadb_folder(
 
         # Extrair o arquivo zip
         logger.info(f"📂 Extraindo pasta .chromadb do zip para {chroma_path}")
-        chroma_path.mkdir(parents=True, exist_ok=True)
+        # 🚨 CORREÇÃO: NÃO criar diretório automaticamente no Render
+        is_render = os.getenv("RENDER", "").lower() == "true"
+        if not is_render:
+            chroma_path.mkdir(parents=True, exist_ok=True)
+        else:
+            logger.info(
+                "🚨 Render detectado - NÃO criando diretório .chromadb automaticamente")
+            logger.info(
+                "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
 
         with zipfile.ZipFile(tmp_archive, 'r') as zf:
             zf.extractall(chroma_path)
@@ -1487,7 +1511,7 @@ async def upload_chromadb_folder(
         # Verificar integridade do ChromaDB carregado
         integrity_check = check_chromadb_integrity(chroma_path)
 
-        if not integrity_check["is_valid"]:
+        if not integrity_check["valid"]:
             # Restaurar backup se a verificação falhar
             if backup_path and backup_path.exists():
                 logger.error(f"❌ ChromaDB inválido, restaurando backup")
