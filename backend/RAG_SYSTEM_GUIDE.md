@@ -20,8 +20,28 @@ Este documento descreve, de forma prática e objetiva, como o sistema de RAG (Re
 ### **📊 FLUXO COMPLETO DA CONVERSA:**
 
 ```
-Frontend → API Server → Educational Agent → RAG Handler → Resposta
+Frontend → API Server (8000) → Educational Agent → RAG Handler → Resposta
 ```
+
+### **🔄 FLUXO DETALHADO COM FALLBACK AUTOMÁTICO:**
+
+```
+Frontend → API Server (8000) → Educational Agent → RAG Handler → NVIDIA API ❌ → Fallback ✅ → Resposta
+```
+
+#### **📋 SEQUÊNCIA DE FALLBACK LLM:**
+
+1. **🎯 PRIMEIRA TENTATIVA**: NVIDIA API (`openai/gpt-oss-120b`)
+2. **🔄 FALLBACK 1**: OpenAI (`gpt-4o-mini`)
+3. **🔄 FALLBACK 2**: Gemini (`gemini-2.5-flash`)
+4. **🔄 FALLBACK 3**: Open Source (se disponível)
+
+#### **⚡ SISTEMA DE RETRY INTELIGENTE:**
+
+- **NVIDIA API**: 2 tentativas com backoff exponencial
+- **Timeout**: 0.5s entre tentativas
+- **Fallback automático**: Se NVIDIA falha, tenta OpenAI/Gemini
+- **Resposta garantida**: Sempre retorna uma resposta válida
 
 ### **🔍 RESPONSABILIDADES CLARAS:**
 
@@ -41,6 +61,8 @@ Frontend → API Server → Educational Agent → RAG Handler → Resposta
 - ✅ **Busca documentos relevantes**
 - ✅ **Gera respostas baseadas no contexto**
 - ✅ **Fornece fontes e citações**
+- ✅ **Sistema de fallback LLM automático**
+- ✅ **Retry inteligente com backoff exponencial**
 - ❌ **NÃO gerencia conversas**
 - ❌ **NÃO mantém estado**
 - ❌ **NÃO coordena fluxo**
@@ -52,6 +74,24 @@ O problema das **respostas com texto vazio** está no **Educational Agent**, nã
 1. **Educational Agent** é quem recebe e processa as mensagens
 2. **Educational Agent** é quem decide se usa o RAG Handler
 3. **Educational Agent** é quem retorna a resposta final para o frontend
+
+### **🛡️ SISTEMA DE FALLBACK ROBUSTO:**
+
+#### **📊 CONFIGURAÇÃO DE PRIORIDADES:**
+
+```python
+# Ordem de preferência configurável via variáveis de ambiente
+PREFER_NVIDIA=true      # NVIDIA como prioridade
+PREFER_OPENAI=false     # OpenAI como fallback
+PREFER_OPEN_SOURCE=true # Open Source para embeddings
+```
+
+#### **⚡ RETRY E FALLBACK AUTOMÁTICO:**
+
+- **NVIDIA falha 2x** → Ativa fallback automático
+- **OpenAI/Gemini** → Tentativas individuais
+- **Resposta garantida** → Sempre retorna conteúdo válido
+- **Logs detalhados** → Rastreamento completo do processo
 
 ---
 
@@ -557,6 +597,99 @@ As **respostas com texto vazio** no frontend são causadas por problemas no **Ed
 2. **Corrigir** a inicialização do componente problemático
 3. **Testar** com uma pergunta simples
 4. **Verificar** se a resposta está sendo retornada corretamente
+
+---
+
+### 13) 🚀 SISTEMA DE FALLBACK LLM AUTOMÁTICO
+
+#### **🎯 ARQUITETURA DE FALLBACK:**
+
+O sistema implementa um **sistema de fallback robusto** que garante que sempre haja uma resposta, mesmo quando a API principal falha.
+
+#### **📊 FLUXO COMPLETO DE FALLBACK:**
+
+```
+Frontend → API Server (8000) → Educational Agent → RAG Handler → NVIDIA API ❌ → Fallback ✅ → Resposta
+```
+
+#### **🔄 SEQUÊNCIA DE TENTATIVAS:**
+
+1. **🎯 PRIMEIRA TENTATIVA**: NVIDIA API (`openai/gpt-oss-120b`)
+
+   - **Retry**: 2 tentativas com backoff exponencial
+   - **Timeout**: 0.5s entre tentativas
+   - **Fallback**: Se falhar 2x, ativa fallback automático
+
+2. **🔄 FALLBACK 1**: OpenAI (`gpt-4o-mini`)
+
+   - **Configuração**: Via `OPENAI_API_KEY`
+   - **Prioridade**: Alta (segunda opção)
+
+3. **🔄 FALLBACK 2**: Gemini (`gemini-2.5-flash`)
+
+   - **Configuração**: Via `GEMINI_API_KEY`
+   - **Prioridade**: Média (terceira opção)
+
+4. **🔄 FALLBACK 3**: Open Source (se disponível)
+   - **Configuração**: Via `sentence-transformers`
+   - **Prioridade**: Baixa (última opção)
+
+#### **⚡ SISTEMA DE RETRY INTELIGENTE:**
+
+```python
+# Configuração de retry para NVIDIA API
+nvidia_retry_attempts: int = 2
+nvidia_retry_delay: float = 0.5
+nvidia_max_retry_delay: float = 10.0
+
+# Backoff exponencial com jitter
+delay = min(self.retry_delay * (2 ** attempt) + (random.random() * 0.1), self.max_retry_delay)
+```
+
+#### **🛡️ GARANTIAS DO SISTEMA:**
+
+- **✅ Resposta sempre válida**: Nunca retorna conteúdo vazio
+- **✅ Fallback automático**: Ativa quando API principal falha
+- **✅ Logs detalhados**: Rastreamento completo do processo
+- **✅ Configurável**: Prioridades ajustáveis via variáveis de ambiente
+- **✅ Resiliente**: Continua funcionando mesmo com falhas de API
+
+#### **📋 CONFIGURAÇÃO DE PRIORIDADES:**
+
+```bash
+# Variáveis de ambiente para configurar prioridades
+PREFER_NVIDIA=true                    # NVIDIA como prioridade
+PREFER_OPENAI=false                   # OpenAI como fallback
+PREFER_OPEN_SOURCE_EMBEDDINGS=true    # Open Source para embeddings
+```
+
+#### **🔍 MONITORAMENTO E LOGS:**
+
+```python
+# Logs de fallback automático
+logger.info(f"🔄 NVIDIA falhou 2 vezes - ativando fallback automático...")
+logger.info(f"✅ Fallback LLM ({provider}) successful!")
+logger.info(f"🔄 Attempting LLM fallback...")
+```
+
+#### **📊 EXEMPLO DE FLUXO REAL:**
+
+```
+1. Usuário faz pergunta: "O que é hipertrofia muscular?"
+2. NVIDIA API falha na primeira tentativa
+3. NVIDIA API falha na segunda tentativa (retry)
+4. Sistema ativa fallback automático
+5. OpenAI responde com sucesso
+6. Resposta é retornada ao usuário em 2.62s
+7. Logs mostram: "✅ Fallback LLM (openai) successful!"
+```
+
+#### **🚨 TRATAMENTO DE ERROS:**
+
+- **NVIDIA falha**: Ativa fallback automático
+- **OpenAI falha**: Tenta Gemini
+- **Gemini falha**: Tenta Open Source
+- **Todos falham**: Resposta de emergência com instruções úteis
 
 ---
 

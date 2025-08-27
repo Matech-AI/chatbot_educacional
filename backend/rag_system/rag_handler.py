@@ -1459,20 +1459,38 @@ class RAGHandler:
                 return {"answer": immediate_processing_message + "No relevant information found.", "sources": []}
 
             sources = []
+            valid_documents = []
+
             for i, (doc, score) in enumerate(retrieved):
                 logger.info(f"  - Document {i+1}:")
                 logger.info(
                     f"    - Source: {doc.metadata.get('source', 'N/A')}")
                 logger.info(f"    - Page: {doc.metadata.get('page', 'N/A')}")
-                # Log the full chunk content
-                logger.info(f"    - Chunk Content: {doc.page_content}")
+
+                # ✅ VALIDAÇÃO CRÍTICA: Verificar se o documento tem conteúdo válido
+                content = doc.page_content or ""
+                content_length = len(content.strip())
+
+                # Verificar se o conteúdo é apenas números ou muito pequeno
+                is_only_numbers = content.strip().isdigit() if content.strip() else True
+                is_too_small = content_length < 50
+                is_invalid = is_only_numbers or is_too_small
+
+                if is_invalid:
+                    logger.warning(
+                        f"    - ❌ INVALID CONTENT: '{content}' (length: {content_length}, only_numbers: {is_only_numbers})")
+                    continue
+
+                logger.info(
+                    f"    - ✅ VALID CONTENT: {content[:100]}... (length: {content_length})")
+                valid_documents.append((doc, score))
 
                 source = Source(
                     title=doc.metadata.get('title', Path(
                         doc.metadata.get('source', '')).name),
                     source=doc.metadata.get('source', ''),
                     page=doc.metadata.get('page'),
-                    chunk=doc.page_content,
+                    chunk=content,
                     content_type=doc.metadata.get('content_type', 'text'),
                     difficulty_level=doc.metadata.get(
                         'difficulty_level', 'intermediate'),
@@ -1488,6 +1506,42 @@ class RAGHandler:
                 source.educational_value = self._calculate_educational_value(
                     source, user_level)
                 sources.append(source)
+
+            # ✅ VERIFICAÇÃO: Se não há documentos válidos, retornar erro
+            if not valid_documents:
+                logger.error(
+                    "❌ Nenhum documento válido encontrado - todos têm conteúdo corrompido")
+                return {
+                    "answer": immediate_processing_message + f"""❌ **PROBLEMA TÉCNICO IDENTIFICADO**
+
+Sua pergunta: "{question}"
+
+🚨 **PROBLEMA CRÍTICO:**
+Os documentos encontrados têm conteúdo corrompido ou inválido.
+
+**Detalhes técnicos:**
+- Documentos encontrados: {len(retrieved)}
+- Documentos válidos: 0
+- Conteúdo extraído: Apenas números ou muito pequeno
+
+**Possíveis causas:**
+1. Problema na indexação dos documentos
+2. Corrupção no banco de dados ChromaDB
+3. Problema na extração de conteúdo dos PDFs
+4. Versão incompatível das bibliotecas
+
+**Soluções:**
+1. Reprocessar todos os materiais
+2. Verificar versões das bibliotecas
+3. Limpar e recriar o banco de dados
+4. Contatar suporte técnico
+
+🔒 **Compromisso de Acurácia:** Não posso fornecer respostas com dados corrompidos.""",
+                    "sources": []
+                }
+
+            logger.info(
+                f"✅ Documentos válidos: {len(valid_documents)}/{len(retrieved)}")
 
             # Rank by a weighted combination favoring retrieval relevance
             def _combined_score(s: Source) -> float:
@@ -1506,31 +1560,96 @@ class RAGHandler:
                 f"📝 Generated context with {len(selected_sources)} sources.")
             logger.info(f"Full context for LLM:\n{context}")
 
-            # 🚨 VERIFICAÇÃO CRÍTICA DE CONTEXTO - Garantir que há informação suficiente
-            if len(context.strip()) < 100:  # Contexto muito pequeno
+            # ✅ VALIDAÇÃO AVANÇADA DE CONTEXTO
+            context_quality = self._validate_context_quality(context, question)
+
+            if context_quality["is_valid"] == False:
                 logger.warning(
-                    "⚠️ Contexto muito pequeno - risco de resposta imprecisa")
-                return {
-                    "answer": immediate_processing_message + f"""❌ **INFORMAÇÃO INSUFICIENTE**
+                    f"⚠️ Contexto de baixa qualidade: {context_quality['reason']}")
+
+                # 🔄 TENTAR BUSCAR MAIS DOCUMENTOS SE POSSÍVEL
+                if len(retrieved) < 20:  # Tentar expandir a busca
+                    logger.info(
+                        "🔄 Tentando expandir busca para encontrar mais contexto...")
+                    try:
+                        expanded_docs = self.vector_store.similarity_search(
+                            question_aug, k=min(20, len(retrieved) + 10)
+                        )
+                        # Filtrar documentos válidos da busca expandida
+                        additional_sources = []
+                        for doc in expanded_docs:
+                            content = doc.page_content or ""
+                            if len(content.strip()) >= 50 and not content.strip().isdigit():
+                                additional_sources.append(Source(
+                                    title=doc.metadata.get('title', Path(
+                                        doc.metadata.get('source', '')).name),
+                                    source=doc.metadata.get('source', ''),
+                                    page=doc.metadata.get('page'),
+                                    chunk=content,
+                                    content_type=doc.metadata.get(
+                                        'content_type', 'text'),
+                                    difficulty_level=doc.metadata.get(
+                                        'difficulty_level', 'intermediate'),
+                                    key_concepts=doc.metadata.get(
+                                        'key_concepts', []),
+                                    summary=doc.metadata.get('summary', ''),
+                                    relevance_score=0.5,  # Score médio para documentos adicionais
+                                    educational_value=0.5
+                                ))
+
+                        if additional_sources:
+                            sources.extend(additional_sources)
+                            # Reordenar e selecionar melhores
+                            sources.sort(
+                                key=lambda s: s.relevance_score or 0, reverse=True)
+                            selected_sources = sources[:min(
+                                self.config.max_context_chunks, len(sources))]
+                            context = "\n\n".join(
+                                [s.chunk for s in selected_sources])
+
+                            # ✅ VALIDAR NOVO CONTEXTO
+                            context_quality = self._validate_context_quality(
+                                context, question)
+                            if context_quality["is_valid"]:
+                                logger.info(
+                                    "✅ Contexto expandido com sucesso!")
+                            else:
+                                logger.warning(
+                                    "⚠️ Mesmo com expansão, contexto ainda é insuficiente")
+                        else:
+                            logger.warning(
+                                "⚠️ Nenhum documento adicional válido encontrado")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Falha ao expandir busca: {e}")
+
+                # 🚨 SE AINDA NÃO FUNCIONOU, RETORNAR ERRO DETALHADO
+                if not context_quality["is_valid"]:
+                    return {
+                        "answer": immediate_processing_message + f"""❌ **PROBLEMA DE CONTEXTO IDENTIFICADO**
 
 Sua pergunta: "{question}"
 
-⚠️ **PROBLEMA IDENTIFICADO:**
-Não encontrei informações suficientes nos materiais do DNA da Força para responder adequadamente a esta pergunta.
+⚠️ **PROBLEMA TÉCNICO:**
+{context_quality['reason']}
 
-🚨 **POR SEGURANÇA:**
-- Não posso fornecer uma resposta completa
-- Qualquer resposta seria potencialmente imprecisa
-- Recomendo consultar diretamente os materiais do DNA da Força
+**Detalhes técnicos:**
+- Documentos encontrados: {len(retrieved)}
+- Documentos válidos: {len(valid_documents)}
+- Qualidade do contexto: {context_quality['score']:.2f}/10
+- Tamanho do contexto: {len(context)} caracteres
 
-**Sugestões:**
-1. Reformule sua pergunta de forma mais específica
-2. Use termos relacionados aos materiais disponíveis
-3. Consulte diretamente os módulos e aulas do DNA da Força
+**Possíveis soluções:**
+1. **Reformular pergunta** com termos mais específicos
+2. **Usar sinônimos** relacionados aos materiais
+3. **Consultar diretamente** os módulos do DNA da Força
+4. **Aguardar** reprocessamento dos materiais
 
-🔒 **Compromisso de Acurácia:** Prefiro não responder do que fornecer informações incorretas.""",
-                    "sources": []
-                }
+**Exemplo de pergunta que funciona:**
+"Quais são os princípios básicos do treinamento de força?"
+
+🔒 **Compromisso de Acurácia:** Prefiro não responder do que fornecer informações imprecisas.""",
+                        "sources": []
+                    }
 
             # Verificar se o contexto contém informações relevantes para a pergunta
             question_words = set(question.lower().split())
@@ -1566,99 +1685,114 @@ Os materiais encontrados não são suficientemente relevantes para sua pergunta 
             prompt_template = """
             Você é um Professor de Educação Física e Treinamento Esportivo especializado em força e condicionamento físico.
 
-            🌍 **IDIOMA OBRIGATÓRIO:**
-            - SEMPRE responda APENAS em PORTUGUÊS BRASILEIRO
-            - NUNCA use inglês ou outros idiomas
-            - Use terminologia técnica em português quando disponível
-            - Mantenha o tom formal mas acessível, típico do português brasileiro
+             🌍 **IDIOMA OBRIGATÓRIO:**
+             - SEMPRE responda APENAS em PORTUGUÊS BRASILEIRO
+             - NUNCA use inglês ou outros idiomas
+             - Use terminologia técnica em português quando disponível
+             - Mantenha o tom formal mas acessível, típico do português brasileiro
 
-            🚨 REGRAS CRÍTICAS DE ACURÁCIA:
-            - NUNCA invente informações que não estejam nos materiais fornecidos
-            - NUNCA use conhecimento externo ou genérico
-            - SEMPRE responda APENAS com base no contexto fornecido
-            - Se não houver informação suficiente, seja EXPLICITAMENTE transparente
+             🚨 REGRAS CRÍTICAS DE ACURÁCIA:
+             - NUNCA invente informações que não estejam nos materiais fornecidos
+             - NUNCA use conhecimento externo ou genérico
+             - SEMPRE responda APENAS com base no contexto fornecido
+             - Se não houver informação suficiente, seja EXPLICITAMENTE transparente
 
-            SEUS OBJETIVOS EDUCACIONAIS:
-            1. Ensinar conceitos de forma clara e progressiva
-            2. Adaptar explicações ao nível do aluno ({user_level})
-            3. Fornecer exemplos práticos APENAS se estiverem nos materiais
-            4. Citar PRECISAMENTE as fontes consultadas
+             SEUS OBJETIVOS EDUCACIONAIS:
+             1. Ensinar conceitos de forma clara e progressiva
+             2. Adaptar explicações ao nível do aluno ({user_level})
+             3. Fornecer exemplos práticos APENAS se estiverem nos materiais
+             4. Citar PRECISAMENTE as fontes consultadas
 
-            METODOLOGIA DE ENSINO:
-            - Use analogias e exemplos APENAS se estiverem nos materiais
-            - Divida conceitos complexos em partes menores
-            - Relacione teoria com prática SE estiver nos materiais
-            - **Cite EXATAMENTE as fontes: "Conforme Módulo X, Aula Y — 'Título' (PDF), p. N"**
+             METODOLOGIA DE ENSINO:
+             - Use analogias e exemplos APENAS se estiverem nos materiais
+             - Divida conceitos complexos em partes menores
+             - Relacione teoria com prática SE estiver nos materiais
+             - **Cite EXATAMENTE as fontes: "Conforme Módulo X, Aula Y — 'Título' (PDF), p. N"**
 
-            ESTRUTURA DAS RESPOSTAS:
-            1. **Resposta Principal**: Explicação APENAS com base no contexto fornecido
-            2. **Fontes Precisas**: Citar EXATAMENTE os materiais consultados
-            3. **Transparência Total**: Se algo não estiver nos materiais, declare claramente
+             ESTRUTURA DAS RESPOSTAS:
+             1. **Resposta Principal**: Explicação APENAS com base no contexto fornecido
+             2. **Fontes Precisas**: Citar EXATAMENTE os materiais consultados
+             3. **Transparência Total**: Se algo não estiver nos materiais, declare claramente
 
-            🎯 INSTRUÇÕES DE SEGURANÇA:
-            - Padrão DNA-ONLY: responda EXCLUSIVAMENTE com base nos materiais do DNA da Força
-            - Se não houver informação suficiente: "❌ NÃO ENCONTREI essa informação específica nos materiais do DNA da Força"
-            - NUNCA adicione "Informação complementar" ou conhecimento externo
-            - NUNCA exiba paths, códigos internos ou metadados técnicos
-            - SEMPRE verifique se cada afirmação está respaldada pelo contexto
+             🎯 INSTRUÇÕES DE SEGURANÇA:
+             - Padrão DNA-ONLY: responda EXCLUSIVAMENTE com base nos materiais do DNA da Força
+             - Se não houver informação suficiente: "❌ NÃO ENCONTREI essa informação específica nos materiais do DNA da Força"
+             - NUNCA adicione "Informação complementar" ou conhecimento externo
+             - NUNCA exiba paths, códigos internos ou metadados técnicos
+             - SEMPRE verifique se cada afirmação está respaldada pelo contexto
 
-            🚫 FORMATO OBRIGATÓRIO - NUNCA QUEBRAR:
-            - NUNCA use símbolos | (pipe) em nenhuma circunstância
-            - NUNCA tente criar tabelas ou colunas
-            - NUNCA use linhas de separação ----- ou =====
-            - NUNCA organize dados em formato tabular
-            - SEMPRE use APENAS texto corrido e listas simples
-            
-            🚨 **PROIBIDO ABSOLUTAMENTE:**
-            - NUNCA use | (pipe) - nem mesmo para separar conceitos
-            - NUNCA use ----- ou ===== para separar seções
-            - NUNCA tente organizar dados em colunas
-            - NUNCA use formato tabular de qualquer tipo
-            - SEMPRE use texto corrido, parágrafos e listas com • ou -
-            
-            💡 **EXEMPLO DO QUE NÃO FAZER:**
-            ❌ "Conceito A | Conceito B | Conceito C"
-            ❌ "-----"
-            ❌ "====="
-            ❌ "Coluna1 | Coluna2 | Coluna3"
-            
-            ✅ **EXEMPLO DO QUE FAZER:**
-            ✅ "**Conceito A:** Descrição detalhada do conceito.
-            **Conceito B:** Descrição detalhada do conceito.
-            **Conceito C:** Descrição detalhada do conceito."
+             🚫 FORMATO OBRIGATÓRIO - NUNCA QUEBRAR:
+             - NUNCA use símbolos | (pipe) em nenhuma circunstância
+             - NUNCA tente criar tabelas ou colunas
+             - NUNCA use linhas de separação ----- ou =====
+             - NUNCA organize dados em formato tabular
+             - SEMPRE use APENAS texto corrido e listas simples
+             
+             🚨 **PROIBIDO ABSOLUTAMENTE:**
+             - NUNCA use | (pipe) - nem mesmo para separar conceitos
+             - NUNCA use ----- ou ===== para separar seções
+             - NUNCA tente organizar dados em colunas
+             - NUNCA use formato tabular de qualquer tipo
+             - SEMPRE use texto corrido, parágrafos e listas com • ou -
+             
+             💡 **EXEMPLO DO QUE NÃO FAZER:**
+             ❌ "Conceito A | Conceito B | Conceito C"
+             ❌ "-----"
+             ❌ "====="
+             ❌ "Coluna1 | Coluna2 | Coluna3"
+             
+             ✅ **EXEMPLO DO QUE FAZER:**
+             ✅ "**Conceito A:** Descrição detalhada do conceito.
 
-            📝 FORMATO CORRETO:
-            - Use títulos com ** (ex: **Título Principal**)
-            - Use listas com • ou - para itens
-            - Use texto corrido para explicar conceitos
-            - Se precisar organizar informações, use listas numeradas ou com bullets
-            - Mantenha a formatação limpa e legível
+             **Conceito B:** Descrição detalhada do conceito.
 
-            📊 EXEMPLO DE ORGANIZAÇÃO CORRETA:
-            **Pilares da Hipertrofia:**
-            • **Tensão Mecânica:** Use carga que permita 6-12 repetições com esforço próximo ao máximo
-            • **Volume de Treino:** 10-20 séries por grupo muscular por semana
-            • **Frequência:** Treine cada músculo 2-3 vezes por semana
-            • **Recuperação:** 60-90 segundos entre séries para hipertrofia
+             **Conceito C:** Descrição detalhada do conceito."
 
-            EXEMPLO DE RESPOSTA SEGURA:
-            "Com base nos materiais do DNA da Força consultados, posso explicar que [conceito específico encontrado]. 
-            Fonte: Módulo X, Aula Y — 'Título da Aula' (PDF), p. N.
-            
-            ⚠️ IMPORTANTE: Esta resposta é baseada APENAS nos materiais fornecidos. Não posso confirmar ou negar informações que não estejam presentes no acervo consultado.
-            
-            🌍 **Lembrete:** Todas as respostas são fornecidas em português brasileiro para melhor compreensão.
-            
-            🚫 **LEMBRE-SE:** NUNCA use |, -----, ===== ou formato tabular. Use APENAS texto corrido e listas com • ou -.
-            
-            🔒 **VERIFICAÇÃO FINAL ANTES DE RESPONDER:**
-            Antes de enviar sua resposta, verifique se NÃO contém:
-            - Nenhum símbolo | (pipe)
-            - Nenhuma linha ----- ou =====
-            - Nenhuma tentativa de tabela
-            - Nenhum formato tabular
-            
-            Se encontrar qualquer um desses elementos, reformule completamente a resposta usando APENAS texto corrido e listas simples."
+             📝 FORMATO CORRETO COM ESPAÇAMENTO IDEAL:
+             - Use títulos com ** (ex: **Título Principal**)
+             - Use listas com • ou - para itens
+             - Use texto corrido para explicar conceitos
+             - Se precisar organizar informações, use listas numeradas ou com bullets
+             - Mantenha a formatação limpa e legível
+
+             📊 EXEMPLO DE ORGANIZAÇÃO CORRETA COM ESPAÇAMENTO:
+             **Pilares da Hipertrofia:**
+
+             • **Tensão Mecânica:** Use carga que permita 6-12 repetições com esforço próximo ao máximo
+
+             • **Volume de Treino:** 10-20 séries por grupo muscular por semana
+
+             • **Frequência:** Treine cada músculo 2-3 vezes por semana
+
+             • **Recuperação:** 60-90 segundos entre séries para hipertrofia
+
+             EXEMPLO DE RESPOSTA SEGURA COM ESPAÇAMENTO IDEAL:
+             "Com base nos materiais do DNA da Força consultados, posso explicar que [conceito específico encontrado].
+
+             Fonte: Módulo X, Aula Y — 'Título da Aula' (PDF), p. N.
+             
+             ⚠️ IMPORTANTE: Esta resposta é baseada APENAS nos materiais fornecidos. Não posso confirmar ou negar informações que não estejam presentes no acervo consultado.
+             
+             🌍 **Lembrete:** Todas as respostas são fornecidas em português brasileiro para melhor compreensão.
+             
+             🚫 **LEMBRE-SE:** NUNCA use |, -----, ===== ou formato tabular. Use APENAS texto corrido e listas com • ou -.
+             
+             🔒 **VERIFICAÇÃO FINAL ANTES DE RESPONDER:**
+             Antes de enviar sua resposta, verifique se NÃO contém:
+             - Nenhum símbolo | (pipe)
+             - Nenhuma linha ----- ou =====
+             - Nenhuma tentativa de tabela
+             - Nenhum formato tabular
+             
+             Se encontrar qualquer um desses elementos, reformule completamente a resposta usando APENAS texto corrido e listas simples.
+
+             📋 **REGRAS DE ESPAÇAMENTO OBRIGATÓRIAS:**
+             - SEMPRE deixe uma linha em branco entre títulos e parágrafos
+             - SEMPRE deixe uma linha em branco entre parágrafos diferentes
+             - SEMPRE deixe uma linha em branco entre itens de lista
+             - SEMPRE deixe uma linha em branco antes de iniciar uma nova seção
+             - SEMPRE deixe uma linha em branco após concluir uma seção
+             - Use espaçamento consistente em toda a resposta para máxima legibilidade"
             """
             prompt = ChatPromptTemplate.from_template(prompt_template)
 
@@ -1771,8 +1905,9 @@ Infelizmente, estou enfrentando dificuldades técnicas para processar sua pergun
                     page_info = f", p. {s.page}" if s.page is not None else ""
                     sources_lines.append(" — ".join(cite) + page_info)
                 if sources_lines:
-                    answer = f"{answer}\n\nFontes (formato DNA):\n- " + \
-                        "\n- ".join(sources_lines)
+                    answer = f"{answer}\n\n**📚 FONTES CONSULTADAS:**\n\n" + \
+                        "\n\n".join(
+                            [f"• {source}" for source in sources_lines])
             except Exception:
                 pass
             logger.info(
