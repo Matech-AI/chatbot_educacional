@@ -59,6 +59,7 @@ pydantic[email]  # Adicionado suporte para validação de email
 requests
 aiohttp
 pytz
+magic-wormhole  # Para transferência segura de arquivos via wormhole
 
 # Performance e cache (opcional)
 redis
