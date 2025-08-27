@@ -30,6 +30,7 @@ from rag_system.rag_handler import RAGHandler, RAGConfig, Source
 import chromadb
 from chromadb.config import Settings
 from chat_agents.educational_agent import router as educational_agent_router
+from config.render_config import is_render_environment, get_chromadb_path, get_materials_path
 # ========================================
 # MODELS PYDANTIC
 # ========================================
@@ -305,6 +306,13 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"   - Materials dir exists: {default_materials.exists()}")
     logger.info(f"   - Materials path resolved: {default_materials.resolve()}")
+
+    # 🚨 VERIFICAÇÃO ADICIONAL: Usar configuração do Render
+    if is_render_environment():
+        logger.info("🚨 Configuração do Render detectada:")
+        logger.info("   - Auto-create ChromaDB: False")
+        logger.info("   - ChromaDB será criado apenas via upload")
+        logger.info("   - Diretório /app/data será mantido limpo")
 
     env_chroma = os.getenv("CHROMA_PERSIST_DIR")
     env_materials = os.getenv("MATERIALS_DIR")
@@ -870,43 +878,37 @@ async def initialize_rag(api_key: str):
 
         # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
         if not chroma_persist_dir:
-            # No Render, definir o caminho padrão
+            # No Render, NÃO definir caminho padrão automaticamente
             is_render = os.getenv("RENDER", "").lower() == "true"
             if is_render:
-                chroma_persist_dir = Path("/app/data/.chromadb")
+                # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente no Render
                 logger.info(
-                    f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+                    "🚨 Render detectado - NÃO criando .chromadb automaticamente")
+                logger.info(
+                    "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
+                logger.info("💡 Ou configure CHROMA_PERSIST_DIR manualmente")
 
-                # Verificar se o diretório /app/data existe e tem permissões
+                # Verificar se o diretório /app/data existe (apenas para logs)
                 data_dir = Path("/app/data")
                 if not data_dir.exists():
-                    logger.warning(
-                        "⚠️ Diretório /app/data não existe no Render")
-                    try:
-                        data_dir.mkdir(parents=True, exist_ok=True)
-                        logger.info("✅ Diretório /app/data criado")
-                    except Exception as e:
-                        logger.error(
-                            f"❌ Erro ao criar diretório /app/data: {e}")
-                        raise HTTPException(
-                            status_code=500,
-                            detail="Erro ao configurar diretório de dados no Render"
-                        )
-
-                # Verificar permissões
-                try:
-                    test_file = data_dir / "test_permissions"
-                    test_file.touch()
-                    test_file.unlink()
                     logger.info(
-                        "✅ Permissões de escrita verificadas em /app/data")
-                except Exception as e:
-                    logger.error(
-                        f"❌ Problema com permissões em /app/data: {e}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Problema de permissões no diretório de dados"
-                    )
+                        "ℹ️ Diretório /app/data não existe - será criado apenas quando necessário")
+                else:
+                    logger.info(f"ℹ️ Diretório /app/data existe: {data_dir}")
+                    # Listar conteúdo para debug
+                    try:
+                        contents = list(data_dir.iterdir())
+                        logger.info(
+                            f"📁 Conteúdo de /app/data: {[item.name for item in contents]}")
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️ Não foi possível listar conteúdo de /app/data: {e}")
+
+                # NÃO definir chroma_persist_dir automaticamente
+                raise HTTPException(
+                    status_code=400,
+                    detail="ChromaDB não configurado no Render. Faça upload de um arquivo .chromadb existente ou configure CHROMA_PERSIST_DIR manualmente."
+                )
             else:
                 raise HTTPException(
                     status_code=400,
@@ -1010,43 +1012,37 @@ async def upload_chromadb_archive(
             )
         # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
         if not chroma_persist_dir:
-            # No Render, definir o caminho padrão para upload
+            # No Render, NÃO definir caminho padrão automaticamente
             is_render = os.getenv("RENDER", "").lower() == "true"
             if is_render:
-                chroma_persist_dir = Path("/app/data/.chromadb")
+                # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente no Render
                 logger.info(
-                    f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+                    "🚨 Render detectado - NÃO criando .chromadb automaticamente")
+                logger.info(
+                    "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
+                logger.info("💡 Ou configure CHROMA_PERSIST_DIR manualmente")
 
-                # Verificar se o diretório /app/data existe e tem permissões
+                # Verificar se o diretório /app/data existe (apenas para logs)
                 data_dir = Path("/app/data")
                 if not data_dir.exists():
-                    logger.warning(
-                        "⚠️ Diretório /app/data não existe no Render")
-                    try:
-                        data_dir.mkdir(parents=True, exist_ok=True)
-                        logger.info("✅ Diretório /app/data criado")
-                    except Exception as e:
-                        logger.error(
-                            f"❌ Erro ao criar diretório /app/data: {e}")
-                        raise HTTPException(
-                            status_code=500,
-                            detail="Erro ao configurar diretório de dados no Render"
-                        )
-
-                # Verificar permissões
-                try:
-                    test_file = data_dir / "test_permissions"
-                    test_file.touch()
-                    test_file.unlink()
                     logger.info(
-                        "✅ Permissões de escrita verificadas em /app/data")
-                except Exception as e:
-                    logger.error(
-                        f"❌ Problema com permissões em /app/data: {e}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Problema de permissões no diretório de dados"
-                    )
+                        "ℹ️ Diretório /app/data não existe - será criado apenas quando necessário")
+                else:
+                    logger.info(f"ℹ️ Diretório /app/data existe: {data_dir}")
+                    # Listar conteúdo para debug
+                    try:
+                        contents = list(data_dir.iterdir())
+                        logger.info(
+                            f"📁 Conteúdo de /app/data: {[item.name for item in contents]}")
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️ Não foi possível listar conteúdo de /app/data: {e}")
+
+                # NÃO definir chroma_persist_dir automaticamente
+                raise HTTPException(
+                    status_code=400,
+                    detail="ChromaDB não configurado no Render. Faça upload de um arquivo .chromadb existente ou configure CHROMA_PERSIST_DIR manualmente."
+                )
             else:
                 raise HTTPException(
                     status_code=400,
@@ -1106,6 +1102,13 @@ async def upload_chromadb_archive(
                 "🚨 Render detectado - NÃO criando diretório .chromadb automaticamente")
             logger.info(
                 "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
+            # Verificar se o diretório pai existe e criar apenas se necessário
+            parent_dir = chroma_path.parent
+            if not parent_dir.exists():
+                logger.info(f"📁 Criando diretório pai: {parent_dir}")
+                parent_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                logger.info(f"📁 Diretório pai já existe: {parent_dir}")
 
         # Validar se o arquivo é um tar.gz válido
         logger.info("🔍 Validando arquivo tar.gz...")
@@ -1201,7 +1204,66 @@ async def upload_chromadb_archive(
         raise
     except Exception as e:
         logger.error(f"❌ Erro no upload do ChromaDB: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        logger.error(f"📋 Traceback completo: {traceback.format_exc()}")
+
+        # Informações adicionais para debug
+        debug_info = {
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "chroma_persist_dir": str(chroma_persist_dir) if chroma_persist_dir else None,
+            "is_render": os.getenv("RENDER", "").lower() == "true",
+            "current_working_directory": str(Path.cwd()),
+            "timestamp": time.time()
+        }
+
+        # Verificar se é um problema de permissões
+        if "Permission denied" in str(e) or "PermissionError" in str(type(e).__name__):
+            logger.error("🚨 Problema de permissões detectado!")
+            debug_info["permission_issue"] = True
+
+            # Tentar verificar permissões
+            try:
+                if chroma_persist_dir and chroma_persist_dir.parent.exists():
+                    test_file = chroma_persist_dir.parent / "debug_permission_test"
+                    test_file.touch()
+                    test_file.unlink()
+                    debug_info["parent_dir_writable"] = True
+                else:
+                    debug_info["parent_dir_writable"] = False
+            except Exception as perm_e:
+                debug_info["parent_dir_writable"] = False
+                debug_info["permission_error"] = str(perm_e)
+
+        # Verificar se é um problema de espaço em disco
+        if "No space left on device" in str(e) or "OSError: [Errno 28]" in str(e):
+            logger.error("🚨 Problema de espaço em disco detectado!")
+            debug_info["disk_space_issue"] = True
+
+            try:
+                import shutil
+                if chroma_persist_dir and chroma_persist_dir.parent.exists():
+                    total, used, free = shutil.disk_usage(
+                        str(chroma_persist_dir.parent))
+                    debug_info["disk_usage"] = {
+                        "total_gb": round(total / (1024**3), 2),
+                        "used_gb": round(used / (1024**3), 2),
+                        "free_gb": round(free / (1024**3), 2),
+                        "free_percent": round((free / total) * 100, 2)
+                    }
+            except Exception as disk_e:
+                debug_info["disk_usage_error"] = str(disk_e)
+
+        logger.error(f"🔍 Informações de debug: {debug_info}")
+
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": f"Erro interno no upload: {str(e)}",
+                "error_type": type(e).__name__,
+                "debug_info": debug_info
+            }
+        )
 
 
 @app.get("/chromadb/download")
@@ -1627,43 +1689,37 @@ async def upload_chromadb_folder(
             )
         # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
         if not chroma_persist_dir:
-            # No Render, definir o caminho padrão para upload
+            # No Render, NÃO definir caminho padrão automaticamente
             is_render = os.getenv("RENDER", "").lower() == "true"
             if is_render:
-                chroma_persist_dir = Path("/app/data/.chromadb")
+                # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente no Render
                 logger.info(
-                    f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+                    "🚨 Render detectado - NÃO criando .chromadb automaticamente")
+                logger.info(
+                    "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
+                logger.info("💡 Ou configure CHROMA_PERSIST_DIR manualmente")
 
-                # Verificar se o diretório /app/data existe e tem permissões
+                # Verificar se o diretório /app/data existe (apenas para logs)
                 data_dir = Path("/app/data")
                 if not data_dir.exists():
-                    logger.warning(
-                        "⚠️ Diretório /app/data não existe no Render")
-                    try:
-                        data_dir.mkdir(parents=True, exist_ok=True)
-                        logger.info("✅ Diretório /app/data criado")
-                    except Exception as e:
-                        logger.error(
-                            f"❌ Erro ao criar diretório /app/data: {e}")
-                        raise HTTPException(
-                            status_code=500,
-                            detail="Erro ao configurar diretório de dados no Render"
-                        )
-
-                # Verificar permissões
-                try:
-                    test_file = data_dir / "test_permissions"
-                    test_file.touch()
-                    test_file.unlink()
                     logger.info(
-                        "✅ Permissões de escrita verificadas em /app/data")
-                except Exception as e:
-                    logger.error(
-                        f"❌ Problema com permissões em /app/data: {e}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Problema de permissões no diretório de dados"
-                    )
+                        "ℹ️ Diretório /app/data não existe - será criado apenas quando necessário")
+                else:
+                    logger.info(f"ℹ️ Diretório /app/data existe: {data_dir}")
+                    # Listar conteúdo para debug
+                    try:
+                        contents = list(data_dir.iterdir())
+                        logger.info(
+                            f"📁 Conteúdo de /app/data: {[item.name for item in contents]}")
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️ Não foi possível listar conteúdo de /app/data: {e}")
+
+                # NÃO definir chroma_persist_dir automaticamente
+                raise HTTPException(
+                    status_code=400,
+                    detail="ChromaDB não configurado no Render. Faça upload de um arquivo .chromadb existente ou configure CHROMA_PERSIST_DIR manualmente."
+                )
             else:
                 raise HTTPException(
                     status_code=400,
@@ -1723,6 +1779,13 @@ async def upload_chromadb_folder(
                 "🚨 Render detectado - NÃO criando diretório .chromadb automaticamente")
             logger.info(
                 "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
+            # Verificar se o diretório pai existe e criar apenas se necessário
+            parent_dir = chroma_path.parent
+            if not parent_dir.exists():
+                logger.info(f"📁 Criando diretório pai: {parent_dir}")
+                parent_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                logger.info(f"📁 Diretório pai já existe: {parent_dir}")
 
         # Validar se o arquivo é um zip válido
         logger.info("🔍 Validando arquivo zip...")
@@ -1966,43 +2029,37 @@ async def initialize_rag(api_key: str):
 
         # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
         if not chroma_persist_dir:
-            # No Render, definir o caminho padrão
+            # No Render, NÃO definir caminho padrão automaticamente
             is_render = os.getenv("RENDER", "").lower() == "true"
             if is_render:
-                chroma_persist_dir = Path("/app/data/.chromadb")
+                # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente no Render
                 logger.info(
-                    f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+                    "🚨 Render detectado - NÃO criando .chromadb automaticamente")
+                logger.info(
+                    "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
+                logger.info("💡 Ou configure CHROMA_PERSIST_DIR manualmente")
 
-                # Verificar se o diretório /app/data existe e tem permissões
+                # Verificar se o diretório /app/data existe (apenas para logs)
                 data_dir = Path("/app/data")
                 if not data_dir.exists():
-                    logger.warning(
-                        "⚠️ Diretório /app/data não existe no Render")
-                    try:
-                        data_dir.mkdir(parents=True, exist_ok=True)
-                        logger.info("✅ Diretório /app/data criado")
-                    except Exception as e:
-                        logger.error(
-                            f"❌ Erro ao criar diretório /app/data: {e}")
-                        raise HTTPException(
-                            status_code=500,
-                            detail="Erro ao configurar diretório de dados no Render"
-                        )
-
-                # Verificar permissões
-                try:
-                    test_file = data_dir / "test_permissions"
-                    test_file.touch()
-                    test_file.unlink()
                     logger.info(
-                        "✅ Permissões de escrita verificadas em /app/data")
-                except Exception as e:
-                    logger.error(
-                        f"❌ Problema com permissões em /app/data: {e}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Problema de permissões no diretório de dados"
-                    )
+                        "ℹ️ Diretório /app/data não existe - será criado apenas quando necessário")
+                else:
+                    logger.info(f"ℹ️ Diretório /app/data existe: {data_dir}")
+                    # Listar conteúdo para debug
+                    try:
+                        contents = list(data_dir.iterdir())
+                        logger.info(
+                            f"📁 Conteúdo de /app/data: {[item.name for item in contents]}")
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️ Não foi possível listar conteúdo de /app/data: {e}")
+
+                # NÃO definir chroma_persist_dir automaticamente
+                raise HTTPException(
+                    status_code=400,
+                    detail="ChromaDB não configurado no Render. Faça upload de um arquivo .chromadb existente ou configure CHROMA_PERSIST_DIR manualmente."
+                )
             else:
                 raise HTTPException(
                     status_code=400,
@@ -2129,6 +2186,102 @@ async def list_chromadb_backups():
             status_code=500,
             detail=f"Erro ao listar backups: {str(e)}"
         )
+
+
+@app.get("/debug/upload-test")
+async def debug_upload_test():
+    """Debug específico para problemas de upload do ChromaDB"""
+    try:
+        debug_info = {
+            "timestamp": time.time(),
+            "environment": {
+                "is_render": os.getenv("RENDER", "").lower() == "true",
+                "render_environment": os.getenv("RENDER_ENVIRONMENT"),
+                "current_working_directory": str(Path.cwd()),
+                "script_location": str(Path(__file__).parent)
+            },
+            "chroma_persist_dir": {
+                "configured": chroma_persist_dir is not None,
+                "path": str(chroma_persist_dir) if chroma_persist_dir else None,
+                "exists": chroma_persist_dir.exists() if chroma_persist_dir else False,
+                "is_dir": chroma_persist_dir.is_dir() if chroma_persist_dir and chroma_persist_dir.exists() else False
+            },
+            "app_data_directory": {
+                "path": "/app/data",
+                "exists": Path("/app/data").exists(),
+                "is_dir": Path("/app/data").is_dir() if Path("/app/data").exists() else False
+            },
+            "permissions_test": {},
+            "disk_space": {},
+            "python_environment": {
+                "version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
+                "platform": os.sys.platform,
+                "executable": os.sys.executable
+            }
+        }
+
+        # Testar permissões em /app/data
+        app_data = Path("/app/data")
+        if app_data.exists():
+            try:
+                test_file = app_data / "upload_test_permissions"
+                test_file.touch()
+                test_file.unlink()
+                debug_info["permissions_test"]["app_data_writable"] = True
+            except Exception as e:
+                debug_info["permissions_test"]["app_data_writable"] = False
+                debug_info["permissions_test"]["app_data_error"] = str(e)
+
+        # Testar permissões no diretório ChromaDB se existir
+        if chroma_persist_dir and chroma_persist_dir.exists():
+            try:
+                test_file = chroma_persist_dir / "upload_test_permissions"
+                test_file.touch()
+                test_file.unlink()
+                debug_info["permissions_test"]["chroma_dir_writable"] = True
+            except Exception as e:
+                debug_info["permissions_test"]["chroma_dir_writable"] = False
+                debug_info["permissions_test"]["chroma_dir_error"] = str(e)
+
+        # Verificar espaço em disco
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage(
+                "/app/data" if app_data.exists() else "/")
+            debug_info["disk_space"] = {
+                "total_gb": round(total / (1024**3), 2),
+                "used_gb": round(used / (1024**3), 2),
+                "free_gb": round(free / (1024**3), 2),
+                "free_percent": round((free / total) * 100, 2)
+            }
+        except Exception as e:
+            debug_info["disk_space"]["error"] = str(e)
+
+        # Verificar se há arquivos temporários ou backups
+        if chroma_persist_dir and chroma_persist_dir.parent.exists():
+            try:
+                backup_files = list(
+                    chroma_persist_dir.parent.glob("*.backup*"))
+                debug_info["backup_files"] = {
+                    "count": len(backup_files),
+                    "files": [str(f.relative_to(chroma_persist_dir.parent)) for f in backup_files[:5]]
+                }
+            except Exception as e:
+                debug_info["backup_files"] = {"error": str(e)}
+
+        return {
+            "status": "success",
+            "debug_info": debug_info
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Erro no debug de upload: {e}")
+        import traceback
+        return {
+            "status": "error",
+            "message": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 
 if __name__ == "__main__":

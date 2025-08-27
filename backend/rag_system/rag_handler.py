@@ -364,8 +364,17 @@ class RAGHandler:
         if persist_dir:
             self.persist_dir = persist_dir
         else:
-            backend_dir = Path(__file__).parent.parent
-            self.persist_dir = str(backend_dir / "data" / ".chromadb")
+            # 🚨 CORREÇÃO: Não criar .chromadb automaticamente no Render
+            is_render = os.getenv("RENDER", "").lower() == "true"
+            if is_render:
+                logger.warning(
+                    "🚨 Render detectado - persist_dir não configurado")
+                logger.warning(
+                    "💡 Configure persist_dir manualmente ou faça upload de um arquivo .chromadb")
+                self.persist_dir = None
+            else:
+                backend_dir = Path(__file__).parent.parent
+                self.persist_dir = str(backend_dir / "data" / ".chromadb")
 
         self.materials_dir = Path(materials_dir)
 
