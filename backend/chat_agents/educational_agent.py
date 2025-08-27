@@ -115,10 +115,12 @@ class EducationalAgent:
         if not any([nvidia_api_key, openai_api_key, gemini_api_key]):
             logger.warning(
                 "Nenhuma API key encontrada. RAG capabilities disabled.")
+            self.rag_handler = None
+            self.rag_tool = None
             return
 
         try:
-            # Usar RAG handler unificado que suporta NVIDIA
+            # ✅ CORRIGIDO: Usar RAG handler unificado que suporta NVIDIA
             self.rag_handler = RAGHandler(
                 api_key=openai_api_key,  # Parâmetro correto
                 nvidia_api_key=nvidia_api_key,
@@ -128,7 +130,9 @@ class EducationalAgent:
             logger.info(
                 "✅ RAG Query Tool initialized successfully with NVIDIA support")
         except Exception as e:
-            logger.error(f"Error initializing RAG: {e}")
+            logger.error(f"❌ Error initializing RAG: {e}")
+            self.rag_handler = None
+            self.rag_tool = None
 
     def _load_course_catalog(self, path: str = "data/catalog.xlsx"):
         """Loads the course catalog from an Excel file."""
@@ -147,97 +151,83 @@ class EducationalAgent:
 
     def _initialize_model(self):
         """Initialize AI model with fallback support"""
-        # ✅ MODIFICADO: Usar RAG handler com fallback automático
-        try:
-            from rag_system.rag_handler import RAGHandler, RAGConfig
+        # ✅ CORRIGIDO: Usar o modelo do RAG handler se disponível
+        if self.rag_handler and hasattr(self.rag_handler, 'llm') and self.rag_handler.llm:
+            try:
+                self.model = self.rag_handler.llm
+                self.model_provider = getattr(
+                    self.rag_handler, 'current_llm_provider', 'Unknown')
+                self.model_name = getattr(self.model, 'model', 'Unknown')
+                logger.info(
+                    f"✅ AI Model initialized from RAG handler: {self.model_provider} ({self.model_name})")
+                return
+            except Exception as e:
+                logger.warning(f"Could not use RAG handler model: {e}")
 
-            # Configurar RAG handler com fallback
-            config = RAGConfig(
-                prefer_nvidia=True,  # Tentar NVIDIA primeiro
-                prefer_openai=True,  # OpenAI como fallback
-                prefer_gemini=True,  # Gemini como terceira opção
-                nvidia_retry_attempts=2,  # Apenas 2 tentativas
-                nvidia_retry_delay=0.5,   # Delay reduzido
-            )
+        # Fallback para inicialização individual dos modelos
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        nvidia_api_key = os.getenv("NVIDIA_API_KEY")
 
-            # Inicializar RAG handler
-            self.rag_handler = RAGHandler(config)
+        # Tentar NVIDIA primeiro
+        if nvidia_api_key:
+            try:
+                from rag_system.rag_handler import NVIDIAChatOpenAI
+                model_name = "openai/gpt-oss-120b"
+                self.model = NVIDIAChatOpenAI(
+                    nvidia_api_key=nvidia_api_key,
+                    model=model_name,
+                    base_url="https://integrate.api.nvidia.com/v1",
+                    temperature=0.3,
+                    retry_attempts=2,  # ✅ REDUZIDO: de 3 para 2
+                    retry_delay=0.5
+                )
+                self.model_provider = "NVIDIA"
+                self.model_name = model_name
+                logger.info(
+                    f"✅ AI Model initialized: {self.model_provider} ({self.model_name})")
+                return
+            except Exception as e:
+                logger.warning(f"NVIDIA initialization failed: {e}")
+                self.model = None
 
-            # Usar o modelo do RAG handler (com fallback automático)
-            self.model = self.rag_handler.llm
-            self.model_provider = self.rag_handler.current_llm_provider
-            self.model_name = getattr(self.model, 'model', 'Unknown')
+        # Tentar Gemini
+        if gemini_api_key:
+            try:
+                model_name = "gemini-2.5-flash"
+                self.model = ChatGoogleGenerativeAI(
+                    model=model_name,
+                    temperature=0.3,  # Lower temperature for more consistent educational responses
+                    api_key=SecretStr(gemini_api_key),
+                )
+                self.model_provider = "Gemini"
+                self.model_name = model_name
+                logger.info(
+                    f"✅ AI Model initialized: {self.model_provider} ({self.model_name})")
+                return
+            except Exception as e:
+                logger.warning(f"Gemini initialization failed: {e}")
+                self.model = None
 
-            logger.info(
-                f"✅ AI Model initialized with RAG fallback: {self.model_provider} ({self.model_name})")
-            return
+        # Tentar OpenAI como último recurso
+        if openai_api_key:
+            try:
+                model_name = "gpt-4o-mini"
+                self.model = ChatOpenAI(
+                    model=model_name,
+                    temperature=0.3,
+                    api_key=SecretStr(openai_api_key),
+                )
+                self.model_provider = "OpenAI"
+                self.model_name = model_name
+                logger.info(
+                    f"✅ AI Model initialized: {self.model_provider} ({self.model_name})")
+                return
+            except Exception as e:
+                logger.error(f"OpenAI initialization failed: {e}")
 
-        except Exception as e:
-            logger.error(f"RAG handler initialization failed: {e}")
-            # Fallback para inicialização individual dos modelos
-            gemini_api_key = os.getenv("GEMINI_API_KEY")
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            nvidia_api_key = os.getenv("NVIDIA_API_KEY")
-
-            # Tentar NVIDIA primeiro
-            if nvidia_api_key:
-                try:
-                    from rag_system.rag_handler import NVIDIAChatOpenAI
-                    model_name = "openai/gpt-oss-120b"
-                    self.model = NVIDIAChatOpenAI(
-                        nvidia_api_key=nvidia_api_key,
-                        model=model_name,
-                        base_url="https://integrate.api.nvidia.com/v1",
-                        temperature=0.3,
-                        retry_attempts=2,  # ✅ REDUZIDO: de 3 para 2
-                        retry_delay=0.5
-                    )
-                    self.model_provider = "NVIDIA"
-                    self.model_name = model_name
-                    logger.info(
-                        f"✅ AI Model initialized: {self.model_provider} ({self.model_name})")
-                    return
-                except Exception as e:
-                    logger.warning(f"NVIDIA initialization failed: {e}")
-                    self.model = None
-
-            # Tentar Gemini
-            if gemini_api_key:
-                try:
-                    model_name = "gemini-2.5-flash"
-                    self.model = ChatGoogleGenerativeAI(
-                        model=model_name,
-                        temperature=0.3,  # Lower temperature for more consistent educational responses
-                        api_key=SecretStr(gemini_api_key),
-                    )
-                    self.model_provider = "Gemini"
-                    self.model_name = model_name
-                    logger.info(
-                        f"✅ AI Model initialized: {self.model_provider} ({self.model_name})")
-                    return
-                except Exception as e:
-                    logger.warning(f"Gemini initialization failed: {e}")
-                    self.model = None
-
-            # Tentar OpenAI como último recurso
-            if openai_api_key:
-                try:
-                    model_name = "gpt-4o-mini"
-                    self.model = ChatOpenAI(
-                        model=model_name,
-                        temperature=0.3,
-                        api_key=SecretStr(openai_api_key),
-                    )
-                    self.model_provider = "OpenAI"
-                    self.model_name = model_name
-                    logger.info(
-                        f"✅ AI Model initialized: {self.model_provider} ({self.model_name})")
-                    return
-                except Exception as e:
-                    logger.error(f"OpenAI initialization failed: {e}")
-
-            if not self.model:
-                raise ValueError("No valid AI model could be initialized")
+        if not self.model:
+            raise ValueError("❌ No valid AI model could be initialized")
 
     def _get_educational_system_prompt(self, learning_context: LearningContext) -> str:
         """Generate contextual system prompt based on learning context"""
@@ -420,23 +410,55 @@ class EducationalAgent:
 
         try:
             if not self.graph:
+                logger.error("❌ Graph not initialized!")
                 raise ValueError("Graph not initialized")
 
             final_state = self.graph.invoke(initial_state, config)
 
+            # ✅ VERIFICAÇÃO ROBUSTA: Garantir que sempre há uma resposta válida
+            if not final_state.get("messages") or len(final_state["messages"]) == 0:
+                logger.error("❌ No messages returned from graph")
+                raise ValueError("No messages returned from graph")
+
             assistant_message = final_state["messages"][-1]
-            response_content = assistant_message.content
+            response_content = getattr(assistant_message, 'content', '')
+
+            # ✅ GARANTIR RESPOSTA VÁLIDA: Se o conteúdo estiver vazio, gerar uma resposta padrão
+            if not response_content or response_content.strip() == '':
+                response_content = f"""Desculpe, não consegui gerar uma resposta adequada para sua pergunta: "{message}".
+
+**Possíveis motivos:**
+- Sistema temporariamente sobrecarregado
+- Problema na comunicação com o modelo de IA
+- Pergunta muito específica que requer mais contexto
+
+**Sugestões:**
+1. Reformule sua pergunta de forma mais específica
+2. Tente novamente em alguns minutos
+3. Verifique se sua pergunta está relacionada a educação física e treinamento
+
+**Exemplo de pergunta válida:**
+"Quais são os princípios básicos do treinamento de força?"
+
+Estou aqui para ajudar com qualquer dúvida sobre educação física, treinamento e condicionamento físico."""
+
+                logger.warning(
+                    f"⚠️ Empty response generated for message: {message[:50]}... - Using fallback response")
 
             sources = []
-            if self.rag_tool and assistant_message.tool_calls:
+            if self.rag_tool and hasattr(assistant_message, 'tool_calls') and assistant_message.tool_calls:
                 tool_call = assistant_message.tool_calls[0]
                 if tool_call['name'] == self.rag_tool.name:
                     for msg in reversed(final_state["messages"]):
-                        if msg.type == "tool":
-                            tool_output = msg.content
+                        if getattr(msg, 'type', None) == "tool":
+                            tool_output = getattr(msg, 'content', {})
                             try:
                                 # The tool output is a dictionary, not a JSON string
-                                sources = tool_output.get("sources", [])
+                                if isinstance(tool_output, dict):
+                                    sources = tool_output.get("sources", [])
+                                else:
+                                    logger.warning(
+                                        f"Tool output is not a dict: {type(tool_output)}")
                             except Exception as e:
                                 logger.warning(
                                     f"Could not extract sources from tool output: {e}")
@@ -474,6 +496,10 @@ class EducationalAgent:
                                 "class": video_info.get('aula', 0)
                             })
 
+            # ✅ LOG DE SUCESSO: Confirmar que a resposta foi gerada com sucesso
+            logger.info(
+                f"✅ Generated valid response ({len(response_content)} chars) for: {message[:50]}...")
+
             return {
                 "response": response_content,
                 "sources": sources,
@@ -486,15 +512,46 @@ class EducationalAgent:
             }
 
         except Exception as e:
-            logger.error(f"Error in educational chat: {e}", exc_info=True)
+            logger.error(f"❌ Error in educational chat: {e}", exc_info=True)
+
+            # ✅ RESPOSTA DE ERRO MAIS DETALHADA E ÚTIL
+            error_response = f"""❌ **ERRO NO SISTEMA EDUCACIONAL**
+
+Sua pergunta: "{message}"
+
+**Detalhes do erro:**
+- Tipo: {type(e).__name__}
+- Mensagem: {str(e)}
+
+**Possíveis soluções:**
+1. **Tente reformular sua pergunta** - Use termos mais específicos sobre educação física
+2. **Verifique sua conexão** - Problemas de rede podem causar falhas
+3. **Aguarde alguns minutos** - O sistema pode estar sobrecarregado
+4. **Use perguntas mais diretas** - "O que é hipertrofia muscular?" ao invés de perguntas muito complexas
+
+**Exemplos de perguntas que funcionam bem:**
+- "Como funciona o princípio da sobrecarga progressiva?"
+- "Quais são os tipos de contração muscular?"
+- "Como montar um programa de treino para iniciantes?"
+
+**Status do sistema:** Ativo, mas com falha temporária
+**Tempo estimado de resolução:** 2-5 minutos
+
+Se o problema persistir, entre em contato com o suporte técnico."""
+
             return {
-                "response": "Desculpe, ocorreu um erro durante nossa conversa educacional.",
+                "response": error_response,
                 "sources": [],
-                "follow_up_questions": [],
+                "follow_up_questions": [
+                    "Como funciona o treinamento de força?",
+                    "O que é periodização do treino?",
+                    "Quais são os benefícios do exercício físico?"
+                ],
                 "learning_suggestions": [],
                 "related_topics": [],
-                "educational_metadata": {},
-                "learning_context": learning_context.model_dump()
+                "educational_metadata": {"error": True, "error_type": type(e).__name__},
+                "learning_context": learning_context.model_dump() if 'learning_context' in locals() else {},
+                "video_suggestions": []
             }
 
 
