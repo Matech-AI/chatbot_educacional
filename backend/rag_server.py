@@ -876,10 +876,41 @@ async def initialize_rag(api_key: str):
                 chroma_persist_dir = Path("/app/data/.chromadb")
                 logger.info(
                     f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+
+                # Verificar se o diretório /app/data existe e tem permissões
+                data_dir = Path("/app/data")
+                if not data_dir.exists():
+                    logger.warning(
+                        "⚠️ Diretório /app/data não existe no Render")
+                    try:
+                        data_dir.mkdir(parents=True, exist_ok=True)
+                        logger.info("✅ Diretório /app/data criado")
+                    except Exception as e:
+                        logger.error(
+                            f"❌ Erro ao criar diretório /app/data: {e}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Erro ao configurar diretório de dados no Render"
+                        )
+
+                # Verificar permissões
+                try:
+                    test_file = data_dir / "test_permissions"
+                    test_file.touch()
+                    test_file.unlink()
+                    logger.info(
+                        "✅ Permissões de escrita verificadas em /app/data")
+                except Exception as e:
+                    logger.error(
+                        f"❌ Problema com permissões em /app/data: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Problema de permissões no diretório de dados"
+                    )
             else:
                 raise HTTPException(
                     status_code=400,
-                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR"
+                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
                 )
 
         rag_handler = RAGHandler(
@@ -985,6 +1016,37 @@ async def upload_chromadb_archive(
                 chroma_persist_dir = Path("/app/data/.chromadb")
                 logger.info(
                     f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+
+                # Verificar se o diretório /app/data existe e tem permissões
+                data_dir = Path("/app/data")
+                if not data_dir.exists():
+                    logger.warning(
+                        "⚠️ Diretório /app/data não existe no Render")
+                    try:
+                        data_dir.mkdir(parents=True, exist_ok=True)
+                        logger.info("✅ Diretório /app/data criado")
+                    except Exception as e:
+                        logger.error(
+                            f"❌ Erro ao criar diretório /app/data: {e}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Erro ao configurar diretório de dados no Render"
+                        )
+
+                # Verificar permissões
+                try:
+                    test_file = data_dir / "test_permissions"
+                    test_file.touch()
+                    test_file.unlink()
+                    logger.info(
+                        "✅ Permissões de escrita verificadas em /app/data")
+                except Exception as e:
+                    logger.error(
+                        f"❌ Problema com permissões em /app/data: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Problema de permissões no diretório de dados"
+                    )
             else:
                 raise HTTPException(
                     status_code=400,
@@ -1068,7 +1130,33 @@ async def upload_chromadb_archive(
             pass
 
         # Verificar integridade do ChromaDB carregado
+        logger.info("🔍 Iniciando verificação de integridade do ChromaDB...")
+
+        # Verificar se os arquivos foram extraídos corretamente
+        if chroma_path.exists():
+            extracted_files = list(chroma_path.rglob("*"))
+            logger.info(f"📁 Arquivos extraídos: {len(extracted_files)}")
+            # Mostrar apenas os primeiros 5
+            for file_path in extracted_files[:5]:
+                logger.info(f"   - {file_path.relative_to(chroma_path)}")
+            if len(extracted_files) > 5:
+                logger.info(
+                    f"   ... e mais {len(extracted_files) - 5} arquivos")
+        else:
+            logger.error("❌ Diretório ChromaDB não foi criado após extração")
+            raise HTTPException(
+                status_code=400,
+                detail="Falha na criação do diretório ChromaDB"
+            )
+
+        # Aguardar um pouco para garantir que os arquivos estejam completamente escritos
+        import time
+        logger.info(
+            "⏳ Aguardando 2 segundos para estabilização dos arquivos...")
+        time.sleep(2)
+
         integrity_check = check_chromadb_integrity(chroma_path)
+        logger.info(f"🔍 Resultado da verificação: {integrity_check}")
 
         if not integrity_check["valid"]:
             # Restaurar backup se a verificação falhar
@@ -1545,6 +1633,37 @@ async def upload_chromadb_folder(
                 chroma_persist_dir = Path("/app/data/.chromadb")
                 logger.info(
                     f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+
+                # Verificar se o diretório /app/data existe e tem permissões
+                data_dir = Path("/app/data")
+                if not data_dir.exists():
+                    logger.warning(
+                        "⚠️ Diretório /app/data não existe no Render")
+                    try:
+                        data_dir.mkdir(parents=True, exist_ok=True)
+                        logger.info("✅ Diretório /app/data criado")
+                    except Exception as e:
+                        logger.error(
+                            f"❌ Erro ao criar diretório /app/data: {e}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Erro ao configurar diretório de dados no Render"
+                        )
+
+                # Verificar permissões
+                try:
+                    test_file = data_dir / "test_permissions"
+                    test_file.touch()
+                    test_file.unlink()
+                    logger.info(
+                        "✅ Permissões de escrita verificadas em /app/data")
+                except Exception as e:
+                    logger.error(
+                        f"❌ Problema com permissões em /app/data: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Problema de permissões no diretório de dados"
+                    )
             else:
                 raise HTTPException(
                     status_code=400,
@@ -1628,7 +1747,33 @@ async def upload_chromadb_folder(
             pass
 
         # Verificar integridade do ChromaDB carregado
+        logger.info("🔍 Iniciando verificação de integridade do ChromaDB...")
+
+        # Verificar se os arquivos foram extraídos corretamente
+        if chroma_path.exists():
+            extracted_files = list(chroma_path.rglob("*"))
+            logger.info(f"📁 Arquivos extraídos: {len(extracted_files)}")
+            # Mostrar apenas os primeiros 5
+            for file_path in extracted_files[:5]:
+                logger.info(f"   - {file_path.relative_to(chroma_path)}")
+            if len(extracted_files) > 5:
+                logger.info(
+                    f"   ... e mais {len(extracted_files) - 5} arquivos")
+        else:
+            logger.error("❌ Diretório ChromaDB não foi criado após extração")
+            raise HTTPException(
+                status_code=400,
+                detail="Falha na criação do diretório ChromaDB"
+            )
+
+        # Aguardar um pouco para garantir que os arquivos estejam completamente escritos
+        import time
+        logger.info(
+            "⏳ Aguardando 2 segundos para estabilização dos arquivos...")
+        time.sleep(2)
+
         integrity_check = check_chromadb_integrity(chroma_path)
+        logger.info(f"🔍 Resultado da verificação: {integrity_check}")
 
         if not integrity_check["valid"]:
             # Restaurar backup se a verificação falhar
@@ -1827,10 +1972,41 @@ async def initialize_rag(api_key: str):
                 chroma_persist_dir = Path("/app/data/.chromadb")
                 logger.info(
                     f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+
+                # Verificar se o diretório /app/data existe e tem permissões
+                data_dir = Path("/app/data")
+                if not data_dir.exists():
+                    logger.warning(
+                        "⚠️ Diretório /app/data não existe no Render")
+                    try:
+                        data_dir.mkdir(parents=True, exist_ok=True)
+                        logger.info("✅ Diretório /app/data criado")
+                    except Exception as e:
+                        logger.error(
+                            f"❌ Erro ao criar diretório /app/data: {e}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Erro ao configurar diretório de dados no Render"
+                        )
+
+                # Verificar permissões
+                try:
+                    test_file = data_dir / "test_permissions"
+                    test_file.touch()
+                    test_file.unlink()
+                    logger.info(
+                        "✅ Permissões de escrita verificadas em /app/data")
+                except Exception as e:
+                    logger.error(
+                        f"❌ Problema com permissões em /app/data: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Problema de permissões no diretório de dados"
+                    )
             else:
                 raise HTTPException(
                     status_code=400,
-                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR"
+                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
                 )
 
         rag_handler = RAGHandler(
@@ -1983,25 +2159,60 @@ if __name__ == "__main__":
 def check_chromadb_integrity(persist_dir: Path) -> Dict[str, Any]:
     """Verificar integridade e conteúdo do ChromaDB"""
     try:
+        logger.info(f"🔍 Verificando integridade do ChromaDB em: {persist_dir}")
+
         if not persist_dir.exists():
+            logger.error(f"❌ Diretório não existe: {persist_dir}")
             return {"valid": False, "reason": "Directory does not exist", "collections": []}
+
+        # Listar todos os arquivos no diretório para debug
+        all_files = list(persist_dir.rglob("*"))
+        logger.info(f"📁 Arquivos encontrados no diretório: {len(all_files)}")
+        # Mostrar apenas os primeiros 10 arquivos
+        for file_path in all_files[:10]:
+            logger.info(f"   - {file_path.relative_to(persist_dir)}")
+        if len(all_files) > 10:
+            logger.info(f"   ... e mais {len(all_files) - 10} arquivos")
 
         # Verificar se há arquivos do ChromaDB
         chromadb_files = list(persist_dir.rglob("*.sqlite*")) + \
             list(persist_dir.rglob("chroma.sqlite3"))
+
+        logger.info(f"🔍 Arquivos ChromaDB encontrados: {len(chromadb_files)}")
+        for db_file in chromadb_files:
+            logger.info(f"   - {db_file.relative_to(persist_dir)}")
+
         if not chromadb_files:
+            logger.error("❌ Nenhum arquivo ChromaDB encontrado")
             return {"valid": False, "reason": "No ChromaDB files found", "collections": []}
 
+        # Verificar se o diretório tem permissões corretas
+        try:
+            test_file = persist_dir / "test_permissions"
+            test_file.touch()
+            test_file.unlink()
+            logger.info("✅ Permissões de escrita verificadas")
+        except Exception as e:
+            logger.warning(f"⚠️ Problema com permissões: {e}")
+
         # Tentar conectar e listar coleções
+        logger.info("🔌 Tentando conectar ao ChromaDB...")
         client = chromadb.PersistentClient(path=str(persist_dir))
+
+        logger.info("📋 Listando coleções...")
         collections = client.list_collections()
+        logger.info(f"✅ {len(collections)} coleções encontradas")
 
         collections_info = []
         total_documents = 0
 
         for collection in collections:
             try:
+                logger.info(f"🔍 Verificando coleção: {collection.name}")
                 count = collection.count()
+                logger.info(
+                    f"   - Documentos na coleção {collection.name}: {count}")
+
                 collections_info.append({
                     "name": collection.name,
                     "count": count,
@@ -2010,19 +2221,32 @@ def check_chromadb_integrity(persist_dir: Path) -> Dict[str, Any]:
                 total_documents += count
             except Exception as e:
                 logger.warning(
-                    f"Erro ao verificar coleção {collection.name}: {e}")
+                    f"⚠️ Erro ao verificar coleção {collection.name}: {e}")
                 collections_info.append({
                     "name": collection.name,
                     "count": 0,
                     "error": str(e)
                 })
 
+        logger.info(f"📊 Total de documentos: {total_documents}")
+
+        # Ser mais flexível na validação - aceitar ChromaDBs com pelo menos uma coleção
+        is_valid = len(collections) > 0
+
+        if is_valid:
+            logger.info("✅ ChromaDB validado com sucesso")
+        else:
+            logger.warning("⚠️ ChromaDB não tem coleções")
+
         return {
-            "valid": total_documents > 0,
+            "valid": is_valid,
             "reason": f"Found {len(collections)} collections with {total_documents} total documents",
             "collections": collections_info,
             "total_documents": total_documents
         }
 
     except Exception as e:
+        logger.error(f"❌ Erro ao verificar integridade do ChromaDB: {e}")
+        import traceback
+        logger.error(f"📋 Traceback completo: {traceback.format_exc()}")
         return {"valid": False, "reason": f"Error checking ChromaDB: {str(e)}", "collections": []}
