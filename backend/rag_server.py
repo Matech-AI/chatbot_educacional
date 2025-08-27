@@ -863,10 +863,24 @@ async def query_rag(request: QueryRequest):
 @app.post("/initialize")
 async def initialize_rag(api_key: str):
     """Inicializar RAG handler"""
-    global rag_handler
+    global rag_handler, chroma_persist_dir
 
     try:
         logger.info("🔧 Inicializando RAG handler...")
+
+        # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
+        if not chroma_persist_dir:
+            # No Render, definir o caminho padrão
+            is_render = os.getenv("RENDER", "").lower() == "true"
+            if is_render:
+                chroma_persist_dir = Path("/app/data/.chromadb")
+                logger.info(
+                    f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR"
+                )
 
         rag_handler = RAGHandler(
             api_key=api_key,
@@ -950,20 +964,57 @@ async def upload_chromadb_archive(
     replace_existing: bool = Form(True)
 ):
     """Upload e substituição do banco ChromaDB treinado."""
-    global rag_handler
+    global rag_handler, chroma_persist_dir
 
     try:
+        # Validar parâmetros
+        logger.info(
+            f"🔍 Parâmetros recebidos: replace_existing={replace_existing}")
+        if not isinstance(replace_existing, bool):
+            logger.error(
+                f"❌ Parâmetro replace_existing inválido: {replace_existing}")
+            raise HTTPException(
+                status_code=400,
+                detail="Parâmetro replace_existing deve ser um booleano"
+            )
+        # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
+        if not chroma_persist_dir:
+            # No Render, definir o caminho padrão para upload
+            is_render = os.getenv("RENDER", "").lower() == "true"
+            if is_render:
+                chroma_persist_dir = Path("/app/data/.chromadb")
+                logger.info(
+                    f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
+                )
+
         # Verificar se o arquivo é um .tar.gz válido
+        logger.info(f"🔍 Validando arquivo: {archive.filename}")
+        if not archive.filename:
+            logger.error("❌ Nome do arquivo não fornecido")
+            raise HTTPException(
+                status_code=400,
+                detail="Nome do arquivo não fornecido"
+            )
+
         if not archive.filename.lower().endswith(('.tar.gz', '.tgz')):
+            logger.error(f"❌ Formato de arquivo inválido: {archive.filename}")
             raise HTTPException(
                 status_code=400,
                 detail="Arquivo deve ser .tar.gz contendo o diretório .chromadb"
             )
 
         # Ler o conteúdo do arquivo
+        logger.info("📖 Lendo conteúdo do arquivo...")
         content = await archive.read()
         if len(content) == 0:
+            logger.error("❌ Arquivo vazio")
             raise HTTPException(status_code=400, detail="Arquivo vazio")
+
+        logger.info(f"✅ Arquivo lido com sucesso: {len(content)} bytes")
 
         # Backup do ChromaDB atual se existir
         chroma_path = Path(chroma_persist_dir)
@@ -994,8 +1045,20 @@ async def upload_chromadb_archive(
             logger.info(
                 "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
 
-        with tarfile.open(tmp_archive, 'r:gz') as tf:
-            tf.extractall(chroma_path)
+        # Validar se o arquivo é um tar.gz válido
+        logger.info("🔍 Validando arquivo tar.gz...")
+        try:
+            with tarfile.open(tmp_archive, 'r:gz') as tf:
+                logger.info(
+                    f"✅ Arquivo tar.gz válido, {len(tf.getmembers())} membros encontrados")
+                tf.extractall(chroma_path)
+                logger.info("✅ Arquivo extraído com sucesso")
+        except Exception as e:
+            logger.error(f"❌ Erro ao extrair arquivo tar.gz: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Arquivo tar.gz inválido ou corrompido: {str(e)}"
+            )
 
         # Limpeza do arquivo temporário
         try:
@@ -1059,6 +1122,13 @@ async def download_chromadb_archive():
     global chroma_persist_dir
 
     try:
+        # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
+        if not chroma_persist_dir:
+            raise HTTPException(
+                status_code=404,
+                detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
+            )
+
         chroma_path = Path(chroma_persist_dir)
 
         if not chroma_path.exists():
@@ -1454,20 +1524,57 @@ async def upload_chromadb_folder(
     replace_existing: bool = Form(True)
 ):
     """Upload de pasta .chromadb não compactada (zipada)"""
-    global rag_handler
+    global rag_handler, chroma_persist_dir
 
     try:
+        # Validar parâmetros
+        logger.info(
+            f"🔍 Parâmetros recebidos: replace_existing={replace_existing}")
+        if not isinstance(replace_existing, bool):
+            logger.error(
+                f"❌ Parâmetro replace_existing inválido: {replace_existing}")
+            raise HTTPException(
+                status_code=400,
+                detail="Parâmetro replace_existing deve ser um booleano"
+            )
+        # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
+        if not chroma_persist_dir:
+            # No Render, definir o caminho padrão para upload
+            is_render = os.getenv("RENDER", "").lower() == "true"
+            if is_render:
+                chroma_persist_dir = Path("/app/data/.chromadb")
+                logger.info(
+                    f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
+                )
+
         # Verificar se é um arquivo zip válido
+        logger.info(f"🔍 Validando arquivo: {folder.filename}")
+        if not folder.filename:
+            logger.error("❌ Nome do arquivo não fornecido")
+            raise HTTPException(
+                status_code=400,
+                detail="Nome do arquivo não fornecido"
+            )
+
         if not folder.filename.lower().endswith('.zip'):
+            logger.error(f"❌ Formato de arquivo inválido: {folder.filename}")
             raise HTTPException(
                 status_code=400,
                 detail="Arquivo deve ser .zip contendo o diretório .chromadb"
             )
 
         # Ler o conteúdo do arquivo
+        logger.info("📖 Lendo conteúdo do arquivo...")
         content = await folder.read()
         if len(content) == 0:
+            logger.error("❌ Arquivo vazio")
             raise HTTPException(status_code=400, detail="Arquivo vazio")
+
+        logger.info(f"✅ Arquivo lido com sucesso: {len(content)} bytes")
 
         # Backup do ChromaDB atual se existir
         chroma_path = Path(chroma_persist_dir)
@@ -1498,8 +1605,20 @@ async def upload_chromadb_folder(
             logger.info(
                 "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
 
-        with zipfile.ZipFile(tmp_archive, 'r') as zf:
-            zf.extractall(chroma_path)
+        # Validar se o arquivo é um zip válido
+        logger.info("🔍 Validando arquivo zip...")
+        try:
+            with zipfile.ZipFile(tmp_archive, 'r') as zf:
+                logger.info(
+                    f"✅ Arquivo zip válido, {len(zf.namelist())} arquivos encontrados")
+                zf.extractall(chroma_path)
+                logger.info("✅ Arquivo extraído com sucesso")
+        except Exception as e:
+            logger.error(f"❌ Erro ao extrair arquivo zip: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Arquivo zip inválido ou corrompido: {str(e)}"
+            )
 
         # Limpeza do arquivo temporário
         try:
@@ -1655,6 +1774,14 @@ async def test_connection():
 async def get_chromadb_status():
     """Verificar status e integridade do ChromaDB atual."""
     try:
+        # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
+        if not chroma_persist_dir:
+            return {
+                "status": "not_configured",
+                "message": "ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize",
+                "path": None
+            }
+
         chroma_path = Path(chroma_persist_dir)
 
         if not chroma_path.exists():
@@ -1687,10 +1814,24 @@ async def get_chromadb_status():
 @app.post("/initialize")
 async def initialize_rag(api_key: str):
     """Inicializar RAG handler"""
-    global rag_handler
+    global rag_handler, chroma_persist_dir
 
     try:
         logger.info("🔧 Inicializando RAG handler...")
+
+        # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
+        if not chroma_persist_dir:
+            # No Render, definir o caminho padrão
+            is_render = os.getenv("RENDER", "").lower() == "true"
+            if is_render:
+                chroma_persist_dir = Path("/app/data/.chromadb")
+                logger.info(
+                    f"🚨 Render detectado - definindo caminho padrão: {chroma_persist_dir}")
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR"
+                )
 
         rag_handler = RAGHandler(
             api_key=api_key,
