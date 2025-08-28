@@ -1,0 +1,25 @@
+# Dependências para o Visualizador 3D do Banco de Dados Vetorial
+# Instalar com: pip install -r requirements_visualizer.txt
+
+# Visualização interativa
+plotly>=5.15.0
+kaleido>=0.2.1  # Para exportar PNG/PDF
+
+# Redução de dimensionalidade
+scikit-learn>=1.3.0
+umap-learn>=0.5.3
+
+# Análise de dados
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Visualizações estáticas
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Banco de dados vetorial
+chromadb>=0.4.0
+
+# Utilitários
+pathlib2>=2.3.7
+typing-extensions>=4.5.0

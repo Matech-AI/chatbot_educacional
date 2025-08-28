@@ -5,7 +5,7 @@ import time
 from typing import Annotated, TypedDict, List, Dict, Any, Optional
 from datetime import datetime
 from dotenv import load_dotenv
-import pandas as pd
+import pandas as pd  # ✅ RESTAURADO: Útil para formatação de tabelas nas respostas
 from pydantic import SecretStr, BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 from pathlib import Path
@@ -23,7 +23,8 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
 from auth.auth import User, get_current_user
-from video_processing.video_handler import get_video_handler
+# ✅ REMOVIDO: video_processing não é mais necessário
+# from video_processing.video_handler import get_video_handler
 
 # Set environment variables
 load_dotenv()
@@ -84,7 +85,8 @@ class EducationalChatResponse(BaseModel):
     related_topics: List[str] = []
     educational_metadata: Dict[str, Any] = {}
     learning_context: Dict[str, Any] = {}
-    video_suggestions: List[Dict[str, Any]] = []
+    # ✅ REMOVIDO: video_suggestions não é mais necessário
+    # video_suggestions: List[Dict[str, Any]] = []
     response_time: float = 0.0
 
 
@@ -98,9 +100,10 @@ class EducationalAgent:
         self.graph = None
         self.memory = MemorySaver()
         self.learning_contexts: Dict[str, LearningContext] = {}
-        self.course_catalog: Optional[pd.DataFrame] = None
+        # ✅ REMOVIDO: course_catalog não é mais necessário
+        # self.course_catalog: Optional[pd.DataFrame] = None
 
-        self._load_course_catalog()
+        # ✅ REMOVIDO: _load_course_catalog() não é mais necessário
         self._initialize_rag()
         self._initialize_model()
         self._build_graph()
@@ -120,11 +123,27 @@ class EducationalAgent:
             return
 
         try:
-            # ✅ CORRIGIDO: Usar RAG handler unificado que suporta NVIDIA
+            # ✅ CORREÇÃO: Determinar persist_dir baseado no ambiente
+            if os.getenv("RENDER", "").lower() == "true":
+                # Render: usar caminho configurado
+                persist_dir = os.getenv(
+                    "CHROMA_PERSIST_DIR", "/app/data/.chromadb")
+                logger.info(
+                    f"🚀 Render detectado - usando persist_dir: {persist_dir}")
+            else:
+                # Local: usar caminho padrão
+                backend_dir = Path(__file__).parent.parent
+                persist_dir = str(backend_dir / "data" / ".chromadb")
+                logger.info(
+                    f"💻 Local detectado - usando persist_dir: {persist_dir}")
+
+            # ✅ CORREÇÃO: Inicializar RAG handler com persist_dir correto
             self.rag_handler = RAGHandler(
-                api_key=openai_api_key,  # Parâmetro correto
+                api_key=openai_api_key or nvidia_api_key or gemini_api_key,
                 nvidia_api_key=nvidia_api_key,
-                gemini_api_key=gemini_api_key
+                gemini_api_key=gemini_api_key,
+                persist_dir=persist_dir  # ✅ PASSANDO persist_dir corretamente
+                # materials_dir removido - não necessário para respostas baseadas em texto
             )
             self.rag_tool = RAGQueryTool(rag_handler=self.rag_handler)
             logger.info(
@@ -134,20 +153,8 @@ class EducationalAgent:
             self.rag_handler = None
             self.rag_tool = None
 
-    def _load_course_catalog(self, path: str = "data/catalog.xlsx"):
-        """Loads the course catalog from an Excel file."""
-        try:
-            if os.path.exists(path):
-                self.course_catalog = pd.read_excel(path)
-                # Normalize column names for easier access
-                self.course_catalog.columns = [
-                    col.strip().lower() for col in self.course_catalog.columns]
-                logger.info("✅ Course catalog loaded successfully.")
-            else:
-                logger.warning(
-                    f"Course catalog not found at {path}. Video suggestions will be disabled.")
-        except Exception as e:
-            logger.error(f"Error loading course catalog: {e}")
+    # ✅ REMOVIDO: _load_course_catalog não é mais necessário
+    # Catálogo de cursos removido - sistema focado apenas em respostas baseadas em texto
 
     def _initialize_model(self):
         """Initialize AI model with fallback support"""
@@ -469,32 +476,9 @@ Estou aqui para ajudar com qualquer dúvida sobre educação física, treinament
                 learning_context.difficulty_level
             )
 
-            # Generate video suggestions based on sources
-            video_suggestions = []
-            if sources and self.course_catalog is not None:
-                video_codes = set()
-                for source in sources:
-                    # Extract video code like M01A01 from the source filename
-                    filename = Path(source.get("source", "")).stem
-                    if filename:
-                        # Handle cases where filename might not have '_'
-                        parts = filename.split('_')
-                        if parts:
-                            video_codes.add(parts[0].upper())
-
-                for code in video_codes:
-                    # Ensure column name is correct
-                    if 'código' in self.course_catalog.columns:
-                        match = self.course_catalog[self.course_catalog['código'] == code]
-                        if not match.empty:
-                            video_info = match.iloc[0]
-                            video_suggestions.append({
-                                "topic": video_info.get('nome da aula', 'N/A'),
-                                "video_code": code,
-                                "summary": video_info.get('resumo da aula', ''),
-                                "module": video_info.get('módulo', 0),
-                                "class": video_info.get('aula', 0)
-                            })
+            # ✅ REMOVIDO: Sugestões de vídeo não são mais necessárias
+            # Sistema focado apenas em respostas baseadas em texto
+            # video_suggestions = []
 
             # ✅ LOG DE SUCESSO: Confirmar que a resposta foi gerada com sucesso
             logger.info(
@@ -508,7 +492,8 @@ Estou aqui para ajudar com qualquer dúvida sobre educação física, treinament
                 "related_topics": [],
                 "educational_metadata": {},
                 "learning_context": learning_context.model_dump(),
-                "video_suggestions": video_suggestions
+                # ✅ REMOVIDO: video_suggestions não é mais necessário
+                # "video_suggestions": video_suggestions
             }
 
         except Exception as e:
@@ -551,7 +536,8 @@ Se o problema persistir, entre em contato com o suporte técnico."""
                 "related_topics": [],
                 "educational_metadata": {"error": True, "error_type": type(e).__name__},
                 "learning_context": learning_context.model_dump() if 'learning_context' in locals() else {},
-                "video_suggestions": []
+                # ✅ REMOVIDO: video_suggestions não é mais necessário
+                # "video_suggestions": []
             }
 
 
@@ -603,9 +589,10 @@ async def educational_chat(
 
         response_time = time.time() - start_time
 
-        video_suggestions = result.get("video_suggestions", [])
+        # ✅ REMOVIDO: video_suggestions não é mais necessário
+        # video_suggestions = result.get("video_suggestions", [])
         logger.info(
-            f"✅ Response generated by {agent.model_provider} ({agent.model_name}) in {response_time:.2f}s with {len(video_suggestions)} video suggestions")
+            f"✅ Response generated by {agent.model_provider} ({agent.model_name}) in {response_time:.2f}s")
 
         # Construct the final response
         response_data = {
@@ -616,7 +603,8 @@ async def educational_chat(
             "related_topics": result["related_topics"],
             "educational_metadata": result["educational_metadata"],
             "learning_context": result["learning_context"],
-            "video_suggestions": video_suggestions,
+            # ✅ REMOVIDO: video_suggestions não é mais necessário
+            # "video_suggestions": video_suggestions,
             "response_time": response_time
         }
 

@@ -654,6 +654,7 @@ class RAGHandler:
                 continue
 
         # Se chegou aqui, todos falharam
+        logger.error(f"❌ All LLM providers failed. Original: {original_provider}")
         raise Exception(
             f"All LLM providers failed. Original: {original_provider}")
 
@@ -752,6 +753,7 @@ class RAGHandler:
                     f"⚠️ Fallback embedding failed with {provider}: {e}")
                 continue
 
+        logger.error("❌ All embedding providers failed")
         return None
 
     def _initialize_embeddings_fallback(self):
@@ -820,11 +822,17 @@ class RAGHandler:
                     logger.warning(
                         f"⚠️ Failed to switch to Gemini embeddings: {e}")
 
+        logger.error("❌ No alternative embedding provider available")
         raise Exception("No alternative embedding provider available")
 
     def _initialize_vector_store(self):
         try:
             # 🚨 CORREÇÃO: NÃO criar diretório automaticamente no Render
+            # Verificar se persist_dir não é None antes de verificar existência
+            if not self.persist_dir:
+                logger.error("❌ persist_dir é None - não é possível inicializar vector store")
+                return
+            
             # Verificar se o diretório existe antes de tentar usar
             if not os.path.exists(self.persist_dir):
                 logger.warning(
@@ -835,6 +843,7 @@ class RAGHandler:
                 return
             # Tenta carregar a coleção configurada (default: "langchain")
             try:
+                # ✅ CORREÇÃO: persist_dir já foi verificado acima
                 self.vector_store = Chroma(
                     persist_directory=self.persist_dir,
                     embedding_function=self.embeddings,
@@ -856,6 +865,11 @@ class RAGHandler:
                     current_count = self.vector_store._collection.count()
 
                 if not self.vector_store or current_count == 0:
+                    # ✅ CORREÇÃO: Verificar se persist_dir não é None antes de usar
+                    if not self.persist_dir:
+                        logger.error("❌ persist_dir é None - não é possível inicializar ChromaDB")
+                        return
+                    
                     client = chromadb.PersistentClient(path=self.persist_dir)
                     collections = client.list_collections()
                     logger.info(
@@ -864,6 +878,7 @@ class RAGHandler:
                     # Priorizar coleção não vazia
                     for col in collections:
                         try:
+                            # ✅ CORREÇÃO: persist_dir já foi verificado acima
                             candidate_vs = Chroma(
                                 persist_directory=self.persist_dir,
                                 embedding_function=self.embeddings,
@@ -883,7 +898,13 @@ class RAGHandler:
                             )
 
                 if self.vector_store is None:
+                    # ✅ CORREÇÃO: Verificar se persist_dir não é None antes de usar
+                    if not self.persist_dir:
+                        logger.error("❌ persist_dir é None - não é possível criar vector store como último recurso")
+                        return
+                    
                     # Como último recurso, cria/usa a coleção configurada
+                    # ✅ CORREÇÃO: persist_dir já foi verificado acima
                     self.vector_store = Chroma(
                         persist_directory=self.persist_dir,
                         embedding_function=self.embeddings,
@@ -898,7 +919,10 @@ class RAGHandler:
 
             # Logar contagem final
             try:
-                final_count = self.vector_store._collection.count()
+                if self.vector_store and hasattr(self.vector_store, "_collection"):
+                    final_count = self.vector_store._collection.count()
+                else:
+                    final_count = 0
             except Exception:
                 final_count = 0
             logger.info(
@@ -909,7 +933,7 @@ class RAGHandler:
             raise
 
     def _setup_retriever(self):
-        if self.vector_store:
+        if self.vector_store and hasattr(self.vector_store, "_collection"):
             # ChromaDB 1.0.15 compatibility - remove fetch_k and lambda_mult
             search_kwargs = {
                 "k": max(8, self.config.retrieval_k),
@@ -924,6 +948,8 @@ class RAGHandler:
                 search_kwargs=search_kwargs,
             )
             logger.info("✅ Retriever configured")
+        else:
+            logger.warning("⚠️ Vector store não disponível - retriever não configurado")
 
     def _load_aliases(self):
         """Load aliases from optional JSON file backend/data/aliases.json."""
@@ -972,15 +998,23 @@ class RAGHandler:
                 candidate_path = spreadsheet_file
             else:
                 # Fallback: search in materials for a catalog file
+                if not self.materials_dir.exists():
+                    logger.warning(f"⚠️ Materials directory does not exist: {self.materials_dir}")
+                    return
+                    
                 patterns = ["#catalog*.xlsx",
                             "*catalog*.xlsx", "*catálogo*.xlsx"]
                 for pattern in patterns:
-                    match = next(Path(self.materials_dir).rglob(pattern), None)
-                    if match:
-                        candidate_path = match
-                        logger.info(
-                            f"📊 Using course catalog found at {candidate_path}")
-                        break
+                    try:
+                        match = next(Path(self.materials_dir).rglob(pattern), None)
+                        if match:
+                            candidate_path = match
+                            logger.info(
+                                f"📊 Using course catalog found at {candidate_path}")
+                            break
+                    except Exception as e:
+                        logger.debug(f"⚠️ Error searching for pattern {pattern}: {e}")
+                        continue
 
             if not candidate_path:
                 logger.warning(
@@ -1017,18 +1051,22 @@ class RAGHandler:
         if not self.vector_store:
             self._initialize_vector_store()
 
-        if self.vector_store:
-            if not force_reprocess and self.vector_store._collection.count() > 0:
-                logger.info(
-                    "📋 Documents already processed. Use force_reprocess=True to reprocess.")
-                return True
+        if self.vector_store and hasattr(self.vector_store, "_collection"):
+            try:
+                if not force_reprocess and self.vector_store._collection.count() > 0:
+                    logger.info(
+                        "📋 Documents already processed. Use force_reprocess=True to reprocess.")
+                    return True
 
-            if force_reprocess and self.vector_store._collection.count() > 0:
-                logger.info(
-                    "🗑️ Clearing existing documents for reprocessing...")
-                ids = self.vector_store.get()["ids"]
-                if ids:
-                    self.vector_store.delete(ids)
+                if force_reprocess and self.vector_store._collection.count() > 0:
+                    logger.info(
+                        "🗑️ Clearing existing documents for reprocessing...")
+                    ids = self.vector_store.get()["ids"]
+                    if ids:
+                        self.vector_store.delete(ids)
+            except Exception as e:
+                logger.warning(f"⚠️ Could not check vector store status: {e}")
+                return False
 
         # Load documents
         documents = self._load_all_documents()
@@ -1156,6 +1194,10 @@ class RAGHandler:
         documents: List[Document] = []
         # PDFs
         try:
+            if not self.materials_dir.exists():
+                logger.warning(f"⚠️ Materials directory does not exist: {self.materials_dir}")
+                return documents
+                
             loader = DirectoryLoader(
                 str(self.materials_dir),
                 glob="**/*.pdf",
@@ -1191,8 +1233,16 @@ class RAGHandler:
 
         # Gather candidates (catalog first)
         candidates: List[Path] = []
-        for pattern in ("#catalog*.xlsx", "*catalog*.xlsx", "*.xlsx"):
-            candidates.extend(list(Path(self.materials_dir).rglob(pattern)))
+        try:
+            if not self.materials_dir.exists():
+                logger.warning(f"⚠️ Materials directory does not exist: {self.materials_dir}")
+                return xlsx_documents
+                
+            for pattern in ("#catalog*.xlsx", "*catalog*.xlsx", "*.xlsx"):
+                candidates.extend(list(Path(self.materials_dir).rglob(pattern)))
+        except Exception as e:
+            logger.warning(f"⚠️ Error gathering XLSX candidates: {e}")
+            return xlsx_documents
 
         seen: set[str] = set()
         for xlsx_path in candidates:
@@ -1265,6 +1315,11 @@ class RAGHandler:
             video_code = parts[0].strip().lower(
             ) if parts else filename_stem.strip().lower()
 
+            # ✅ CORREÇÃO: Verificar se course_structure tem a coluna necessária
+            if 'código_normalized' not in self.course_structure.columns:
+                logger.warning("⚠️ Course structure não tem coluna 'código_normalized'")
+                return None
+
             match = self.course_structure[self.course_structure['código_normalized'] == video_code]
 
             if not match.empty:
@@ -1298,14 +1353,15 @@ class RAGHandler:
         try:
             prompt = ChatPromptTemplate.from_template(prompt_template)
             if not self.llm:
-                raise ValueError("LLM not initialized")
+                logger.warning(f"⚠️ LLM not initialized for feature '{feature_name}'")
+                return None
             chain = prompt | self.llm | StrOutputParser()
             result = chain.invoke({"text": text[:2000]})
             parsed_result = result_parser(result)
             cache[text_hash] = parsed_result
             return parsed_result
         except Exception as e:
-            logger.warning(f"Failed to run feature '{feature_name}': {e}")
+            logger.warning(f"⚠️ Failed to run feature '{feature_name}': {e}")
             return None
 
     def _extract_key_concepts(self, text: str) -> List[str]:
@@ -1326,7 +1382,7 @@ class RAGHandler:
         """Retrieve documents with automatic fallback on embedding failures."""
         try:
             if not self.retriever:
-                logger.warning("⚠️ No retriever available")
+                logger.warning("⚠️ No retriever available - persist_dir pode ser None")
                 return []
 
             k = k or self.config.retrieval_k
@@ -1404,8 +1460,31 @@ class RAGHandler:
             }
 
         if not self.retriever:
-            logger.error("Retriever not initialized.")
-            return {"answer": immediate_processing_message + "System not ready.", "sources": []}
+            logger.error("❌ Retriever not initialized - persist_dir pode ser None")
+            return {"answer": immediate_processing_message + f"""❌ **PROBLEMA TÉCNICO IDENTIFICADO**
+
+Sua pergunta: "{question}"
+
+🚨 **PROBLEMA CRÍTICO:**
+O sistema RAG não conseguiu inicializar corretamente.
+
+**Detalhes técnicos:**
+- persist_dir: {self.persist_dir}
+- vector_store: {'✅ Disponível' if self.vector_store else '❌ Não disponível'}
+- retriever: {'✅ Configurado' if self.retriever else '❌ Não configurado'}
+
+**Possíveis causas:**
+1. Diretório ChromaDB não configurado corretamente
+2. persist_dir é None no ambiente Render
+3. Problema na inicialização do banco de dados vetorial
+
+**Soluções:**
+1. Verificar configuração do CHROMA_PERSIST_DIR
+2. Fazer upload do arquivo .chromadb via frontend
+3. Reprocessar materiais se necessário
+4. Contatar suporte técnico
+
+🔒 **Compromisso de Acurácia:** Não posso fornecer respostas sem acesso ao banco de dados vetorial.""", "sources": []}
 
         try:
             # Expand query with aliases/synonyms
@@ -1417,7 +1496,8 @@ class RAGHandler:
 
             retrieved: List[Tuple[Document, Optional[float]]] = []
             try:
-                if self.vector_store:
+                # ✅ CORREÇÃO: Verificar se vector_store existe E se persist_dir não é None
+                if self.vector_store and self.persist_dir:
                     try:
                         # Prefer retriever with relevance scores when available
                         vs_results = self.vector_store.similarity_search_with_relevance_scores(
@@ -1446,6 +1526,7 @@ class RAGHandler:
                             docs = self.retrieve_documents(question_aug)
                             retrieved = [(doc, None) for doc in docs]
                 else:
+                    logger.warning(f"⚠️ Vector store não disponível - persist_dir: {self.persist_dir}")
                     docs = self.retrieve_documents(question_aug)
                     retrieved = [(doc, None) for doc in docs]
             except Exception as e:
@@ -2144,7 +2225,7 @@ recomendo consultar diretamente os materiais do DNA da Força."""
                 "vector_store_count": vector_store_count,
                 "materials_count": materials_count,
                 "collection_name": collection_name or self.config.collection_name,
-                "persist_dir": self.persist_dir,
+                "persist_dir": str(self.persist_dir) if self.persist_dir else None,
                 "config": self.config.__dict__,
             }
         except Exception as e:
@@ -2155,10 +2236,13 @@ recomendo consultar diretamente os materiais do DNA da Força."""
         """Reset the handler state."""
         logger.info("🔄 Resetting RAG handler...")
         try:
-            if self.vector_store:
-                ids = self.vector_store.get()["ids"]
-                if ids:
-                    self.vector_store.delete(ids)
+            if self.vector_store and hasattr(self.vector_store, "_collection"):
+                try:
+                    ids = self.vector_store.get()["ids"]
+                    if ids:
+                        self.vector_store.delete(ids)
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not reset vector store: {e}")
             self.concept_cache.clear()
             self.difficulty_cache.clear()
             self.summary_cache.clear()

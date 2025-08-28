@@ -95,6 +95,148 @@ PREFER_OPEN_SOURCE=true # Open Source para embeddings
 
 ---
 
+#### **🎯 PRECISÃO:**
+
+- **Top-K retrieval** para resultados mais relevantes
+- **Reranking opcional** para melhorar qualidade
+- **Filtros por metadados** quando disponíveis
+
+---
+
+## 🔍 **BUSCA VETORIAL vs BUSCA TRADICIONAL:**
+
+### **🎯 DIFERENÇA FUNDAMENTAL:**
+
+#### **📊 BUSCA TRADICIONAL (Palavras-chave):**
+
+```
+Pergunta: "Como aumentar músculos?"
+Busca: "aumentar" + "músculos"
+Resultado: Documentos que contêm essas palavras exatas
+❌ Pode perder documentos relevantes com sinônimos
+❌ Não entende contexto ou significado
+```
+
+#### **🧠 BUSCA VETORIAL (Semântica):**
+
+```
+Pergunta: "Como aumentar músculos?"
+Embedding: [0.123, -0.456, 0.789, ...] (vetor de significado)
+Busca: Similaridade semântica no espaço vetorial
+Resultado: Documentos com significado similar
+✅ Encontra "hipertrofia muscular", "desenvolvimento de massa"
+✅ Entende contexto e relacionamentos
+```
+
+### **💡 EXEMPLOS PRÁTICOS:**
+
+#### **🔍 EXEMPLO 1 - SINÔNIMOS:**
+
+- **Pergunta**: "Como ganhar força?"
+- **Busca tradicional**: Procura por "ganhar" + "força"
+- **Busca vetorial**: Encontra documentos sobre:
+  - "Desenvolvimento de força muscular"
+  - "Treinamento de potência"
+  - "Aumento da capacidade física"
+  - "Fortalecimento muscular"
+
+#### **🔍 EXEMPLO 2 - CONCEITOS RELACIONADOS:**
+
+- **Pergunta**: "Qual exercício é bom para o coração?"
+- **Busca tradicional**: Procura por "coração" + "exercício"
+- **Busca vetorial**: Encontra documentos sobre:
+  - "Exercícios cardiovasculares"
+  - "Treinamento aeróbico"
+  - "Atividades de resistência"
+  - "Benefícios do cardio"
+
+#### **🔍 EXEMPLO 3 - CONTEXTO COMPLEXO:**
+
+- **Pergunta**: "Como evitar lesões no treino?"
+- **Busca tradicional**: Procura por "evitar" + "lesões" + "treino"
+- **Busca vetorial**: Encontra documentos sobre:
+  - "Aquecimento adequado"
+  - "Progressão de cargas"
+  - "Técnica correta"
+  - "Recuperação muscular"
+  - "Preparação física"
+
+### **⚡ VANTAGENS DA BUSCA VETORIAL:**
+
+#### **✅ INTELIGÊNCIA SEMÂNTICA:**
+
+- **Entende significado** além das palavras
+- **Conecta conceitos relacionados** automaticamente
+- **Ranking inteligente** por relevância semântica
+
+#### **✅ FLEXIBILIDADE LINGUÍSTICA:**
+
+- **Funciona com sinônimos** e variações
+- **Suporte multilíngue** nativo
+- **Entende gírias** e expressões coloquiais
+
+#### **✅ CONTEXTUALIZAÇÃO:**
+
+- **Mantém contexto** da pergunta
+- **Encontra informações relacionadas** indiretamente
+- **Prioriza documentos mais relevantes** semanticamente
+
+### **🔧 IMPLEMENTAÇÃO TÉCNICA:**
+
+#### **📊 PROCESSO DE EMBEDDING:**
+
+```python
+# 1. Texto é convertido em vetor numérico
+texto = "Como aumentar músculos de forma segura?"
+embedding = modelo_embedding.encode(texto)
+# Resultado: vetor de 1536 dimensões representando o significado
+
+# 2. Vetor é armazenado no ChromaDB
+chromadb.add(
+    embeddings=[embedding],
+    documents=[texto],
+    metadatas=[{"source": "pergunta_usuario"}]
+)
+```
+
+#### **🔍 PROCESSO DE BUSCA:**
+
+```python
+# 1. Pergunta é convertida em embedding
+pergunta_embedding = modelo_embedding.encode("Como ganhar massa?")
+
+# 2. Busca por similaridade no espaço vetorial
+resultados = chromadb.query(
+    query_embeddings=[pergunta_embedding],
+    n_results=5
+)
+
+# 3. Documentos são retornados ordenados por similaridade
+# (não por frequência de palavras)
+```
+
+### **🚀 BENEFÍCIOS PARA O USUÁRIO:**
+
+#### **✅ EXPERIÊNCIA SUPERIOR:**
+
+- **Respostas mais precisas** e relevantes
+- **Menos frustração** com "nada encontrado"
+- **Descoberta de informações** relacionadas
+
+#### **✅ FLEXIBILIDADE:**
+
+- **Pode perguntar de várias formas** diferentes
+- **Não precisa usar palavras exatas** dos documentos
+- **Entende intenção** da pergunta
+
+#### **✅ CONFIABILIDADE:**
+
+- **Sempre encontra algo relevante** (se existir)
+- **Baseado em documentos reais** do acervo
+- **Fontes citadas** corretamente
+
+---
+
 ### 1) Configuração e Componentes do RAG (LangChain)
 
 - **Configuração central** (`RAGConfig`) controla chunking, modelo, embeddings e parâmetros de recuperação (MMR):
