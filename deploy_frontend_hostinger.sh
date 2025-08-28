@@ -139,7 +139,7 @@ if [ -f ".env" ]; then
     echo "✅ Arquivo .env já existe"
 else
     echo "📝 Criando arquivo .env completo..."
-    cat > .env << 'EOF'
+cat > .env << 'EOF'
 # ========================================
 # CONFIGURAÇÃO COMPLETA DNA DA FORÇA
 # ========================================

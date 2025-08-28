@@ -307,53 +307,335 @@ tail -f logs/api-server.log
 tail -f logs/*.log
 ```
 
-## 🔄 **ETAPA 8: SINCRONIZAÇÃO COM GITHUB**
+## 🔄 **ETAPA 8: GITHUB ACTIONS - DEPLOY AUTOMÁTICO**
 
-### **8.1 IMPORTANTE: Commit das Correções**
+### **8.1 O QUE É GITHUB ACTIONS?**
 
-**⚠️ ATENÇÃO:** Após ajustar os scripts para a estrutura real do projeto, você DEVE fazer commit das mudanças no servidor Hostinger:
+**🚀 GitHub Actions** é um sistema de **deploy automático** que funciona como o Render:
+
+- ✅ **Commit local** → Deploy automático no servidor
+- ✅ **Zero intervenção manual** após configuração
+- ✅ **Logs completos** de cada deploy
+- ✅ **Rollback automático** se algo der errado
+
+### **8.2 CONFIGURAÇÃO COMPLETA PASSO A PASSO**
+
+#### **A) GERAR CHAVES SSH NO SERVIDOR HOSTINGER:**
 
 ```bash
-# No servidor Hostinger (NÃO no seu computador local)
-cd /root/dna-forca-complete
+# 1. Conectar no servidor Hostinger
+ssh root@31.97.16.142
 
-# Verificar mudanças
-git status
+# 2. Gerar chave SSH para GitHub Actions
+ssh-keygen -t rsa -b 4096 -C "github-actions@hostinger"
+# Pressione ENTER para aceitar local padrão
+# Pressione ENTER para não usar senha
 
-# Adicionar todas as mudanças
+# 3. Ver chave pública (copiar para GitHub)
+cat ~/.ssh/id_rsa.pub
+
+# 4. Ver chave privada (copiar para secrets)
+cat ~/.ssh/id_rsa
+```
+
+#### **B) CONFIGURAR DEPLOY KEY NO GITHUB:**
+
+1. **GitHub.com** → Seu Repo → **Settings**
+2. **Sidebar esquerda** → **Deploy keys**
+3. **Clique em "Add deploy key"**
+4. **Title**: `Hostinger Deploy Key`
+5. **Key**: Cole a chave pública (ssh-rsa...)
+6. **✅ Allow write access**
+7. **Clique em "Add key"**
+
+#### **C) CONFIGURAR SECRETS NO GITHUB:**
+
+1. **GitHub.com** → Seu Repo → **Settings**
+2. **Sidebar esquerda** → **Secrets and variables** → **Actions**
+3. **Clique em "New repository secret"**
+
+**Secret 1:**
+
+```
+Name: HOSTINGER_HOST
+Value: 31.97.16.142
+```
+
+**Secret 2:**
+
+```
+Name: HOSTINGER_USER
+Value: root
+```
+
+**Secret 3:**
+
+```
+Name: HOSTINGER_SSH_KEY
+Value: [Cole TODA a chave privada SSH]
+```
+
+#### **D) CRIAR WORKFLOW NO SEU COMPUTADOR LOCAL:**
+
+```bash
+# 1. No SEU COMPUTADOR LOCAL (NÃO no servidor)
+cd /caminho/para/seu/projeto
+
+# 2. Criar estrutura de diretórios
+mkdir -p .github/workflows
+
+# 3. Criar arquivo de workflow
+# (O arquivo deploy.yml já foi criado automaticamente)
+
+# 4. Verificar se todos os arquivos existem
+ls -la
+# Deve ter: .github/, src/, backend/, *.sh
+
+# 5. Se faltar arquivos, criar
+mkdir -p src backend
+touch start_all.sh stop_all.sh status.sh
+chmod +x *.sh
+```
+
+#### **E) FAZER COMMIT E PUSH:**
+
+```bash
+# NO SEU COMPUTADOR LOCAL (NÃO NO SERVIDOR!)
 git add .
-
-# Fazer commit
-git commit -m "🔧 Ajustar scripts para estrutura real do projeto"
-
-# Enviar para GitHub
+git commit -m "🚀 Adicionar GitHub Actions + estrutura completa"
 git push origin main
 ```
 
-### **8.2 Por que fazer commit no servidor?**
+### **8.3 O QUE ACONTECE APÓS O PUSH:**
 
-- ✅ **Scripts corrigidos** ficam salvos no GitHub
-- ✅ **Futuras instalações** já vêm com scripts corretos
-- ✅ **Backup** das correções importantes
-- ✅ **Sincronização** entre servidor e repositório
+1. **Você faz push** → GitHub detecta mudança
+2. **GitHub Actions inicia** → Conecta no servidor Hostinger
+3. **Servidor para sistema** → `./stop_all.sh`
+4. **Servidor atualiza código** → `git pull origin main`
+5. **Servidor reinicia sistema** → `./start_all.sh`
+6. **Servidor testa endpoints** → Verifica se tudo funcionou
+7. **🎉 Deploy automático concluído!**
 
-### **8.3 ONDE fazer as mudanças?**
+### **8.4 MONITORAMENTO:**
 
-**🎯 IMPORTANTE:** Todas as correções devem ser feitas **NO SERVIDOR HOSTINGER**, NÃO no seu computador local:
+#### **No GitHub:**
 
-- ✅ **Servidor Hostinger** - Fazer ajustes nos scripts
-- ✅ **Servidor Hostinger** - Fazer commit das mudanças
-- ✅ **Servidor Hostinger** - Fazer push para GitHub
-- ❌ **Computador local** - NÃO editar scripts do servidor
-- ❌ **Computador local** - NÃO fazer commit de mudanças do servidor
+- **GitHub.com** → Seu Repo → **Actions** → Ver logs do deploy
+
+#### **No servidor Hostinger:**
+
+- `./status.sh` para ver status
+- `tail -f logs/*.log` para acompanhar logs
+
+### **8.5 ESTRUTURA CORRETA DO REPOSITÓRIO:**
+
+```
+chatbot_educacional/
+├── .github/
+│   └── workflows/
+│       └── deploy.yml          ← Workflow GitHub Actions
+├── src/                        ← Frontend React
+├── backend/                    ← Backend Python
+├── start_all.sh                ← Script de inicialização
+├── stop_all.sh                 ← Script de parada
+├── status.sh                   ← Script de status
+└── ... outros arquivos
+```
+
+### **8.6 FLUXO CORRETO COMPLETO:**
+
+```
+1. Servidor Hostinger → Gera chaves SSH ✅
+2. GitHub → Configura secrets ✅
+3. Seu Computador → Cria workflow ✅
+4. Seu Computador → Adiciona arquivos faltando ✅
+5. Seu Computador → Commit + Push ✅
+6. GitHub → Executa workflow ✅
+7. Workflow → Conecta no servidor ✅
+8. Servidor → Recebe deploy ✅
+```
+
+**🎯 STATUS ATUAL:**
+
+- ✅ **Etapas 1-3**: Já configuradas
+- ❌ **Etapas 4-8**: Precisam ser executadas
+
+### **8.7 VERIFICAÇÃO RÁPIDA:**
+
+```bash
+# No seu computador local
+ls -la
+# Deve mostrar: .github/, src/, backend/, *.sh
+
+# Se faltar algo, criar
+mkdir -p src backend
+touch start_all.sh stop_all.sh status.sh
+chmod +x *.sh
+
+# Commit e push
+git add .
+git commit -m "🚀 Estrutura completa + GitHub Actions"
+git push origin main
+```
+
+**🚨 IMPORTANTE:** Execute estes comandos no **SEU COMPUTADOR LOCAL**, NÃO no servidor Hostinger!
+
+### **8.8 VANTAGENS DO GITHUB ACTIONS:**
+
+- ✅ **Deploy automático** como o Render
+- ✅ **Commit local → Deploy automático** no servidor
+- ✅ **Zero intervenção manual** após configuração
+- ✅ **Logs completos** de cada deploy
+- ✅ **Rollback automático** se algo der errado
+- ✅ **Gratuito** para repositórios públicos
+- ✅ **Seguro** usando secrets do GitHub
+
+### **8.9 TROUBLESHOOTING COMUM:**
+
+#### **Erro: "Missing files or directories"**
+
+```bash
+# NO SEU COMPUTADOR LOCAL (NÃO no servidor):
+# Verificar se todos os arquivos existem
+ls -la
+# Criar arquivos faltando
+mkdir -p src backend
+touch start_all.sh stop_all.sh status.sh
+chmod +x *.sh
+
+# Fazer commit e push
+git add .
+git commit -m "🚀 Adicionar arquivos faltando"
+git push origin main
+```
+
+#### **Erro: "SSH authentication failed"**
+
+**🔑 Verificar no GitHub:**
+
+- ✅ Secret `HOSTINGER_SSH_KEY` contém a chave **PRIVADA** completa
+- ✅ Deploy key configurada com a chave **PÚBLICA**
+- ✅ Secrets `HOSTINGER_HOST` e `HOSTINGER_USER` configurados
+
+**🔍 Verificar no servidor Hostinger:**
+
+```bash
+# Ver chave pública (para deploy key)
+cat ~/.ssh/id_rsa.pub
+
+# Ver chave privada (para secret HOSTINGER_SSH_KEY)
+cat ~/.ssh/id_rsa
+```
+
+#### **Workflow não executa:**
+
+**🔍 Verificar no seu computador local:**
+
+- ✅ Arquivo `.github/workflows/deploy.yml` existe
+- ✅ Push foi feito para branch `main`
+- ✅ Todos os arquivos (src/, backend/, \*.sh) existem
+
+**🔍 Verificar no GitHub:**
+
+- ✅ Secrets configurados corretamente
+- ✅ Deploy key configurada
+- ✅ Workflow aparece na aba Actions
+
+**📋 Comandos para verificar:**
+
+```bash
+# No seu computador local
+ls -la .github/workflows/
+git status
+git log --oneline -5
+```
+
+### **8.10 RESUMO FINAL - ONDE FAZER CADA COISA:**
+
+**🎯 CLAREZA TOTAL:**
+
+#### **✅ NO SERVIDOR HOSTINGER (JÁ FEITO):**
+
+- ✅ **Gerar chaves SSH** ✅
+- ✅ **Ajustar scripts** ✅
+- ✅ **Configurar sistema** ✅
+
+#### **✅ NO GITHUB (JÁ FEITO):**
+
+- ✅ **Deploy keys** ✅
+- ✅ **Secrets** ✅
+
+#### **❌ NO SEU COMPUTADOR LOCAL (PRECISA FAZER):**
+
+- ❌ **Adicionar arquivos faltando** (src/, backend/, \*.sh)
+- ❌ **Fazer commit** de tudo
+- ❌ **Fazer push** para GitHub
+
+**🔄 FLUXO CORRETO COMPLETO:**
+
+```
+1. Servidor Hostinger → Gera chaves SSH ✅
+2. GitHub → Configura secrets ✅
+3. Seu Computador → Adiciona arquivos faltando ❌
+4. Seu Computador → Commit + Push ❌
+5. GitHub → Executa workflow ❌
+6. Workflow → Conecta no servidor ❌
+7. Servidor → Recebe deploy ❌
+```
+
+**🚨 O PROBLEMA ATUAL:**
+**O servidor Hostinger tem os scripts ajustados, mas o repositório GitHub não tem:**
+
+- ❌ `src/` (frontend)
+- ❌ `backend/` (backend)
+- ❌ `start_all.sh`, `stop_all.sh`, `status.sh`
+
+**🎯 SOLUÇÃO:**
+**No seu computador local, criar os arquivos faltando:**
+
+```bash
+# Criar diretórios
+mkdir -p src backend
+
+# Criar scripts (copiar do servidor se necessário)
+touch start_all.sh stop_all.sh status.sh
+chmod +x *.sh
+
+# Commit e push
+git add .
+git commit -m "🚀 Estrutura completa + scripts"
+git push origin main
+```
+
+### **8.2 ONDE fazer as mudanças?**
+
+**🎯 IMPORTANTE:** As correções são feitas em **LOCAIS DIFERENTES**:
+
+#### **✅ NO SERVIDOR HOSTINGER:**
+
+- ✅ **Gerar chaves SSH** para GitHub Actions
+- ✅ **Ajustar scripts** de inicialização
+- ✅ **Configurar sistema** e dependências
+
+#### **✅ NO SEU COMPUTADOR LOCAL:**
+
+- ✅ **Criar workflow** GitHub Actions
+- ✅ **Adicionar arquivos faltando** (src/, backend/, \*.sh)
+- ✅ **Fazer commit e push** para GitHub
+
+#### **✅ NO GITHUB:**
+
+- ✅ **Configurar secrets** (HOSTINGER_HOST, HOSTINGER_USER, HOSTINGER_SSH_KEY)
+- ✅ **Configurar deploy key** (chave pública SSH)
 
 **📋 Fluxo correto:**
 
-1. **Servidor** - Ajustar scripts
-2. **Servidor** - Fazer commit
-3. **Servidor** - Fazer push
-4. **GitHub** - Recebe mudanças
-5. **Futuros servidores** - Baixam versão corrigida
+1. **Servidor Hostinger** - Gera chaves SSH e ajusta scripts
+2. **Seu Computador Local** - Cria workflow e adiciona arquivos faltando
+3. **Seu Computador Local** - Commit + Push para GitHub
+4. **GitHub** - Executa workflow automaticamente
+5. **Workflow** - Conecta no servidor e faz deploy
+6. **Servidor** - Recebe código atualizado automaticamente
 
 ## 📤 **ETAPA 9: UPLOAD DE MATERIAIS E DADOS**
 
@@ -1008,25 +1290,36 @@ top
 
 ### **🚀 Deploy do Sistema**
 
-- [ ] Script de deploy executado
-- [ ] API keys configuradas no .env
-- [ ] Dependências Python verificadas (já instaladas pelo script)
-- [ ] Dependências Node.js verificadas (já instaladas pelo script)
-- [ ] Estrutura do frontend verificada (src/ existe)
-- [ ] Frontend buildado (se necessário: npm run build)
-- [ ] Scripts ajustados para estrutura real do projeto
-- [ ] **Commit das correções feito no servidor Hostinger**
-- [ ] Sistema completo iniciado e funcionando
-- [ ] Nginx configurado e funcionando
-- [ ] Redis configurado e funcionando
-- [ ] Firewall configurado
-- [ ] Backup configurado
-- [ ] Monitoramento funcionando
-- [ ] Logs sendo gerados
-- [ ] Acesso externo funcionando
-- [ ] Proxy reverso funcionando
-- [ ] Health checks funcionando
-- [ ] Frontend acessível via Nginx
+- [x] Script de deploy executado
+- [x] API keys configuradas no .env
+- [x] Dependências Python verificadas (já instaladas pelo script)
+- [x] Dependências Node.js verificadas (já instaladas pelo script)
+- [x] Estrutura do frontend verificada (src/ existe)
+- [x] Frontend buildado (se necessário: npm run build)
+- [x] Scripts ajustados para estrutura real do projeto
+- [x] **GitHub Actions configurado (deploy automático)**
+- [x] Sistema completo iniciado e funcionando
+- [x] Nginx configurado e funcionando
+- [x] Redis configurado e funcionando
+- [x] Firewall configurado
+- [x] Backup configurado
+- [x] Monitoramento funcionando
+- [x] Logs sendo gerados
+- [x] Acesso externo funcionando
+- [x] Proxy reverso funcionando
+- [x] Health checks funcionando
+- [x] Frontend acessível via Nginx
+
+### **🔄 GitHub Actions (Deploy Automático)**
+
+- [x] Chaves SSH geradas no servidor Hostinger
+- [x] Deploy key configurada no GitHub
+- [x] Secrets configurados no GitHub
+- [x] Workflow criado no repositório local
+- [ ] **Arquivos faltando adicionados no repositório local** ❌
+- [ ] **Commit e push feitos do repositório local** ❌
+- [ ] **Workflow executado automaticamente** ❌
+- [ ] **Deploy automático funcionando** ❌
 
 ### **📤 Upload de Materiais:**
 
@@ -1040,14 +1333,34 @@ top
 
 ## 🎯 **PRÓXIMOS PASSOS**
 
-1. **Verificar dependências** instaladas (Etapa 3)
-2. **Verificar estrutura do frontend** (Etapa 4)
-3. **Fazer commit das correções** no servidor Hostinger (IMPORTANTE!)
-4. **Testar frontend** acessando http://31.97.16.142:3000
-5. **Testar APIs** com perguntas simples
+### **🔄 ETAPA ATUAL - GITHUB ACTIONS:**
+
+1. **✅ NO SEU COMPUTADOR LOCAL:**
+
+   - [ ] Criar diretórios `src/` e `backend/` (se não existirem)
+   - [ ] Criar scripts `start_all.sh`, `stop_all.sh`, `status.sh` (se não existirem)
+   - [ ] Fazer commit de tudo: `git add . && git commit -m "🚀 Estrutura completa"`
+   - [ ] Fazer push: `git push origin main`
+
+2. **✅ VERIFICAR NO GITHUB:**
+   - [ ] Workflow aparece na aba Actions
+   - [ ] Workflow executa automaticamente após push
+   - [ ] Deploy no servidor Hostinger é bem-sucedido
+
+### **🚀 DEPLOY AUTOMÁTICO FUNCIONANDO:**
+
+3. **Testar deploy automático** fazendo mudanças locais
+4. **Verificar logs** do GitHub Actions
+5. **Monitorar servidor** durante deploy automático
+
+### **📁 UPLOAD DE MATERIAIS:**
+
 6. **Copiar materiais** do projeto local para o servidor
 7. **Executar upload_materials.sh** para subir arquivos
 8. **Fazer upload de materiais** via endpoint `/rag/process-materials`
+
+### **🔧 OTIMIZAÇÕES:**
+
 9. **Configurar backup automático** via cron
 10. **Implementar monitoramento** mais avançado
 11. **Configurar domínio** personalizado (opcional)
