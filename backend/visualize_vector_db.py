@@ -499,7 +499,7 @@ class VectorDBVisualizer:
             logger.error(f"❌ Erro ao gerar relatório: {e}")
     
     def create_html_report(self, collection_name: str, output_path: Path, analysis: Dict[str, Any]):
-        """Cria relatório HTML completo"""
+        """Cria relatório HTML completo com explicações sobre métodos de redução de dimensionalidade"""
         try:
             html_content = f"""
             <!DOCTYPE html>
@@ -509,61 +509,672 @@ class VectorDBVisualizer:
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>Relatório de Visualização - {collection_name}</title>
                 <style>
-                    body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                    .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; }}
-                    .section {{ margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }}
-                    .metric {{ display: inline-block; margin: 10px; padding: 15px; background: #f8f9fa; border-radius: 5px; }}
-                    .similarity-pair {{ margin: 10px 0; padding: 10px; background: #e9ecef; border-radius: 5px; }}
-                    iframe {{ width: 100%; height: 600px; border: none; }}
+                    * {{
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }}
+                    
+                    body {{
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        line-height: 1.6;
+                        color: #333;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        min-height: 100vh;
+                    }}
+                    
+                    .container {{
+                        max-width: 1400px;
+                        margin: 0 auto;
+                        padding: 20px;
+                    }}
+                    
+                    .header {{
+                        text-align: center;
+                        color: white;
+                        margin-bottom: 40px;
+                        padding: 30px;
+                        background: rgba(255, 255, 255, 0.1);
+                        border-radius: 20px;
+                        backdrop-filter: blur(10px);
+                    }}
+                    
+                    .header h1 {{
+                        font-size: 2.5rem;
+                        margin-bottom: 10px;
+                        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+                    }}
+                    
+                    .header p {{
+                        font-size: 1.2rem;
+                        opacity: 0.9;
+                    }}
+                    
+                    .nav-tabs {{
+                        display: flex;
+                        justify-content: center;
+                        margin-bottom: 30px;
+                        background: rgba(255, 255, 255, 0.1);
+                        border-radius: 15px;
+                        padding: 10px;
+                        backdrop-filter: blur(10px);
+                        flex-wrap: wrap;
+                    }}
+                    
+                    .nav-tab {{
+                        background: none;
+                        border: none;
+                        color: white;
+                        padding: 15px 25px;
+                        margin: 5px;
+                        border-radius: 10px;
+                        cursor: pointer;
+                        font-size: 1rem;
+                        font-weight: 500;
+                        transition: all 0.3s ease;
+                        white-space: nowrap;
+                    }}
+                    
+                    .nav-tab:hover {{
+                        background: rgba(255, 255, 255, 0.2);
+                        transform: translateY(-2px);
+                    }}
+                    
+                    .nav-tab.active {{
+                        background: rgba(255, 255, 255, 0.3);
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                    }}
+                    
+                    .content-section {{
+                        background: white;
+                        border-radius: 20px;
+                        padding: 30px;
+                        margin-bottom: 30px;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+                        display: none;
+                    }}
+                    
+                    .content-section.active {{
+                        display: block;
+                        animation: fadeIn 0.5s ease-in;
+                    }}
+                    
+                    @keyframes fadeIn {{
+                        from {{ opacity: 0; transform: translateY(20px); }}
+                        to {{ opacity: 1; transform: translateY(0); }}
+                    }}
+                    
+                    .method-card {{
+                        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+                        border-radius: 15px;
+                        padding: 25px;
+                        margin: 20px 0;
+                        border-left: 5px solid #667eea;
+                        transition: all 0.3s ease;
+                    }}
+                    
+                    .method-card:hover {{
+                        transform: translateY(-5px);
+                        box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+                    }}
+                    
+                    .method-title {{
+                        color: #667eea;
+                        font-size: 1.5rem;
+                        margin-bottom: 15px;
+                        font-weight: 600;
+                    }}
+                    
+                    .method-explanation {{
+                        font-size: 1.1rem;
+                        line-height: 1.8;
+                        margin-bottom: 20px;
+                    }}
+                    
+                    .pros-cons {{
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 20px;
+                        margin-top: 20px;
+                    }}
+                    
+                    .pros, .cons {{
+                        background: white;
+                        padding: 20px;
+                        border-radius: 10px;
+                        border: 2px solid;
+                    }}
+                    
+                    .pros {{
+                        border-color: #28a745;
+                    }}
+                    
+                    .cons {{
+                        border-color: #dc3545;
+                    }}
+                    
+                    .pros h4, .cons h4 {{
+                        margin-bottom: 15px;
+                        font-size: 1.2rem;
+                    }}
+                    
+                    .pros h4 {{
+                        color: #28a745;
+                    }}
+                    
+                    .cons h4 {{
+                        color: #dc3545;
+                    }}
+                    
+                    .pros ul, .cons ul {{
+                        list-style: none;
+                        padding-left: 0;
+                    }}
+                    
+                    .pros li, .cons li {{
+                        padding: 8px 0;
+                        position: relative;
+                        padding-left: 25px;
+                    }}
+                    
+                    .pros li:before {{
+                        content: "✅";
+                        position: absolute;
+                        left: 0;
+                        color: #28a745;
+                    }}
+                    
+                    .cons li:before {{
+                        content: "❌";
+                        position: absolute;
+                        left: 0;
+                        color: #dc3545;
+                    }}
+                    
+                    .info-box {{
+                        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+                        border: 2px solid #2196f3;
+                        border-radius: 15px;
+                        padding: 20px;
+                        margin: 20px 0;
+                    }}
+                    
+                    .info-box h3 {{
+                        color: #1976d2;
+                        margin-bottom: 15px;
+                    }}
+                    
+                    .comparison-table {{
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin: 20px 0;
+                        background: white;
+                        border-radius: 10px;
+                        overflow: hidden;
+                        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+                    }}
+                    
+                    .comparison-table th, .comparison-table td {{
+                        padding: 15px;
+                        text-align: left;
+                        border-bottom: 1px solid #e0e0e0;
+                    }}
+                    
+                    .comparison-table th {{
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        font-weight: 600;
+                    }}
+                    
+                    .comparison-table tr:hover {{
+                        background: #f8f9fa;
+                    }}
+                    
+                    .metrics-grid {{
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                        gap: 20px;
+                        margin: 20px 0;
+                    }}
+                    
+                    .metric {{
+                        background: white;
+                        padding: 20px;
+                        border-radius: 15px;
+                        text-align: center;
+                        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+                        border: 2px solid rgba(255, 255, 255, 0.3);
+                    }}
+                    
+                    .metric-value {{
+                        font-size: 2rem;
+                        font-weight: bold;
+                        color: #667eea;
+                        margin-bottom: 10px;
+                    }}
+                    
+                    .metric-label {{
+                        color: #666;
+                        font-size: 0.9rem;
+                    }}
+                    
+                    .visualization-section {{
+                        background: white;
+                        border-radius: 15px;
+                        padding: 20px;
+                        margin: 20px 0;
+                        text-align: center;
+                    }}
+                    
+                    .visualization-section iframe {{
+                        width: 100%;
+                        height: 600px;
+                        border: none;
+                        border-radius: 10px;
+                        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+                    }}
+                    
+                    .similarity-pair {{
+                        background: white;
+                        margin: 10px 0;
+                        padding: 15px;
+                        border-radius: 10px;
+                        border-left: 4px solid #667eea;
+                    }}
+                    
+                    .similarity-score {{
+                        font-weight: bold;
+                        color: #667eea;
+                        font-size: 1.1rem;
+                        margin-bottom: 10px;
+                    }}
+                    
+                    .footer {{
+                        text-align: center;
+                        color: white;
+                        margin-top: 40px;
+                        padding: 20px;
+                        opacity: 0.8;
+                    }}
+                    
+                    @media (max-width: 768px) {{
+                        .container {{
+                            padding: 10px;
+                        }}
+                        
+                        .header h1 {{
+                            font-size: 2rem;
+                        }}
+                        
+                        .nav-tabs {{
+                            flex-direction: column;
+                            align-items: center;
+                        }}
+                        
+                        .nav-tab {{
+                            margin: 5px 0;
+                            width: 100%;
+                            max-width: 300px;
+                        }}
+                        
+                        .pros-cons {{
+                            grid-template-columns: 1fr;
+                        }}
+                        
+                        .metrics-grid {{
+                            grid-template-columns: 1fr;
+                        }}
+                    }}
                 </style>
             </head>
             <body>
-                <div class="header">
-                    <h1>🔍 Relatório de Visualização do Banco de Dados Vetorial</h1>
-                    <h2>Coleção: {collection_name}</h2>
-                    <p>Gerado em: {time.strftime('%d/%m/%Y %H:%M:%S')}</p>
-                </div>
-                
-                <div class="section">
-                    <h3>📊 Métricas Gerais</h3>
-                    <div class="metric">
-                        <strong>Total de Documentos:</strong> {len(self.documents[collection_name])}
+                <div class="container">
+                    <div class="header">
+                        <h1>🔍 Relatório de Visualização do Banco de Dados Vetorial</h1>
+                        <h2>Coleção: {collection_name}</h2>
+                        <p>Gerado em: {time.strftime('%d/%m/%Y %H:%M:%S')}</p>
+                        <p>📚 Inclui explicações sobre métodos de redução de dimensionalidade</p>
                     </div>
-                    <div class="metric">
-                        <strong>Dimensões dos Embeddings:</strong> {self.embeddings[collection_name].shape[1]}
+                    
+                    <div class="nav-tabs">
+                        <button class="nav-tab active" onclick="showSection('overview')">📊 Visão Geral</button>
+                        <button class="nav-tab" onclick="showSection('methods')">🔧 Métodos</button>
+                        <button class="nav-tab" onclick="showSection('visualizations')">🎯 Visualizações</button>
+                        <button class="nav-tab" onclick="showSection('similarity')">🔗 Similaridade</button>
+                        <button class="nav-tab" onclick="showSection('comparison')">📈 Comparação</button>
+                        <button class="nav-tab" onclick="showSection('importance')">🚀 Importância</button>
                     </div>
-                    <div class="metric">
-                        <strong>Similaridade Média:</strong> {analysis['average_similarity']:.3f if analysis else 'N/A'}
+                    
+                    <!-- Seção: Visão Geral -->
+                    <div id="overview" class="content-section active">
+                        <h2>📊 Métricas Gerais da Coleção</h2>
+                        <div class="metrics-grid">
+                            <div class="metric">
+                                <div class="metric-value">{len(self.documents[collection_name])}</div>
+                                <div class="metric-label">Total de Documentos</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-value">{self.embeddings[collection_name].shape[1]}</div>
+                                <div class="metric-label">Dimensões dos Embeddings</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-value">{analysis['average_similarity']:.3f if analysis else 'N/A'}</div>
+                                <div class="metric-label">Similaridade Média</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-value">{analysis['similarity_std']:.3f if analysis else 'N/A'}</div>
+                                <div class="metric-label">Desvio Padrão</div>
+                            </div>
+                        </div>
+                        
+                        <div class="info-box">
+                            <h3>💡 Sobre Esta Coleção</h3>
+                            <p>
+                                Esta coleção contém <strong>{len(self.documents[collection_name])}</strong> documentos, 
+                                cada um representado por um vetor de <strong>{self.embeddings[collection_name].shape[1]}</strong> dimensões.
+                                Para visualizar e analisar esses dados de alta dimensionalidade, usamos métodos de redução de dimensionalidade.
+                            </p>
+                        </div>
                     </div>
-                    <div class="metric">
-                        <strong>Desvio Padrão:</strong> {analysis['similarity_std']:.3f if analysis else 'N/A'}
+                    
+                    <!-- Seção: Métodos de Redução -->
+                    <div id="methods" class="content-section">
+                        <h2>🔧 Métodos de Redução de Dimensionalidade</h2>
+                        
+                        <div class="method-card">
+                            <h3 class="method-title">🔧 PCA (Análise de Componentes Principais)</h3>
+                            <p class="method-explanation">
+                                Imagine que você tem uma foto de um rosto em alta resolução (muitos pixels). 
+                                PCA é como criar uma versão "resumida" dessa foto, mantendo apenas os detalhes mais importantes.
+                            </p>
+                            
+                            <h4>🎯 O que faz</h4>
+                            <ul>
+                                <li>Pega os dados em muitas dimensões</li>
+                                <li>Identifica as "direções" mais importantes (onde há mais variação)</li>
+                                <li>Projeta tudo nessas direções principais</li>
+                                <li>Resultado: 2D ou 3D que preserva a "essência" dos dados</li>
+                            </ul>
+                            
+                            <div class="pros-cons">
+                                <div class="pros">
+                                    <h4>✅ Vantagens</h4>
+                                    <ul>
+                                        <li>Rápido e eficiente</li>
+                                        <li>Preserva a estrutura global dos dados</li>
+                                        <li>Bom para encontrar padrões gerais</li>
+                                    </ul>
+                                </div>
+                                <div class="cons">
+                                    <h4>❌ Limitações</h4>
+                                    <ul>
+                                        <li>Pode perder detalhes locais importantes</li>
+                                        <li>Não é muito bom para encontrar grupos pequenos</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="method-card">
+                            <h3 class="method-title">🌌 UMAP (Uniform Manifold Approximation and Projection)</h3>
+                            <p class="method-explanation">
+                                Imagine que você tem um mapa de uma cidade com muitas ruas. UMAP é como criar um mapa simplificado 
+                                que mostra os bairros principais e como eles se conectam, mantendo as distâncias relativas.
+                            </p>
+                            
+                            <h4>🎯 O que faz</h4>
+                            <ul>
+                                <li>Preserva tanto a estrutura local quanto global</li>
+                                <li>Cria uma "rede" que conecta pontos similares</li>
+                                <li>Mantém as relações de proximidade entre documentos</li>
+                            </ul>
+                            
+                            <div class="pros-cons">
+                                <div class="pros">
+                                    <h4>✅ Vantagens</h4>
+                                    <ul>
+                                        <li>Preserva melhor a estrutura local dos dados</li>
+                                        <li>Excelente para encontrar clusters (grupos)</li>
+                                        <li>Bom para visualização interativa</li>
+                                        <li>Mais rápido que t-SNE</li>
+                                    </ul>
+                                </div>
+                                <div class="cons">
+                                    <h4>❌ Limitações</h4>
+                                    <ul>
+                                        <li>Pode ser menos estável que PCA</li>
+                                        <li>Parâmetros podem afetar o resultado</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="method-card">
+                            <h3 class="method-title">🎯 T-SNE (T-Distributed Stochastic Neighbor Embedding)</h3>
+                            <p class="method-explanation">
+                                Imagine que você tem um grupo de pessoas em uma sala. T-SNE é como reorganizar essas pessoas 
+                                em uma sala menor, colocando amigos próximos uns dos outros e estranhos mais distantes.
+                            </p>
+                            
+                            <h4>🎯 O que faz</h4>
+                            <ul>
+                                <li>Foca na preservação de distâncias locais</li>
+                                <li>Coloca documentos similares próximos</li>
+                                <li>Separa bem grupos diferentes</li>
+                            </ul>
+                            
+                            <div class="pros-cons">
+                                <div class="pros">
+                                    <h4>✅ Vantagens</h4>
+                                    <ul>
+                                        <li>Excelente para encontrar clusters</li>
+                                        <li>Preserva muito bem a estrutura local</li>
+                                        <li>Ótimo para visualizar grupos de documentos similares</li>
+                                    </ul>
+                                </div>
+                                <div class="cons">
+                                    <h4>❌ Limitações</h4>
+                                    <ul>
+                                        <li>Pode distorcer a estrutura global</li>
+                                        <li>Mais lento que PCA e UMAP</li>
+                                        <li>Resultado pode variar entre execuções</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Seção: Visualizações -->
+                    <div id="visualizations" class="content-section">
+                        <h2>🎯 Visualizações 3D e 2D</h2>
+                        
+                        <div class="visualization-section">
+                            <h3>🎯 Visualização 3D - PCA</h3>
+                            <p>Visualização tridimensional usando Análise de Componentes Principais</p>
+                            <iframe src="{collection_name}_3d_pca.html"></iframe>
+                        </div>
+                        
+                        <div class="visualization-section">
+                            <h3>🌌 Visualização 3D - UMAP</h3>
+                            <p>Visualização tridimensional usando UMAP para melhor preservação de estrutura</p>
+                            <iframe src="{collection_name}_3d_umap.html"></iframe>
+                        </div>
+                        
+                        <div class="visualization-section">
+                            <h3>📈 Comparação de Métodos 2D</h3>
+                            <p>Comparação entre PCA, t-SNE e UMAP em duas dimensões</p>
+                            <iframe src="{collection_name}_2d_comparison.html"></iframe>
+                        </div>
+                    </div>
+                    
+                    <!-- Seção: Similaridade -->
+                    <div id="similarity" class="content-section">
+                        <h2>🔗 Análise de Similaridade</h2>
+                        
+                        <div class="visualization-section">
+                            <h3>🔥 Matriz de Similaridade</h3>
+                            <p>Heatmap mostrando a similaridade entre todos os documentos</p>
+                            <iframe src="{collection_name}_similarity_heatmap.html"></iframe>
+                        </div>
+                        
+                        <h3>🔗 Documentos Mais Similares</h3>
+                        {self._generate_similarity_html(analysis) if analysis else '<p>Análise não disponível</p>'}
+                    </div>
+                    
+                    <!-- Seção: Comparação -->
+                    <div id="comparison" class="content-section">
+                        <h2>📊 Comparação dos Métodos</h2>
+                        <div class="method-card">
+                            <table class="comparison-table">
+                                <thead>
+                                    <tr>
+                                        <th>Método</th>
+                                        <th>Velocidade</th>
+                                        <th>Estrutura Global</th>
+                                        <th>Estrutura Local</th>
+                                        <th>Melhor Para</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>PCA</strong></td>
+                                        <td>🚀 Muito Rápido</td>
+                                        <td>✅ Excelente</td>
+                                        <td>⚠️ Limitada</td>
+                                        <td>Visão geral, análise inicial</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>UMAP</strong></td>
+                                        <td>⚡ Rápido</td>
+                                        <td>✅ Boa</td>
+                                        <td>✅ Excelente</td>
+                                        <td>Análise detalhada, interativa</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>T-SNE</strong></td>
+                                        <td>🐌 Lento</td>
+                                        <td>❌ Limitada</td>
+                                        <td>✅ Excelente</td>
+                                        <td>Encontrar grupos específicos</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            
+                            <div class="info-box">
+                                <h3>💡 Recomendações de Uso</h3>
+                                <ul>
+                                    <li><strong>PCA:</strong> Para visão geral e análise inicial</li>
+                                    <li><strong>UMAP:</strong> Para análise detalhada e interativa</li>
+                                    <li><strong>T-SNE:</strong> Para encontrar grupos específicos</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Seção: Importância -->
+                    <div id="importance" class="content-section">
+                        <h2>🚀 Importância no Banco de Dados Vetorial</h2>
+                        <div class="method-card">
+                            <h3>💡 Por que isso é crítico?</h3>
+                            
+                            <div class="info-box">
+                                <h4>1. Visualização Humana</h4>
+                                <p>Humanos só conseguem ver 2D/3D. Sem redução, é impossível "ver" os dados.</p>
+                            </div>
+                            
+                            <div class="info-box">
+                                <h4>2. Análise de Clusters</h4>
+                                <p>Documentos similares ficam próximos. Fácil identificar grupos de conteúdo relacionado.</p>
+                            </div>
+                            
+                            <div class="info-box">
+                                <h4>3. Qualidade dos Dados</h4>
+                                <p>Revela se os embeddings estão funcionando bem. Mostra se documentos similares estão realmente próximos.</p>
+                            </div>
+                            
+                            <div class="info-box">
+                                <h4>4. Debugging do Sistema</h4>
+                                <p>Identifica problemas na indexação. Mostra se o banco está organizado corretamente.</p>
+                            </div>
+                            
+                            <div class="info-box">
+                                <h4>5. Otimização</h4>
+                                <p>Ajuda a ajustar parâmetros do sistema. Mostra onde melhorar a qualidade dos embeddings.</p>
+                            </div>
+                            
+                            <h3>🎨 Como Interpretar os Resultados</h3>
+                            
+                            <div class="pros">
+                                <h4>✅ Grupos Bem Definidos</h4>
+                                <ul>
+                                    <li>Documentos similares estão próximos</li>
+                                    <li>Clusters claros e separados</li>
+                                    <li>Sistema funcionando bem</li>
+                                </ul>
+                            </div>
+                            
+                            <div class="cons">
+                                <h4>⚠️ Grupos Difusos</h4>
+                                <ul>
+                                    <li>Documentos similares espalhados</li>
+                                    <li>Clusters mal definidos</li>
+                                    <li>Possível problema nos embeddings</li>
+                                </ul>
+                            </div>
+                            
+                            <div class="info-box">
+                                <h3>💡 Dica Importante</h3>
+                                <p>
+                                    Esses métodos não "criam" informação - eles apenas reorganizam o que já existe. 
+                                    Se seus documentos não estão bem organizados no espaço vetorial original, 
+                                    a redução de dimensionalidade não vai "consertar" isso!
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>🔍 Sistema RAG DNA da Força - Relatório de Visualização com Explicações</p>
+                        <p>💡 Use essas explicações para entender melhor seu banco de dados vetorial</p>
+                        <p>📅 Gerado em: {time.strftime('%d/%m/%Y %H:%M:%S')}</p>
                     </div>
                 </div>
                 
-                <div class="section">
-                    <h3>🎯 Visualização 3D - PCA</h3>
-                    <iframe src="{collection_name}_3d_pca.html"></iframe>
-                </div>
-                
-                <div class="section">
-                    <h3>🌌 Visualização 3D - UMAP</h3>
-                    <iframe src="{collection_name}_3d_umap.html"></iframe>
-                </div>
-                
-                <div class="section">
-                    <h3>📈 Comparação de Métodos 2D</h3>
-                    <iframe src="{collection_name}_2d_comparison.html"></iframe>
-                </div>
-                
-                <div class="section">
-                    <h3>🔥 Matriz de Similaridade</h3>
-                    <iframe src="{collection_name}_similarity_heatmap.html"></iframe>
-                </div>
-                
-                <div class="section">
-                    <h3>🔗 Documentos Mais Similares</h3>
-                    {self._generate_similarity_html(analysis) if analysis else '<p>Análise não disponível</p>'}
-                </div>
+                <script>
+                    function showSection(sectionId) {{
+                        // Esconder todas as seções
+                        const sections = document.querySelectorAll('.content-section');
+                        sections.forEach(section => {{
+                            section.classList.remove('active');
+                        }});
+                        
+                        // Remover classe active de todas as tabs
+                        const tabs = document.querySelectorAll('.nav-tab');
+                        tabs.forEach(tab => {{
+                            tab.classList.remove('active');
+                        }});
+                        
+                        // Mostrar seção selecionada
+                        document.getElementById(sectionId).classList.add('active');
+                        
+                        // Adicionar classe active na tab clicada
+                        event.target.classList.add('active');
+                    }}
+                    
+                    // Adicionar efeitos de hover e animações
+                    document.addEventListener('DOMContentLoaded', function() {{
+                        const methodCards = document.querySelectorAll('.method-card');
+                        methodCards.forEach(card => {{
+                            card.addEventListener('mouseenter', function() {{
+                                this.style.transform = 'translateY(-5px)';
+                            }});
+                            
+                            card.addEventListener('mouseleave', function() {{
+                                this.style.transform = 'translateY(0)';
+                            }});
+                        }});
+                    }});
+                </script>
             </body>
             </html>
             """
@@ -577,14 +1188,14 @@ class VectorDBVisualizer:
             logger.error(f"❌ Erro ao criar relatório HTML: {e}")
     
     def _generate_similarity_html(self, analysis: Dict[str, Any]) -> str:
-        """Gera HTML para pares similares"""
+        """Gera HTML para pares similares com novo estilo"""
         html = ""
         for pair in analysis['most_similar_pairs'][:10]:  # Top 10
             html += f"""
             <div class="similarity-pair">
-                <strong>Similaridade: {pair['similarity']:.3f}</strong><br>
-                <strong>Doc 1:</strong> {pair['doc1']}<br>
-                <strong>Doc 2:</strong> {pair['doc2']}
+                <div class="similarity-score">Similaridade: {pair['similarity']:.3f}</div>
+                <div><strong>📄 Doc 1:</strong> {pair['doc1']}</div>
+                <div><strong>📄 Doc 2:</strong> {pair['doc2']}</div>
             </div>
             """
         return html
