@@ -129,73 +129,109 @@ EMAIL_PASSWORD=yoip qkvw aozn augl
 EMAIL_FROM=matheusbnas@gmail.com
 ```
 
-## 📦 **ETAPA 3: INSTALAÇÃO DAS DEPENDÊNCIAS**
+## 📦 **ETAPA 3: VERIFICAÇÃO DAS DEPENDÊNCIAS INSTALADAS**
 
-### **3.1 Configurar Ambiente Virtual Python (.venv)**
+### **3.1 Verificar Ambiente Virtual Python (.venv)**
 
 ```bash
-# Verificar se o ambiente virtual .venv existe
+# O script de deploy já criou o ambiente virtual
 ls -la .venv/
 
-# Se não existir, criar
-python3 -m venv .venv
-
-# Ativar ambiente virtual
-source .venv/bin/activate
-
 # Verificar se está ativo
+source .venv/bin/activate
 which python
 pip --version
 ```
 
-### **3.2 Instalar Dependências Python**
+### **3.2 Verificar Dependências Python Instaladas**
 
 ```bash
-# Com o .venv ativado, instalar dependências
-pip install fastapi uvicorn langchain chromadb redis
-
-# Verificar instalação
-pip list | grep -E "(fastapi|uvicorn|langchain|chromadb|redis)"
-```
-
-### **3.3 Executar script de instalação**
-
-```bash
-./install.sh
-```
-
-### **3.2 Verificar instalação**
-
-```bash
-# Verificar se o ambiente virtual foi criado
-ls -la .venv/
-
-# Verificar se as dependências Python foram instaladas
+# O script de deploy já instalou todas as dependências do requirements.txt
 source .venv/bin/activate
-pip list | grep -E "(fastapi|langchain|chromadb|redis)"
 
-# Verificar se as dependências Node.js foram instaladas
-cd frontend
+# Verificar dependências principais
+pip list | grep -E "(fastapi|uvicorn|langchain|chromadb|redis)"
+
+# Verificar todas as dependências instaladas
+pip list | head -20
+```
+
+### **3.3 Verificar Dependências Node.js Instaladas**
+
+```bash
+# O script de deploy já instalou as dependências Node.js
 ls -la node_modules/
-cd ..
+
+# Verificar se o package.json existe
+cat package.json | head -10
+
+# Verificar se o src/ existe (Frontend React)
+ls -la src/
 ```
 
-## 🏗️ **ETAPA 4: BUILD DO FRONTEND**
-
-### **4.1 Fazer build do frontend**
+### **3.4 Verificar Instalação Completa**
 
 ```bash
-./build_frontend.sh
+# Verificar se tudo foi instalado corretamente
+echo "🔍 VERIFICAÇÃO COMPLETA DAS DEPENDÊNCIAS"
+echo "=========================================="
+
+# Python
+echo "🐍 Python:"
+source .venv/bin/activate
+python --version
+pip --version
+echo "📦 Dependências Python: $(pip list | wc -l) pacotes"
+
+# Node.js
+echo "🟢 Node.js:"
+node --version
+npm --version
+echo "📦 Dependências Node.js: $(cd frontend && npm list --depth=0 | wc -l) pacotes"
+
+# Frontend
+echo "🌐 Frontend:"
+if [ -d "src" ]; then
+    echo "✅ Diretório src/ encontrado: $(ls -la src/ | wc -l) arquivos"
+    if [ -d "dist" ]; then
+        echo "✅ Build criado: $(du -sh dist | cut -f1)"
+    else
+        echo "⚠️ Build não encontrado (execute: npm run build)"
+    fi
+else
+    echo "⚠️ Diretório src/ não encontrado"
+fi
 ```
 
-### **4.2 Verificar build**
+## 🏗️ **ETAPA 4: VERIFICAÇÃO DO FRONTEND**
+
+### **4.1 Verificar Estrutura do Frontend**
 
 ```bash
+# O script de deploy já instalou as dependências
+ls -la src/
+
+# Verificar se há componentes React
+ls -la src/components/
+
+# Verificar se há páginas
+ls -la src/pages/
+```
+
+### **4.2 Build do Frontend (se necessário)**
+
+```bash
+# Fazer build para produção
+npm run build
+
 # Verificar se o build foi criado
-ls -la frontend/dist/
+ls -la dist/
 
-# Verificar tamanho do build
-du -sh frontend/dist/
+# Ver tamanho do build
+du -sh dist/
+
+# Iniciar em modo desenvolvimento
+npm run dev
 ```
 
 ## 🚀 **ETAPA 5: INICIALIZAÇÃO DO SISTEMA COMPLETO**
@@ -271,16 +307,64 @@ tail -f logs/api-server.log
 tail -f logs/*.log
 ```
 
-## 🔄 **ETAPA 8: UPLOAD DE MATERIAIS E DADOS**
+## 🔄 **ETAPA 8: SINCRONIZAÇÃO COM GITHUB**
 
-### **8.1 Estratégia de Deploy**
+### **8.1 IMPORTANTE: Commit das Correções**
+
+**⚠️ ATENÇÃO:** Após ajustar os scripts para a estrutura real do projeto, você DEVE fazer commit das mudanças no servidor Hostinger:
+
+```bash
+# No servidor Hostinger (NÃO no seu computador local)
+cd /root/dna-forca-complete
+
+# Verificar mudanças
+git status
+
+# Adicionar todas as mudanças
+git add .
+
+# Fazer commit
+git commit -m "🔧 Ajustar scripts para estrutura real do projeto"
+
+# Enviar para GitHub
+git push origin main
+```
+
+### **8.2 Por que fazer commit no servidor?**
+
+- ✅ **Scripts corrigidos** ficam salvos no GitHub
+- ✅ **Futuras instalações** já vêm com scripts corretos
+- ✅ **Backup** das correções importantes
+- ✅ **Sincronização** entre servidor e repositório
+
+### **8.3 ONDE fazer as mudanças?**
+
+**🎯 IMPORTANTE:** Todas as correções devem ser feitas **NO SERVIDOR HOSTINGER**, NÃO no seu computador local:
+
+- ✅ **Servidor Hostinger** - Fazer ajustes nos scripts
+- ✅ **Servidor Hostinger** - Fazer commit das mudanças
+- ✅ **Servidor Hostinger** - Fazer push para GitHub
+- ❌ **Computador local** - NÃO editar scripts do servidor
+- ❌ **Computador local** - NÃO fazer commit de mudanças do servidor
+
+**📋 Fluxo correto:**
+
+1. **Servidor** - Ajustar scripts
+2. **Servidor** - Fazer commit
+3. **Servidor** - Fazer push
+4. **GitHub** - Recebe mudanças
+5. **Futuros servidores** - Baixam versão corrigida
+
+## 📤 **ETAPA 9: UPLOAD DE MATERIAIS E DADOS**
+
+### **9.1 Estratégia de Deploy**
 
 O sistema usa uma estratégia de **deploy em duas etapas**:
 
 1. **Deploy base** - Clona repositório e configura sistema
 2. **Upload de materiais** - Sobe arquivos grandes depois
 
-### **8.2 Copiar arquivos do projeto local**
+### **9.2 Copiar arquivos do projeto local**
 
 ```bash
 # No seu computador local
@@ -291,7 +375,7 @@ scp -r data/materials/* root@31.97.16.142:/root/dna-forca-complete/data/material
 scp -r backend/data/.chromadb/* root@31.97.16.142:/root/dna-forca-complete/backend/data/.chromadb/
 ```
 
-### **8.3 Upload automático para GitHub**
+### **9.3 Upload automático para GitHub**
 
 ```bash
 # No servidor da Hostinger
@@ -306,7 +390,7 @@ git commit -m "Adicionar materiais e dados do projeto local"
 git push origin main
 ```
 
-### **8.4 Verificar upload**
+### **9.4 Verificar upload**
 
 ```bash
 # Verificar se os arquivos foram adicionados
@@ -320,9 +404,9 @@ du -sh data/.chromadb/
 git ls-files | grep -E "data/|chromadb"
 ```
 
-## 👨‍💼 **ETAPA 9: DEPLOY AUTOMÁTICO (OPCIONAL)**
+## 👨‍💼 **ETAPA 10: DEPLOY AUTOMÁTICO (OPCIONAL)**
 
-### **9.1 Configurar Supervisor**
+### **10.1 Configurar Supervisor**
 
 ```bash
 # O script já criou a configuração
@@ -330,7 +414,7 @@ systemctl restart supervisor
 systemctl enable supervisor
 ```
 
-### **9.2 Verificar processos**
+### **10.2 Verificar processos**
 
 ```bash
 supervisorctl status
@@ -347,33 +431,27 @@ supervisorctl restart api-server
 ├── start_all.sh                  # Script de inicialização completa
 ├── stop_all.sh                   # Script de parada completa
 ├── status.sh                     # Script de status
-├── restart.sh                    # Script de reinicialização
-├── install.sh                    # Script de instalação
-├── build_frontend.sh             # Script de build do frontend
-├── monitor.sh                    # Script de monitoramento
-├── backup.sh                     # Script de backup
-├── cleanup.sh                    # Script de limpeza
 ├── upload_materials.sh           # Script de upload de materiais
 ├── .venv/                        # Ambiente virtual Python
-├── frontend/                     # Sistema Frontend
-│   ├── package.json
-│   ├── vite.config.ts
-│   ├── tailwind.config.js
-│   ├── tsconfig.json
-│   ├── start.sh
-│   ├── build.sh
-│   ├── node_modules/             # Dependências Node.js
-│   └── dist/                     # Build de produção
-├── rag_server/                   # Sistema RAG
-│   ├── requirements.txt
-│   ├── start.sh
-│   └── [arquivos do RAG]
-├── api_server/                   # Sistema API
-│   ├── requirements.txt
-│   ├── start.sh
-│   └── [arquivos da API]
-├── shared/                       # Dependências compartilhadas
-│   └── requirements.txt
+├── src/                          # Sistema Frontend React
+│   ├── components/               # Componentes React
+│   ├── pages/                    # Páginas da aplicação
+│   ├── store/                    # Estado global (Zustand)
+│   ├── types/                    # Tipos TypeScript
+│   ├── lib/                      # Bibliotecas e utilitários
+│   └── main.tsx                  # Ponto de entrada
+├── backend/                      # Sistema Backend completo
+│   ├── rag_system/               # Sistema RAG (IA e documentos)
+│   │   ├── rag_handler.py        # Servidor RAG principal
+│   │   ├── guardrails.py         # Controles de segurança
+│   │   └── requirements.txt      # Dependências Python
+│   ├── api_server.py             # Servidor API principal
+│   ├── auth/                     # Sistema de autenticação
+│   ├── chat_agents/              # Agentes de chat
+│   ├── config/                   # Configurações
+│   ├── data/                     # Dados e materiais
+│   ├── utils/                    # Utilitários
+│   └── requirements.txt          # Dependências Python
 ├── data/                         # Dados do sistema
 │   ├── materials/                # Materiais para processar
 │   └── .chromadb/               # Banco de dados vetorial
@@ -384,6 +462,11 @@ supervisorctl restart api-server
 │   ├── frontend.pid
 │   ├── rag-server.pid
 │   └── api-server.pid
+├── node_modules/                 # Dependências Node.js
+├── package.json                  # Configuração Node.js
+├── vite.config.ts                # Configuração Vite
+├── tailwind.config.js            # Configuração Tailwind CSS
+├── tsconfig.json                 # Configuração TypeScript
 └── backups/                      # Backups automáticos
 ```
 
@@ -524,10 +607,10 @@ git ls-files | grep -E "data/|materials"
 
 ```bash
 # Build do frontend
-./build_frontend.sh
+npm run build
 
-# Iniciar apenas frontend
-cd frontend && ./start.sh
+# Iniciar apenas frontend (desenvolvimento)
+npm run dev
 
 # Ver logs do frontend
 tail -f logs/frontend.log
@@ -537,10 +620,11 @@ tail -f logs/frontend.log
 
 ```bash
 # Iniciar apenas RAG Server
-cd rag_server && ./start.sh
+cd backend/rag_system
+uvicorn rag_handler:app --host 0.0.0.0 --port 8000 --reload
 
 # Iniciar apenas API Server
-cd api_server && ./start.sh
+uvicorn backend.api_server:app --host 0.0.0.0 --port 8001 --reload
 
 # Ver logs específicos
 tail -f logs/rag-server.log
@@ -569,13 +653,16 @@ df -h /root/dna-forca-complete/data/
 tail -f logs/frontend.log
 
 # Verificar se o build existe
-ls -la frontend/dist/
+ls -la dist/
 
 # Fazer build novamente
-./build_frontend.sh
+npm run build
 
 # Verificar dependências Node.js
-cd frontend && npm list
+npm list
+
+# Verificar se o src/ existe
+ls -la src/
 ```
 
 ### **Problema: Sistema não inicia**
@@ -923,9 +1010,12 @@ top
 
 - [ ] Script de deploy executado
 - [ ] API keys configuradas no .env
-- [ ] Dependências Python instaladas
-- [ ] Dependências Node.js instaladas
-- [ ] Frontend buildado com sucesso
+- [ ] Dependências Python verificadas (já instaladas pelo script)
+- [ ] Dependências Node.js verificadas (já instaladas pelo script)
+- [ ] Estrutura do frontend verificada (src/ existe)
+- [ ] Frontend buildado (se necessário: npm run build)
+- [ ] Scripts ajustados para estrutura real do projeto
+- [ ] **Commit das correções feito no servidor Hostinger**
 - [ ] Sistema completo iniciado e funcionando
 - [ ] Nginx configurado e funcionando
 - [ ] Redis configurado e funcionando
@@ -950,17 +1040,20 @@ top
 
 ## 🎯 **PRÓXIMOS PASSOS**
 
-1. **Testar frontend** acessando http://31.97.16.142
-2. **Testar APIs** com perguntas simples
-3. **Copiar materiais** do projeto local para o servidor
-4. **Executar upload_materials.sh** para subir arquivos
-5. **Fazer upload de materiais** via endpoint `/rag/process-materials`
-6. **Configurar backup automático** via cron
-7. **Implementar monitoramento** mais avançado
-8. **Configurar domínio** personalizado (opcional)
-9. **Configurar SSL/HTTPS** para produção
-10. **Implementar rate limiting** no Nginx
-11. **Configurar alertas** de monitoramento
+1. **Verificar dependências** instaladas (Etapa 3)
+2. **Verificar estrutura do frontend** (Etapa 4)
+3. **Fazer commit das correções** no servidor Hostinger (IMPORTANTE!)
+4. **Testar frontend** acessando http://31.97.16.142:3000
+5. **Testar APIs** com perguntas simples
+6. **Copiar materiais** do projeto local para o servidor
+7. **Executar upload_materials.sh** para subir arquivos
+8. **Fazer upload de materiais** via endpoint `/rag/process-materials`
+9. **Configurar backup automático** via cron
+10. **Implementar monitoramento** mais avançado
+11. **Configurar domínio** personalizado (opcional)
+12. **Configurar SSL/HTTPS** para produção
+13. **Implementar rate limiting** no Nginx
+14. **Configurar alertas** de monitoramento
 
 ## 🔄 **MIGRAÇÃO DO RENDER**
 
@@ -1006,20 +1099,21 @@ const RAG_API_BASE = "/rag-api"; // Proxy para localhost:8000
 
 ### **📋 PARA DÚVIDAS OU PROBLEMAS:**
 
-1. Verifique os logs: `./monitor.sh`
+1. Verifique os logs: `tail -f logs/*.log`
 2. Use os scripts de diagnóstico: `./status.sh`
 3. Consulte o troubleshooting acima
 4. Verifique a documentação das APIs
-5. Use o script de build: `./build_frontend.sh`
+5. Use o comando de build: `npm run build`
 
 **🚀 Seu sistema DNA da Força está rodando independentemente do Render com FRONTEND + RAG + API!**
 
 ### **🎨 FRONTEND ESPECIALMENTE:**
 
-- **Build otimizado** para produção
-- **Proxy automático** para APIs
+- **Estrutura React** em `src/` com componentes organizados
+- **Build otimizado** para produção (`npm run build`)
+- **Proxy automático** para APIs via Vite
 - **Tailwind CSS** configurado
 - **TypeScript** configurado
 - **Vite** para desenvolvimento rápido
-- **Nginx** servindo arquivos estáticos
-- **Hot reload** em desenvolvimento
+- **Hot reload** em desenvolvimento (`npm run dev`)
+- **Componentes modulares** e páginas organizadas

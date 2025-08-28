@@ -1,0 +1,121 @@
+name: Deploy to Hostinger
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # Permite execução manual
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to Hostinger VPS
+
+    steps:
+      - name: 🚀 Deploy to Hostinger
+        uses: appleboy/ssh-action@v0.1.5
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: 22
+          script: |
+            echo "🚀 DEPLOY AUTOMÁTICO INICIADO - $(date)"
+            echo "=========================================="
+
+            # Navegar para o diretório do projeto
+            cd /root/dna-forca-complete
+
+            # Verificar status atual
+            echo "📊 Status atual do sistema:"
+            ./status.sh
+
+            # Fazer backup antes do deploy
+            echo "💾 Fazendo backup..."
+            if [ -d "backups" ]; then
+              cp -r . backups/backup-$(date +%Y%m%d-%H%M%S)
+            fi
+
+            # Parar sistema atual
+            echo "🛑 Parando sistema atual..."
+            ./stop_all.sh
+
+            # Aguardar processos terminarem
+            sleep 5
+
+            # Fazer pull das mudanças
+            echo "📥 Atualizando código do GitHub..."
+            git fetch origin
+            git reset --hard origin/main
+
+            # Verificar se há mudanças
+            if [ $? -eq 0 ]; then
+              echo "✅ Código atualizado com sucesso!"
+            else
+              echo "❌ Erro ao atualizar código!"
+              exit 1
+            fi
+
+            # Verificar estrutura do projeto
+            echo "🔍 Verificando estrutura do projeto..."
+            if [ -d "src" ]; then
+              echo "✅ Frontend (src/) encontrado"
+            else
+              echo "❌ Frontend (src/) não encontrado!"
+              exit 1
+            fi
+
+            if [ -d "backend" ]; then
+              echo "✅ Backend encontrado"
+            else
+              echo "❌ Backend não encontrado!"
+              exit 1
+            fi
+
+            # Verificar scripts
+            if [ -f "start_all.sh" ] && [ -f "stop_all.sh" ] && [ -f "status.sh" ]; then
+              echo "✅ Scripts de gerenciamento encontrados"
+            else
+              echo "❌ Scripts de gerenciamento não encontrados!"
+              exit 1
+            fi
+
+            # Dar permissão de execução aos scripts
+            chmod +x *.sh
+
+            # Iniciar sistema
+            echo "🚀 Iniciando sistema atualizado..."
+            ./start_all.sh
+
+            # Aguardar inicialização
+            sleep 10
+
+            # Verificar status final
+            echo "📊 Status final do sistema:"
+            ./status.sh
+
+            # Testar endpoints principais
+            echo "🧪 Testando endpoints..."
+            if curl -s http://localhost:3000 > /dev/null; then
+              echo "✅ Frontend funcionando (porta 3000)"
+            else
+              echo "❌ Frontend não responde (porta 3000)"
+            fi
+
+            if curl -s http://localhost:8000/status > /dev/null; then
+              echo "✅ RAG Server funcionando (porta 8000)"
+            else
+              echo "❌ RAG Server não responde (porta 8000)"
+            fi
+
+            if curl -s http://localhost:8001/status > /dev/null; then
+              echo "✅ API Server funcionando (porta 8001)"
+            else
+              echo "❌ API Server não responde (porta 8001)"
+            fi
+
+            echo ""
+            echo "🎉 DEPLOY AUTOMÁTICO CONCLUÍDO - $(date)"
+            echo "📍 Frontend: http://31.97.16.142:3000"
+            echo "📍 RAG Server: http://31.97.16.142:8000"
+            echo "📍 API Server: http://31.97.16.142:8001"
+            echo "📋 Para verificar status: ./status.sh"
+            echo "📋 Para ver logs: tail -f logs/*.log"
