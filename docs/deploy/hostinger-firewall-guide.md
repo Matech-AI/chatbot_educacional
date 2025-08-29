@@ -156,7 +156,7 @@ tail -f logs/*.log
 
 ## 🔄 **Atualizações**
 
-- **Data**: $(date)
+- **Data**: Agosto de 2025
 - **Versão**: 1.0
 - **Última revisão**: Configuração inicial do firewall
 

@@ -36,7 +36,7 @@ source .venv/bin/activate
 # Iniciar RAG Server em background
 echo "🚀 Iniciando RAG Server..."
 cd backend/rag_system
-nohup uvicorn rag_handler:app --host 0.0.0.0 --port 8000 --reload > ../../logs/rag-server.log 2>&1 &
+nohup uvicorn rag_server:app --host 0.0.0.0 --port 8000 --reload > ../../logs/rag-server.log 2>&1 &
 RAG_PID=$!
 echo "✅ RAG Server iniciado com PID: $RAG_PID"
 

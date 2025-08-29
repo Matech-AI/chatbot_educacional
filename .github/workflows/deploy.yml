@@ -28,11 +28,8 @@ jobs:
             echo "📊 Status atual do sistema:"
             ./status.sh
 
-            # Fazer backup antes do deploy
-            echo "💾 Fazendo backup..."
-            if [ -d "backups" ]; then
-              cp -r . backups/backup-$(date +%Y%m%d-%H%M%S)
-            fi
+            # Backup não é necessário - código está no GitHub
+            echo "💾 Pulando backup (código disponível no GitHub)"
 
             # Parar sistema atual
             echo "🛑 Parando sistema atual..."
