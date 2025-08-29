@@ -2232,6 +2232,51 @@ recomendo consultar diretamente os materiais do DNA da Força."""
             logger.error(f"❌ Error getting system stats: {e}")
             return {"error": str(e)}
 
+    def _validate_context_quality(self, context: str, question: str) -> Dict[str, Any]:
+        """Validate the quality of the context for answering the question."""
+        try:
+            if not context or len(context.strip()) < 50:
+                return {
+                    "is_valid": False,
+                    "reason": "Contexto muito curto ou vazio",
+                    "score": 0.0
+                }
+            
+            # Calcular score baseado no tamanho e relevância
+            context_length = len(context.strip())
+            question_words = set(question.lower().split())
+            context_words = set(context.lower().split())
+            
+            # Score baseado no tamanho
+            length_score = min(1.0, context_length / 1000.0) * 3.0
+            
+            # Score baseado na sobreposição de palavras
+            if question_words:
+                overlap_score = len(question_words.intersection(context_words)) / len(question_words) * 4.0
+            else:
+                overlap_score = 0.0
+            
+            # Score baseado na diversidade de conteúdo
+            diversity_score = min(1.0, len(set(context_words)) / 100.0) * 3.0
+            
+            total_score = min(10.0, length_score + overlap_score + diversity_score)
+            
+            is_valid = total_score >= 5.0
+            
+            return {
+                "is_valid": is_valid,
+                "reason": f"Score de qualidade: {total_score:.2f}/10.0",
+                "score": total_score
+            }
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Erro na validação de contexto: {e}")
+            return {
+                "is_valid": True,  # Em caso de erro, permitir continuar
+                "reason": "Erro na validação, mas permitindo continuar",
+                "score": 5.0
+            }
+
     def reset(self):
         """Reset the handler state."""
         logger.info("🔄 Resetting RAG handler...")

@@ -39,7 +39,7 @@ export PYTHONPATH="/root/dna-forca-complete/backend:$PYTHONPATH"
 # Iniciar RAG Server em background
 echo "🚀 Iniciando RAG Server..."
 cd backend
-nohup uvicorn rag_server:app --host 0.0.0.0 --port 8000 --reload > ../logs/rag-server.log 2>&1 &
+nohup uvicorn rag_server:app --host 0.0.0.0 --port 8001 --reload > ../logs/rag-server.log 2>&1 &
 RAG_PID=$!
 echo "✅ RAG Server iniciado com PID: $RAG_PID"
 
@@ -49,7 +49,7 @@ sleep 5
 # Iniciar API Server em background
 echo "🚀 Iniciando API Server..."
 cd ..
-nohup uvicorn api_server:app --host 0.0.0.0 --port 8001 --reload > logs/api-server.log 2>&1 &
+nohup uvicorn api_server:app --host 0.0.0.0 --port 8000 --reload > logs/api-server.log 2>&1 &
 API_PID=$!
 echo "✅ API Server iniciado com PID: $API_PID"
 
