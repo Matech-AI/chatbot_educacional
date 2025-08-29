@@ -60,8 +60,10 @@ sleep 5
 echo "🌐 Iniciando Frontend..."
 # Parar qualquer processo que possa estar usando a porta 3000
 pkill -f "vite.*dev" 2>/dev/null || true
-sleep 2
-nohup npm run dev > logs/frontend.log 2>&1 &
+pkill -f "node.*vite" 2>/dev/null || true
+sleep 3
+# Forçar uso da porta 3000
+nohup npm run dev -- --port 3000 > logs/frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo "✅ Frontend iniciado com PID: $FRONTEND_PID"
 

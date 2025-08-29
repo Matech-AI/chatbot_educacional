@@ -37,6 +37,7 @@ fi
 
 # Matar processos restantes
 pkill -f "vite.*dev" 2>/dev/null || true
+pkill -f "node.*vite" 2>/dev/null || true
 pkill -f "uvicorn.*rag_server" 2>/dev/null || true
 pkill -f "uvicorn.*api_server" 2>/dev/null || true
 
