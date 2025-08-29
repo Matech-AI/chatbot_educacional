@@ -4,11 +4,24 @@
 cd /root/dna-forca-complete
 
 # Detectar IP do servidor automaticamente (mesma lógica do status.sh)
+# Para servidor da Hostinger, usar ifconfig.me que retorna o IP público real
 SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "localhost")
+
+# Tentar também obter IPv4 específico
+IPV4=$(curl -s ipv4.icanhazip.com 2>/dev/null || echo "")
 
 echo "🚀 Iniciando sistema COMPLETO DNA da Força..."
 echo "🌐 Serviços: Frontend + RAG Server + API Server"
 echo "🌐 Servidor: $SERVER_IP"
+if [ ! -z "$IPV4" ] && [ "$IPV4" != "$SERVER_IP" ]; then
+    echo "🌐 Servidor IPv4: $IPV4"
+fi
+echo ""
+echo "💡 INSTRUÇÕES DE ACESSO:"
+echo "💡 1. Do seu PC local: http://$SERVER_IP:3000 (Frontend)"
+echo "💡 2. Do seu PC local: http://$SERVER_IP:8000 (RAG Server)"
+echo "💡 3. Do seu PC local: http://$SERVER_IP:8001 (API Server)"
+echo "💡 4. Se não funcionar, verifique se as portas estão abertas no firewall da Hostinger"
 
 # Verificar se o Redis está rodando
 if ! systemctl is-active --quiet redis-server; then

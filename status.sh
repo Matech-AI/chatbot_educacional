@@ -4,15 +4,27 @@
 cd /root/dna-forca-complete
 
 # Detectar IP do servidor automaticamente
+# Para servidor da Hostinger, usar ifconfig.me que retorna o IP público real
 SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "localhost")
+
+# Tentar também obter IPv4 específico
+IPV4=$(curl -s ipv4.icanhazip.com 2>/dev/null || echo "")
 
 echo "📊 STATUS DO SISTEMA COMPLETO DNA DA FORÇA - $(date)"
 echo "=================================================="
-echo "�� Servidor: $SERVER_IP"
+echo "🌐 Servidor: $SERVER_IP"
+if [ ! -z "$IPV4" ] && [ "$IPV4" != "$SERVER_IP" ]; then
+    echo "🌐 Servidor IPv4: $IPV4"
+fi
+echo ""
+echo "💡 INSTRUÇÕES DE ACESSO:"
+echo "💡 1. Do seu PC local: http://$SERVER_IP:3000 (Frontend)"
+echo "💡 2. Do seu PC local: http://$SERVER_IP:8000 (RAG Server)"
+echo "💡 3. Do seu PC local: http://$SERVER_IP:8001 (API Server)"
 echo ""
 
 # Status do Frontend
-echo "�� FRONTEND:"
+echo " FRONTEND:"
 if [ -f logs/frontend.pid ]; then
     FRONTEND_PID=$(cat logs/frontend.pid)
     if kill -0 $FRONTEND_PID 2>/dev/null; then
