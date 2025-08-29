@@ -14,8 +14,10 @@ export default defineConfig(({ mode }) => {
   let ragApiTarget = 'http://localhost:8001'
   
   if (isHostinger) {
-    apiTarget = 'http://31.97.16.142:8000'
-    ragApiTarget = 'http://31.97.16.142:8001'
+    // Usar variável de ambiente ou detectar automaticamente
+    const serverIP = process.env.SERVER_IP || '0.0.0.0'
+    apiTarget = `http://${serverIP}:8000`
+    ragApiTarget = `http://${serverIP}:8001`
   } else if (isRender) {
     apiTarget = 'http://localhost:8000' // Render usa localhost interno
     ragApiTarget = 'http://localhost:8001'

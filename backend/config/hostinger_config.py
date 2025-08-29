@@ -4,6 +4,7 @@ Configurações específicas para o ambiente Hostinger
 """
 
 import os
+import socket
 from pathlib import Path
 
 
@@ -64,6 +65,24 @@ def get_host() -> str:
 
 def get_server_ip() -> str:
     """
-    Retorna o IP do servidor Hostinger
+    Retorna o IP do servidor automaticamente detectado
     """
-    return "31.97.16.142"
+    try:
+        # Tenta obter o hostname do servidor
+        hostname = socket.gethostname()
+        
+        # Obtém o IP associado ao hostname
+        ip_address = socket.gethostbyname(hostname)
+        
+        # Se for localhost, tenta obter o IP externo
+        if ip_address in ['127.0.0.1', 'localhost']:
+            # Tenta conectar a um servidor externo para descobrir o IP
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                ip_address = s.getsockname()[0]
+        
+        return ip_address
+    except Exception as e:
+        # Em caso de erro, retorna o IP padrão ou uma mensagem de erro
+        print(f"Erro ao detectar IP do servidor: {e}")
+        return "0.0.0.0"  # Fallback para aceitar todas as conexões
