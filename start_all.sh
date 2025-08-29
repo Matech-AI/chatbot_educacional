@@ -3,12 +3,12 @@
 # Script de inicialização completa (Frontend + RAG + API)
 cd /root/dna-forca-complete
 
-# Detectar IP do servidor automaticamente
-SERVER_IP=$(curl -4 -s ifconfig.me 2>/dev/null || curl -s ifconfig.me 2>/dev/null || echo "localhost")
+# Detectar IP do servidor automaticamente (mesma lógica do status.sh)
+SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "localhost")
 
 echo "🚀 Iniciando sistema COMPLETO DNA da Força..."
-echo "�� Serviços: Frontend + RAG Server + API Server"
-echo "�� Servidor: $SERVER_IP"
+echo "🌐 Serviços: Frontend + RAG Server + API Server"
+echo "🌐 Servidor: $SERVER_IP"
 
 # Verificar se o Redis está rodando
 if ! systemctl is-active --quiet redis-server; then
@@ -41,7 +41,7 @@ echo "✅ API Server iniciado com PID: $API_PID"
 sleep 5
 
 # Iniciar Frontend em background
-echo "�� Iniciando Frontend..."
+echo "🌐 Iniciando Frontend..."
 nohup npm run dev > logs/frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo "✅ Frontend iniciado com PID: $FRONTEND_PID"
@@ -53,10 +53,10 @@ echo $FRONTEND_PID > logs/frontend.pid
 
 echo ""
 echo "🎉 Sistema COMPLETO iniciado!"
-echo "�� Frontend: http://$SERVER_IP:3000"
+echo "🌐 Frontend: http://$SERVER_IP:3000"
 echo "📍 RAG Server: http://$SERVER_IP:8000"
 echo "📍 API Server: http://$SERVER_IP:8001"
 echo ""
-echo "�� Para parar: ./stop_all.sh"
+echo "🛑 Para parar: ./stop_all.sh"
 echo "📋 Para status: ./status.sh"
-echo "�� Para logs: tail -f logs/*.log"
+echo "📝 Para logs: tail -f logs/*.log"

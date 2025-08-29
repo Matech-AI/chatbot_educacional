@@ -4,6 +4,71 @@
 
 O sistema está configurado com um IP estático antigo (`31.97.16.142`) que não corresponde ao IP atual do servidor (`2a02:4780:14:42c4::1`).
 
+## 🌐 DIFERENÇAS ENTRE IPv4 E IPv6
+
+### **IPv4 (Internet Protocol Version 4)**
+
+**Formato**: `192.168.1.1` (4 octetos de 8 bits cada)
+**Características**:
+
+- ✅ **Simples e familiar** para a maioria dos usuários
+- ✅ **Compatibilidade universal** com todos os sistemas
+- ❌ **Endereços limitados**: apenas ~4.3 bilhões de endereços únicos
+- ❌ **Esgotamento**: todos os endereços IPv4 públicos foram alocados
+- ❌ **Segurança básica**: não possui criptografia nativa
+
+**Exemplo de endereço IPv4**:
+
+```
+31.97.16.142
+├── 31 (primeiro octeto)
+├── 97 (segundo octeto)
+├── 16 (terceiro octeto)
+└── 142 (quarto octeto)
+```
+
+### **IPv6 (Internet Protocol Version 6)**
+
+**Formato**: `2a02:4780:14:42c4::1` (8 grupos de 16 bits cada)
+**Características**:
+
+- ✅ **Endereços praticamente ilimitados**: 340 undecilhões de endereços
+- ✅ **Segurança avançada**: IPsec integrado para criptografia
+- ✅ **Melhor performance**: roteamento mais eficiente
+- ✅ **Suporte nativo a QoS**: qualidade de serviço integrada
+- ❌ **Complexidade**: formato mais difícil de ler e lembrar
+- ❌ **Compatibilidade**: alguns sistemas antigos podem não suportar
+
+**Exemplo de endereço IPv6**:
+
+```
+2a02:4780:14:42c4::1
+├── 2a02 (primeiro grupo)
+├── 4780 (segundo grupo)
+├── 14 (terceiro grupo)
+├── 42c4 (quarto grupo)
+├── :: (zeros comprimidos)
+└── 1 (último grupo)
+```
+
+### **Comparação Visual**
+
+| Aspecto             | IPv4          | IPv6                   |
+| ------------------- | ------------- | ---------------------- |
+| **Formato**         | `192.168.1.1` | `2a02:4780:14:42c4::1` |
+| **Tamanho**         | 32 bits       | 128 bits               |
+| **Endereços**       | ~4.3 bilhões  | 340 undecilhões        |
+| **Segurança**       | Básica        | IPsec nativo           |
+| **Performance**     | Padrão        | Otimizada              |
+| **Compatibilidade** | Universal     | Crescente              |
+
+### **Por que o Seu Servidor Usa IPv6?**
+
+1. **Hostinger**: O provedor migrou para IPv6 para resolver o esgotamento de IPv4
+2. **Melhor Performance**: IPv6 oferece roteamento mais eficiente
+3. **Futuro da Internet**: IPv6 é o padrão emergente
+4. **Custo**: Endereços IPv6 são mais baratos para provedores
+
 ## 🚀 SOLUÇÃO AUTOMÁTICA
 
 ### 1. Executar o Script de Atualização
@@ -187,6 +252,6 @@ Se o problema persistir:
 
 ---
 
-**Última atualização**: $(date)
-**Versão**: 1.0
-**Status**: ✅ Resolvido
+**Última atualização**: Agosto de 2025
+**Versão**: 2.0
+**Status**: ✅ Resolvido + Documentado IPv4 vs IPv6
