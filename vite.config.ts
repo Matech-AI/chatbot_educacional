@@ -11,6 +11,7 @@ export default defineConfig({
     },
   },
   server: {
+    host: '0.0.0.0', // Aceita conexões IPv4 e IPv6
     port: 3000,
     proxy: {
       // Proxy API calls to backend
