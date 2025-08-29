@@ -4,7 +4,7 @@
 cd /root/dna-forca-complete
 
 # Detectar IP do servidor automaticamente
-SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "localhost")
+SERVER_IP=$(curl -4 -s ifconfig.me 2>/dev/null || curl -s ifconfig.me 2>/dev/null || echo "localhost")
 
 echo "🚀 Iniciando sistema COMPLETO DNA da Força..."
 echo "�� Serviços: Frontend + RAG Server + API Server"
