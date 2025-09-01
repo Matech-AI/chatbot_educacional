@@ -52,8 +52,7 @@ services:
     networks:
       - network_swarm_public
     depends_on:
-      rag-server:
-        condition: service_healthy
+      - rag-server
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
