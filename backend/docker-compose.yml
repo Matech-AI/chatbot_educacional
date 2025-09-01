@@ -82,8 +82,7 @@ services:
     container_name: dna-forca-frontend
     ports:
       - "3000:3000"
-    environment:
-      # Adicione suas variáveis de ambiente aqui, se necessário
+    environment: {}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=network_swarm_public"
