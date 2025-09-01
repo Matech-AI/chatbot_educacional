@@ -20,7 +20,7 @@ services:
       - rag_data:/app/data
       - ./data/materials:/app/data/materials:ro
     networks:
-      - dna-forca-network
+      - network_swarm_public
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -50,7 +50,7 @@ services:
       - api_data:/app/data
       - ./data:/app/data
     networks:
-      - dna-forca-network
+      - network_swarm_public
     depends_on:
       rag-server:
         condition: service_healthy
@@ -69,24 +69,13 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - dna-forca-network
+      - network_swarm_public
     restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
 
-volumes:
-  rag_data:
-    driver: local
-  api_data:
-    driver: local
-  redis_data:
-    driver: local
-
-networks:
-  dna-forca-network:
-    driver: bridge
-    
+  # Frontend - Interface do usuário
   frontend:
     build:
       context: .
@@ -98,17 +87,27 @@ networks:
       # Adicione suas variáveis de ambiente aqui, se necessário
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=network_swarm_public"
       - "traefik.http.routers.frontend.rule=Host(`iadnadaforca.com.br`)"
       - "traefik.http.routers.frontend.entrypoints=web,websecure"
       - "traefik.http.services.frontend.loadbalancer.server.port=3000"
       - "traefik.http.routers.frontend.tls.certresolver=letsencryptresolver"
     networks:
-      - dna-forca-network
+      - network_swarm_public
     restart: unless-stopped
-
-networks:
-  dna-forca-network:
-    external: true
 
 volumes:
   rag_data:
+    external: true
+    name: rag_data
+  api_data:
+    external: true
+    name: api_data
+  redis_data:
+    external: true
+    name: redis_data
+
+networks:
+  network_swarm_public:
+    external: true
+    name: network_swarm_public
