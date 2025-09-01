@@ -86,3 +86,29 @@ volumes:
 networks:
   dna-forca-network:
     driver: bridge
+    
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: dna-forca-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # Adicione suas variáveis de ambiente aqui, se necessário
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`iadnadaforca.com.br`)"
+      - "traefik.http.routers.frontend.entrypoints=web,websecure"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencryptresolver"
+    networks:
+      - dna-forca-network
+    restart: unless-stopped
+
+networks:
+  dna-forca-network:
+    external: true
+
+volumes:
+  rag_data:
