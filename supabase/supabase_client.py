@@ -1,14 +1,20 @@
 import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from typing import Optional, Dict, Any
+import uuid
+from datetime import datetime
 
 # Carrega variáveis do .env
 load_dotenv()
 
 SUPABASE_URL = os.getenv("VITE_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("VITE_SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # Para operações administrativas
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Cliente com service role para operações administrativas
+supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY) if SUPABASE_SERVICE_KEY else supabase
 
 # ---------------------------
 # Usuários e Perfis
@@ -203,6 +209,300 @@ def sync_materials_with_filesystem():
         if filename not in fs_filenames:
             print(f"Removendo do banco: {filename}")
             delete_material(db_material["id"])
+
+# ---------------------------
+# Autenticação Segura
+# ---------------------------
+
+def sign_up_user(email: str, password: str, full_name: str, role: str = "student") -> Dict[str, Any]:
+    """
+    Registra um novo usuário no Supabase Auth e cria perfil
+    """
+    try:
+        # 1. Criar usuário no Supabase Auth
+        auth_response = supabase_admin.auth.admin_create_user({
+            "email": email,
+            "password": password,
+            "email_confirm": True,  # Auto-confirmar email para simplificar
+            "user_metadata": {
+                "full_name": full_name,
+                "role": role
+            }
+        })
+        
+        if not auth_response.user:
+            raise Exception("Falha ao criar usuário no Auth")
+        
+        user_id = auth_response.user.id
+        
+        # 2. Criar perfil na tabela profiles
+        profile_data = {
+            "id": user_id,
+            "full_name": full_name,
+            "email": email,
+            "role": role,
+            "is_active": True,
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        profile_response = supabase_admin.table("profiles").insert(profile_data).execute()
+        
+        if not profile_response.data:
+            # Se falhar ao criar perfil, remover usuário do Auth
+            supabase_admin.auth.admin_delete_user(user_id)
+            raise Exception("Falha ao criar perfil do usuário")
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "email": email,
+            "profile": profile_response.data[0]
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def sign_in_user(email: str, password: str) -> Dict[str, Any]:
+    """
+    Autentica usuário e retorna dados da sessão
+    """
+    try:
+        auth_response = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+        
+        if not auth_response.user:
+            raise Exception("Credenciais inválidas")
+        
+        # Buscar perfil do usuário
+        profile = get_profile_by_id(auth_response.user.id)
+        
+        if not profile:
+            raise Exception("Perfil do usuário não encontrado")
+        
+        return {
+            "success": True,
+            "user": auth_response.user,
+            "profile": profile,
+            "session": auth_response.session
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def sign_out_user() -> bool:
+    """
+    Desconecta o usuário atual
+    """
+    try:
+        supabase.auth.sign_out()
+        return True
+    except Exception as e:
+        print(f"Erro ao desconectar: {e}")
+        return False
+
+def get_current_user() -> Optional[Dict[str, Any]]:
+    """
+    Retorna dados do usuário atualmente autenticado
+    """
+    try:
+        user = supabase.auth.get_user()
+        if not user.user:
+            return None
+        
+        profile = get_profile_by_id(user.user.id)
+        return {
+            "user": user.user,
+            "profile": profile
+        }
+    except Exception as e:
+        print(f"Erro ao buscar usuário atual: {e}")
+        return None
+
+def update_user_password(current_password: str, new_password: str) -> Dict[str, Any]:
+    """
+    Atualiza senha do usuário atual
+    """
+    try:
+        # Primeiro, verificar se a senha atual está correta
+        user = get_current_user()
+        if not user:
+            return {"success": False, "error": "Usuário não autenticado"}
+        
+        # Atualizar senha
+        response = supabase.auth.update_user({
+            "password": new_password
+        })
+        
+        return {
+            "success": True,
+            "message": "Senha atualizada com sucesso"
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def reset_password(email: str) -> Dict[str, Any]:
+    """
+    Envia email de reset de senha
+    """
+    try:
+        response = supabase.auth.reset_password_email(email)
+        return {
+            "success": True,
+            "message": "Email de reset enviado"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def update_user_profile(updates: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Atualiza perfil do usuário atual
+    """
+    try:
+        user = get_current_user()
+        if not user:
+            return {"success": False, "error": "Usuário não autenticado"}
+        
+        user_id = user["user"].id
+        
+        # Atualizar perfil
+        response = supabase.table("profiles").update({
+            **updates,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", user_id).execute()
+        
+        if not response.data:
+            return {"success": False, "error": "Falha ao atualizar perfil"}
+        
+        return {
+            "success": True,
+            "profile": response.data[0]
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def admin_create_user(email: str, password: str, full_name: str, role: str = "student") -> Dict[str, Any]:
+    """
+    Cria usuário como administrador (sem confirmação de email)
+    """
+    try:
+        # Criar usuário no Auth
+        auth_response = supabase_admin.auth.admin_create_user({
+            "email": email,
+            "password": password,
+            "email_confirm": True,
+            "user_metadata": {
+                "full_name": full_name,
+                "role": role
+            }
+        })
+        
+        if not auth_response.user:
+            raise Exception("Falha ao criar usuário no Auth")
+        
+        user_id = auth_response.user.id
+        
+        # Criar perfil
+        profile_data = {
+            "id": user_id,
+            "full_name": full_name,
+            "email": email,
+            "role": role,
+            "is_active": True,
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        profile_response = supabase_admin.table("profiles").insert(profile_data).execute()
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "profile": profile_response.data[0] if profile_response.data else None
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def admin_delete_user(user_id: str) -> Dict[str, Any]:
+    """
+    Remove usuário (apenas administradores)
+    """
+    try:
+        # Deletar do Auth
+        supabase_admin.auth.admin_delete_user(user_id)
+        
+        # Deletar perfil (cascade já remove dados relacionados)
+        supabase_admin.table("profiles").delete().eq("id", user_id).execute()
+        
+        return {
+            "success": True,
+            "message": "Usuário removido com sucesso"
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def admin_list_users() -> Dict[str, Any]:
+    """
+    Lista todos os usuários (apenas administradores)
+    """
+    try:
+        response = supabase_admin.table("profiles").select("*").execute()
+        return {
+            "success": True,
+            "users": response.data
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def admin_update_user_role(user_id: str, new_role: str) -> Dict[str, Any]:
+    """
+    Atualiza role do usuário (apenas administradores)
+    """
+    try:
+        response = supabase_admin.table("profiles").update({
+            "role": new_role,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", user_id).execute()
+        
+        return {
+            "success": True,
+            "profile": response.data[0] if response.data else None
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 # ---------------------------
 # Exemplo de uso

@@ -11,6 +11,7 @@ Sistema educacional avançado para treinamento físico, utilizando Inteligência
 - [Instalação](#instalação)
   - [Configuração Manual](#configuração-manual)
 - [Configuração das APIs](#configuração-das-apis)
+- [Sistema de Autenticação](#sistema-de-autenticação)
 - [Como Executar](#como-executar)
 - [Estrutura do Projeto](#estrutura-do-projeto)
 - [Fluxo de Uso](#fluxo-de-uso)
@@ -24,7 +25,7 @@ Sistema educacional avançado para treinamento físico, utilizando Inteligência
 
 - 🤖 **Assistente IA Especializado** (RAG) para respostas precisas
 - ☁️ **Integração Google Drive** (sincronização automática de materiais)
-- 🔐 **Sistema de Autenticação** multi-nível (Admin, Instrutor, Aluno)
+- 🔐 **Sistema de Autenticação** multi-nível (Admin, Instrutor, Aluno) com Supabase
 - 📁 **Gestão de Materiais** (upload manual e sincronização)
 - 💬 **Chat Inteligente** com múltiplas sessões
 - 🔧 **Painel de Debug** e diagnóstico completo
@@ -40,7 +41,8 @@ Sistema educacional avançado para treinamento físico, utilizando Inteligência
 - OpenAI GPT-4 (RAG via LangChain)
 - ChromaDB (banco vetorial)
 - Google Drive API
-- JWT (autenticação)
+- Supabase (autenticação e banco de dados)
+- JWT (autenticação local - legado)
 
 ### Frontend
 
@@ -106,6 +108,74 @@ cp .env.example .env  # Edite o .env se necessário
 - **OAuth2 (Pastas Privadas):**
   - Crie um OAuth2 Client ID
   - Baixe o JSON e renomeie para `credentials.json` em `backend/`
+
+---
+
+## 🔐 Sistema de Autenticação
+
+O sistema oferece duas opções de autenticação:
+
+### 1. Supabase (Recomendado)
+
+Sistema moderno com banco de dados PostgreSQL e autenticação segura.
+
+**Configuração:**
+
+1. ✅ Projeto Supabase já configurado: `bqvhtyodlsjcjitunmvs.supabase.co`
+2. Execute o script SQL em `supabase/migrations/bd_forca_ai.sql`
+3. Configure as variáveis de ambiente (já pré-configuradas):
+
+```env
+VITE_SUPABASE_URL=https://bqvhtyodlsjcjitunmvs.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key
+```
+
+**Setup Rápido:**
+
+```bash
+# Execute o script de configuração automática
+python setup_supabase.py
+```
+
+**Endpoints disponíveis:**
+
+- `POST /auth/supabase/signup` - Registrar usuário
+- `POST /auth/supabase/signin` - Fazer login
+- `GET /auth/supabase/me` - Dados do usuário atual
+- `PUT /auth/supabase/profile` - Atualizar perfil
+- `POST /auth/supabase/reset-password` - Reset de senha
+
+### 2. Sistema Local (Legado)
+
+Sistema baseado em arquivos JSON locais.
+
+**Endpoints disponíveis:**
+
+- `POST /auth/token` - Fazer login
+- `GET /auth/me` - Dados do usuário atual
+- `POST /auth/users` - Criar usuário (admin)
+
+### Migração de Dados
+
+Para migrar usuários do sistema local para o Supabase:
+
+```bash
+cd backend
+python scripts/migrate_users_to_supabase.py
+```
+
+### Teste da Integração
+
+```bash
+cd backend
+python scripts/test_supabase_integration.py
+```
+
+**Documentação completa:**
+
+- [Guia de Autenticação Supabase](docs/authentication/supabase-auth-guide.md)
+- [Quick Start - Setup Rápido](docs/setup/QUICK_START_SUPABASE.md)
 
 ---
 

@@ -28,6 +28,7 @@ from drive_sync.drive_handler_recursive import RecursiveDriveHandler
 from auth.auth import get_current_user, User, router as auth_router
 from auth.auth import get_optional_current_user
 from auth.user_management import router as user_management_router
+from auth.supabase_auth import router as supabase_auth_router
 from chat_agents.educational_agent import router as educational_agent_router
 import threading
 import asyncio
@@ -66,6 +67,8 @@ app.add_middleware(
 app.include_router(user_management_router)
 # Inclua o router de autenticação para endpoints públicos como redefinição de senha
 app.include_router(auth_router)
+# Inclua o router de autenticação Supabase
+app.include_router(supabase_auth_router)
 # Se necessário, inclua outros routers:
 app.include_router(educational_agent_router)
 
