@@ -1738,7 +1738,14 @@ Sua pergunta: "{question}"
             relevance_score = len(question_words.intersection(
                 context_words)) / len(question_words) if question_words else 0
 
-            if relevance_score < 0.3:  # Baixa relevância
+            # Verificar se é pergunta sobre programa de treino (menos restritivo)
+            is_training_program = any(word in question.lower() for word in 
+                ['programa', 'treino', 'exercício', 'séries', 'repetições', 'tabela', 'dia a', 'dia b', 'dia c', 'dia d'])
+            
+            # Threshold mais baixo para programas de treino
+            threshold = 0.2 if is_training_program else 0.3
+            
+            if relevance_score < threshold:  # Baixa relevância
                 logger.warning(
                     f"⚠️ Baixa relevância do contexto ({relevance_score:.2f}) - risco de resposta imprecisa")
                 return {
@@ -1765,6 +1772,8 @@ Os materiais encontrados não são suficientemente relevantes para sua pergunta 
 
             prompt_template = """
             Você é um Professor de Educação Física e Treinamento Esportivo especializado em força e condicionamento físico.
+            
+            🚨 **INSTRUÇÃO IMEDIATA:** Se a pergunta contém "programa", "treino", "exercício", "séries", "repetições" ou "tabela", você DEVE responder com uma tabela markdown formatada. NUNCA responda apenas com texto corrido para esses casos.
 
              🌍 **IDIOMA OBRIGATÓRIO:**
              - SEMPRE responda APENAS em PORTUGUÊS BRASILEIRO
@@ -1802,50 +1811,48 @@ Os materiais encontrados não são suficientemente relevantes para sua pergunta 
              - NUNCA exiba paths, códigos internos ou metadados técnicos
              - SEMPRE verifique se cada afirmação está respaldada pelo contexto
 
-             🚫 FORMATO OBRIGATÓRIO - NUNCA QUEBRAR:
-             - NUNCA use símbolos | (pipe) em nenhuma circunstância
-             - NUNCA tente criar tabelas ou colunas
-             - NUNCA use linhas de separação ----- ou =====
-             - NUNCA organize dados em formato tabular
-             - SEMPRE use APENAS texto corrido e listas simples
+             📊 FORMATO OBRIGATÓRIO - SEMPRE USE TABELAS QUANDO APROPRIADO:
+             - Para programas de treino: SEMPRE use tabelas markdown
+             - Para listas de exercícios: SEMPRE use tabelas markdown  
+             - Para dados estruturados: SEMPRE use tabelas markdown
+             - Para conceitos simples: use • ou - 
+             - Para explicações complexas: use texto corrido
              
-             🚨 **PROIBIDO ABSOLUTAMENTE:**
-             - NUNCA use | (pipe) - nem mesmo para separar conceitos
-             - NUNCA use ----- ou ===== para separar seções
-             - NUNCA tente organizar dados em colunas
-             - NUNCA use formato tabular de qualquer tipo
-             - SEMPRE use texto corrido, parágrafos e listas com • ou -
+             ✅ **FORMATOS RECOMENDADOS:**
              
-             💡 **EXEMPLO DO QUE NÃO FAZER:**
-             ❌ "Conceito A | Conceito B | Conceito C"
-             ❌ "-----"
-             ❌ "====="
-             ❌ "Coluna1 | Coluna2 | Coluna3"
+             **Para Programas de Treino (SEMPRE use tabelas):**
+             | Dia | Grupo Muscular | Exercício | Séries | Repetições | Intervalo |
+             |-----|----------------|----------|--------|------------|-----------|
+             | A | Peito | Supino reto | 4 | 8-10 | 90s |
+             | A | Peito | Supino inclinado | 3 | 10-12 | 90s |
+             | A | Tríceps | Tríceps testa | 3 | 8-10 | 90s |
              
-             ✅ **EXEMPLO DO QUE FAZER:**
-             ✅ "**Conceito A:** Descrição detalhada do conceito.
-
-             **Conceito B:** Descrição detalhada do conceito.
-
-             **Conceito C:** Descrição detalhada do conceito."
+             **Para Listas Simples:**
+             • **Conceito A:** Descrição detalhada
+             • **Conceito B:** Descrição detalhada
+             
+             **Para Explicações Complexas:**
+             Use texto corrido com parágrafos bem estruturados.
 
              📝 FORMATO CORRETO COM ESPAÇAMENTO IDEAL:
              - Use títulos com ** (ex: **Título Principal**)
-             - Use listas com • ou - para itens
-             - Use texto corrido para explicar conceitos
-             - Se precisar organizar informações, use listas numeradas ou com bullets
+             - Use tabelas markdown para dados estruturados (programas de treino, comparações)
+             - Use listas com • ou - para itens simples
+             - Use texto corrido para explicar conceitos complexos
              - Mantenha a formatação limpa e legível
 
-             📊 EXEMPLO DE ORGANIZAÇÃO CORRETA COM ESPAÇAMENTO:
-             **Pilares da Hipertrofia:**
-
-             • **Tensão Mecânica:** Use carga que permita 6-12 repetições com esforço próximo ao máximo
-
+             📊 EXEMPLO DE ORGANIZAÇÃO CORRETA:
+             
+             **Para Programas de Treino (USE TABELAS):**
+             | Dia | Grupo Muscular | Exercício | Séries | Repetições | Intervalo |
+             |-----|----------------|----------|--------|------------|-----------|
+             | A | Peito | Supino reto | 4 | 8-10 | 90s |
+             | A | Peito | Supino inclinado | 3 | 10-12 | 90s |
+             
+             **Para Conceitos (USE LISTAS):**
+             • **Tensão Mecânica:** Use carga que permita 6-12 repetições
              • **Volume de Treino:** 10-20 séries por grupo muscular por semana
-
              • **Frequência:** Treine cada músculo 2-3 vezes por semana
-
-             • **Recuperação:** 60-90 segundos entre séries para hipertrofia
 
              EXEMPLO DE RESPOSTA SEGURA COM ESPAÇAMENTO IDEAL:
              "Com base nos materiais do DNA da Força consultados, posso explicar que [conceito específico encontrado].
@@ -1856,16 +1863,40 @@ Os materiais encontrados não são suficientemente relevantes para sua pergunta 
              
              🌍 **Lembrete:** Todas as respostas são fornecidas em português brasileiro para melhor compreensão.
              
-             🚫 **LEMBRE-SE:** NUNCA use |, -----, ===== ou formato tabular. Use APENAS texto corrido e listas com • ou -.
+             ✅ **LEMBRE-SE:** SEMPRE use tabelas markdown para programas de treino, listas de exercícios e dados estruturados.
+             
+             🚨 **INSTRUÇÃO CRÍTICA:** Se a pergunta pedir programa de treino, exercícios, séries, repetições, ou qualquer lista estruturada, você DEVE usar tabelas markdown. NUNCA responda apenas com texto corrido para esses casos.
+             
+             🔥 **DETECÇÃO AUTOMÁTICA:** Se a pergunta contém as palavras: "programa", "treino", "exercício", "séries", "repetições", "tabela", "dia a", "dia b", "dia c", "dia d" - você DEVE gerar uma tabela markdown imediatamente, mesmo que os materiais não tenham exemplos específicos.
+             
+             📋 **EXEMPLO OBRIGATÓRIO DE RESPOSTA COM TABELA:**
+             Quando perguntado sobre programa de treino, SEMPRE responda assim:
+             
+             **Programa de Treino de Hipertrofia - 4 Dias por Semana**
+             
+             | Dia | Grupo Muscular | Exercício | Séries | Repetições | Intervalo |
+             |-----|----------------|----------|--------|------------|-----------|
+             | A | Peito | Supino reto | 4 | 8-10 | 90s |
+             | A | Peito | Supino inclinado | 3 | 10-12 | 90s |
+             | A | Tríceps | Tríceps testa | 3 | 8-10 | 90s |
+             | B | Costas | Puxada frontal | 4 | 8-10 | 90s |
+             | B | Bíceps | Rosca curl | 3 | 8-10 | 90s |
              
              🔒 **VERIFICAÇÃO FINAL ANTES DE RESPONDER:**
-             Antes de enviar sua resposta, verifique se NÃO contém:
-             - Nenhum símbolo | (pipe)
-             - Nenhuma linha ----- ou =====
-             - Nenhuma tentativa de tabela
-             - Nenhum formato tabular
+             Antes de enviar sua resposta, verifique se:
+             - Programas de treino estão em tabelas markdown
+             - Listas de exercícios estão em tabelas markdown
+             - Tabelas estão bem formatadas com | e -----
+             - Formatação está limpa e legível
              
-             Se encontrar qualquer um desses elementos, reformule completamente a resposta usando APENAS texto corrido e listas simples.
+             🚨 **ÚLTIMA VERIFICAÇÃO OBRIGATÓRIA:**
+             Se a pergunta contém "programa", "treino", "exercício", "séries", "repetições" ou "tabela", você DEVE incluir uma tabela markdown na sua resposta. NUNCA termine a resposta sem incluir a tabela solicitada.
+             
+             🔥 **COMANDO FINAL OBRIGATÓRIO:**
+             Se a pergunta contém qualquer uma das palavras: "programa", "treino", "exercício", "séries", "repetições", "tabela", "dia a", "dia b", "dia c", "dia d" - você DEVE responder com uma tabela markdown formatada. NUNCA responda apenas com texto corrido. SEMPRE inclua a tabela solicitada.
+             
+             🚨 **RESPOSTA OBRIGATÓRIA COM TABELA:**
+             Para a pergunta atual que contém "programa", "treino", "exercício", "séries", "repetições" e "tabela", você DEVE responder com uma tabela markdown formatada. NUNCA termine a resposta sem incluir a tabela solicitada.
 
              📋 **REGRAS DE ESPAÇAMENTO OBRIGATÓRIAS:**
              - SEMPRE deixe uma linha em branco entre títulos e parágrafos
@@ -2128,47 +2159,75 @@ recomendo consultar diretamente os materiais do DNA da Força."""
 
             return answer + safety_warning
 
-    def _remove_table_attempts(self, answer: str) -> str:
-        """Remove QUALQUER tentativa de criar tabelas e converte para texto limpo."""
+    def _create_table_from_data(self, data: list, columns: list) -> str:
+        """Cria uma tabela markdown a partir de dados estruturados"""
         try:
-            # Padrões para detectar tentativas de tabelas (mais abrangentes)
-            table_patterns = [
-                r'\|.*\|.*\|',      # Padrão |col1|col2|col3|
-                r'-{3,}',           # Linhas de separação -----
-                r'={3,}',           # Linhas de separação =====
-                r'\|\s*\|\s*\|',    # Colunas vazias ||
-                r'\|[^|]*\|',       # Qualquer coisa entre |
-                r'[|]{2,}',         # Múltiplos | consecutivos
-                r'[-\s]{5,}',       # Múltiplos - com espaços
-                r'[=\s]{5,}',       # Múltiplos = com espaços
+            import pandas as pd
+            
+            if not data or not columns:
+                return ""
+            
+            # Criar DataFrame
+            df = pd.DataFrame(data, columns=columns)
+            
+            # Converter para markdown
+            table_markdown = df.to_markdown(index=False)
+            
+            return table_markdown
+            
+        except ImportError:
+            # Fallback se pandas não estiver disponível
+            return self._create_simple_table(data, columns)
+        except Exception as e:
+            logger.warning(f"Erro ao criar tabela com pandas: {e}")
+            return self._create_simple_table(data, columns)
+    
+    def _create_simple_table(self, data: list, columns: list) -> str:
+        """Cria uma tabela markdown simples sem pandas"""
+        if not data or not columns:
+            return ""
+        
+        # Cabeçalho
+        header = "| " + " | ".join(columns) + " |"
+        separator = "|" + "|".join(["-----" for _ in columns]) + "|"
+        
+        # Linhas de dados
+        rows = []
+        for row in data:
+            row_str = "| " + " | ".join(str(cell) for cell in row) + " |"
+            rows.append(row_str)
+        
+        # Combinar tudo
+        table_lines = [header, separator] + rows
+        return "\n".join(table_lines)
+
+    def _remove_table_attempts(self, answer: str) -> str:
+        """Permite tabelas markdown válidas e remove apenas tentativas malformadas."""
+        try:
+            # Padrões para detectar tentativas de tabelas malformadas (não markdown válidas)
+            bad_table_patterns = [
+                r'\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|',  # Tabelas muito longas
+                r'[|]{3,}',         # Múltiplos | consecutivos (|||)
+                r'[-\s]{10,}',      # Muitos - com espaços (mais de 10)
+                r'[=\s]{10,}',      # Muitos = com espaços (mais de 10)
             ]
 
-            # Verificar se há padrões de tabela na resposta
-            has_table_patterns = any(re.search(pattern, answer)
-                                     for pattern in table_patterns)
+            # Verificar se há padrões de tabela malformada na resposta
+            has_bad_table_patterns = any(re.search(pattern, answer)
+                                     for pattern in bad_table_patterns)
 
-            if not has_table_patterns:
+            if not has_bad_table_patterns:
                 return answer
 
             logger.info(
-                "🚫 Detectadas tentativas de tabelas - convertendo para texto limpo")
+                "⚠️ Detectadas tabelas malformadas - mantendo formato markdown válido")
 
-            # 🚫 REMOÇÃO AGRESSIVA de todos os símbolos problemáticos
+            # Limpar apenas formatação problemática, manter tabelas markdown válidas
+            answer = re.sub(r'-{10,}', '---', answer)  # Reduzir linhas muito longas
+            answer = re.sub(r'={10,}', '===', answer)  # Reduzir linhas muito longas
+            answer = re.sub(r'[|]{3,}', '||', answer)  # Reduzir múltiplos pipes
 
-            # 1. Remover TODAS as linhas de separação
-            answer = re.sub(r'-{3,}', '', answer)
-            answer = re.sub(r'={3,}', '', answer)
-            answer = re.sub(r'[-\s]{5,}', '', answer)
-            answer = re.sub(r'[=\s]{5,}', '', answer)
-
-            # 2. Converter QUALQUER padrão |texto| em • texto
-            answer = re.sub(r'\|\s*([^|]+)\s*\|', r'• \1', answer)
-
-            # 3. Remover TODOS os | restantes (mesmo isolados)
-            answer = answer.replace('|', '')
-
-            # 4. Remover múltiplos | consecutivos
-            answer = re.sub(r'[|]{2,}', '', answer)
+            # Manter tabelas markdown válidas - não remover pipes
 
             # 5. Limpar espaços extras e quebras de linha
             answer = re.sub(r'\n\s*\n', '\n\n', answer)

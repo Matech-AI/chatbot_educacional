@@ -68,7 +68,7 @@ app.include_router(user_management_router)
 # Inclua o router de autenticação para endpoints públicos como redefinição de senha
 app.include_router(auth_router)
 # Inclua o router de autenticação Supabase
-app.include_router(supabase_auth_router)
+app.include_router(supabase_auth_router, prefix="/api/auth", tags=["Supabase Auth"])
 # The educational agent router is now exposed via the RAG server
 app.include_router(educational_agent_router)
 
