@@ -1,0 +1,80 @@
+version: "3.8"
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+      - VITE_API_URL=${VITE_API_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_CREDENTIALS_PATH=${GOOGLE_CREDENTIALS_PATH}
+      - DATABASE_URL=${DATABASE_URL}
+      - ENVIRONMENT=${ENVIRONMENT}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: backend
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+      - GOOGLE_DRIVE_API_KEY=${GOOGLE_DRIVE_API_KEY}
+      - PREFER_OPEN_SOURCE_EMBEDDINGS=${PREFER_OPEN_SOURCE_EMBEDDINGS}
+      - OPEN_SOURCE_EMBEDDING_MODEL=${OPEN_SOURCE_EMBEDDING_MODEL}
+      - RAG_SERVER_URL=${RAG_SERVER_URL}
+      - CHROMA_PERSIST_DIR=${CHROMA_PERSIST_DIR}
+      - MATERIALS_DIR=${MATERIALS_DIR}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - DATABASE_URL=${DATABASE_URL}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - REDIS_URL=${REDIS_URL}
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_USERNAME=${EMAIL_USERNAME}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_FROM=${EMAIL_FROM}
+      - HOSTINGER=${HOSTINGER}
+      - SERVER_IP=${SERVER_IP}
+      - RAG_PORT=${RAG_PORT}
+      - API_PORT=${API_PORT}
+      - FRONTEND_PORT=${FRONTEND_PORT}
+      - HOSTINGER_CHROMADB_PATH=${HOSTINGER_CHROMADB_PATH}
+      - HOSTINGER_MATERIALS_PATH=${HOSTINGER_MATERIALS_PATH}
+    volumes:
+      - chromadb_data:/app/data/.chromadb
+      - materials_data:/app/data/materials
+
+  rag_server:
+    build:
+      context: backend
+      dockerfile: Dockerfile.rag
+    ports:
+      - "8001:8001"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+      - GOOGLE_DRIVE_API_KEY=${GOOGLE_DRIVE_API_KEY}
+      - PREFER_OPEN_SOURCE_EMBEDDINGS=${PREFER_OPEN_SOURCE_EMBEDDINGS}
+      - OPEN_SOURCE_EMBEDDING_MODEL=${OPEN_SOURCE_EMBEDDING_MODEL}
+      - CHROMA_PERSIST_DIR=${CHROMA_PERSIST_DIR}
+      - MATERIALS_DIR=${MATERIALS_DIR}
+
+volumes:
+  chromadb_data:
+  materials_data:

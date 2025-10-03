@@ -11,6 +11,8 @@ services:
       - ./data/materials:/app/data/materials:ro
     networks:
       - network_swarm_public
+    depends_on:
+      - api-server
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -29,6 +31,8 @@ services:
       - ./data:/app/data
     networks:
       - network_swarm_public
+    depends_on:
+      - redis
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -36,30 +40,19 @@ services:
       retries: 3
       start_period: 40s
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    networks:
-      - network_swarm_public
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
-
   frontend:
     image: matheusbnas/frontend:latest
     ports:
       - "3000:3000"
-    environment: {}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=network_swarm_public"
-      - "traefik.http.routers.frontend.rule=Host(`iadnadaforca.com.br`)"
-      - "traefik.http.routers.frontend.entrypoints=web,websecure"
-      - "traefik.http.services.frontend.loadbalancer.server.port=80"
-      - "traefik.http.routers.frontend.tls.certresolver=letsencryptresolver"
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./src:/app/src
     networks:
       - network_swarm_public
+    depends_on:
+      - api-server
+
 
 volumes:
   rag_data:
