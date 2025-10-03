@@ -10,6 +10,7 @@ export interface User {
   avatarUrl?: string;
   disabled?: boolean;
   approved?: boolean;
+  isActive?: boolean;
   created_at?: string;
   updated_at?: string;
   external_id?: string;

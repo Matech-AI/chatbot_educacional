@@ -7,6 +7,8 @@ import { User, UserRole } from '../types'
 import { auth, profile, Profile } from '../lib/supabase'
 import { useChatStore } from './chat-store'
 
+
+
 interface SupabaseAuthState {
   isAuthenticated: boolean
   user: User | null
@@ -30,13 +32,14 @@ interface SupabaseAuthState {
 function profileToUser(profile: Profile): User {
   return {
     id: profile.id,
+    username: profile.email,
     name: profile.full_name,
     email: profile.email,
     role: profile.role as UserRole,
-    avatar: profile.avatar_url || getDefaultAvatar(profile.role),
+    avatarUrl: profile.avatar_url || getDefaultAvatar(profile.role),
     isActive: profile.is_active,
-    createdAt: new Date(profile.created_at),
-    lastLogin: null // O Supabase não armazena last_login por padrão
+    created_at: new Date(profile.created_at).toISOString(),
+    last_login: undefined // O Supabase não armazena last_login por padrão
   }
 }
 
@@ -60,24 +63,19 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
     try {
       set({ isLoading: true, error: null })
       
-      const { data, error } = await auth.signUp(email, password, fullName, role)
-      
-      if (error) {
-        set({ error: error.message, isLoading: false })
-        return { success: false, error: error.message }
-      }
+      const { user, session } = await auth.signUp(email, password, fullName, role)
       
       // Se o usuário foi criado com sucesso, mas precisa confirmar email
-      if (data.user && !data.session) {
+      if (user && !session) {
         set({ isLoading: false })
-        return { 
-          success: true, 
-          error: 'Usuário criado! Verifique seu email para confirmar a conta.' 
+        return {
+          success: true,
+          error: 'Usuário criado! Verifique seu email para confirmar a conta.'
         }
       }
       
       // Se já tem sessão (email confirmado automaticamente)
-      if (data.user && data.session) {
+      if (user && session) {
         const userProfile = await profile.getCurrentProfile()
         if (userProfile) {
           const user = profileToUser(userProfile)
@@ -106,14 +104,9 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
     try {
       set({ isLoading: true, error: null })
       
-      const { data, error } = await auth.signIn(email, password)
+      const { user, session } = await auth.signIn(email, password);
       
-      if (error) {
-        set({ error: error.message, isLoading: false })
-        return { success: false, error: error.message }
-      }
-      
-      if (data.user) {
+      if (user) {
         // Buscar perfil do usuário
         const userProfile = await profile.getCurrentProfile()
         
@@ -157,7 +150,7 @@ export const useSupabaseAuthStore = create<SupabaseAuthState>((set, get) => ({
       })
       
       // Limpar usuário do chat store
-      useChatStore.getState().setCurrentUser(null)
+      useChatStore.getState().setCurrentUser('')
       
     } catch (error: any) {
       set({ error: error.message })
