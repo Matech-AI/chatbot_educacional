@@ -17,25 +17,14 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copiar requirements
-COPY config/requirements.txt .
+COPY backend/config/requirements.txt .
 
 # Instalar dependências Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar código do servidor API
-COPY auth/ ./auth/
-COPY chat_agents/ ./chat_agents/
-COPY drive_sync/ ./drive_sync/
-COPY video_processing/ ./video_processing/
-COPY maintenance/ ./maintenance/
-COPY utils/ ./utils/
-# Remover esta linha:
-# COPY data/ ./data/
-COPY config/ ./config/
-COPY rag_system/ ./rag_system/
-
-# Copiar arquivo principal da API
-COPY api_server.py .
+# Copiar todo o código do backend e o diretório supabase
+COPY backend/ ./backend/
+COPY supabase/ ./supabase/
 
 # Criar apenas diretórios básicos (SEM .chromadb automático)
 RUN mkdir -p /app/data/materials /app/logs
@@ -44,4 +33,4 @@ RUN mkdir -p /app/data/materials /app/logs
 EXPOSE 5000
 
 # Comando de inicialização
-CMD ["python", "api_server.py"]
+CMD ["python", "backend/api_server.py"]
