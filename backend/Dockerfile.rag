@@ -32,6 +32,7 @@ COPY auth/ ./auth/
 COPY utils/ ./utils/
 COPY video_processing/ ./video_processing/
 COPY config/ ./config/
+COPY supabase/ ./supabase/
 
 # Criar apenas diretórios básicos (SEM .chromadb automático)
 RUN mkdir -p /app/data/materials /app/logs
