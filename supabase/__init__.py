@@ -1,0 +1,1 @@
+# This makes the 'supabase' directory a Python package.

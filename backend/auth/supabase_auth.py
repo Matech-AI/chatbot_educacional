@@ -12,9 +12,7 @@ from datetime import datetime
 import sys
 import os
 
-# Adicionar o diretório supabase ao path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'supabase'))
-from supabase_client import (
+from supabase.supabase_client import (
     sign_up_user, sign_in_user, sign_out_user, get_current_user,
     update_user_password, reset_password, update_user_profile,
     admin_create_user, admin_delete_user, admin_list_users, admin_update_user_role
