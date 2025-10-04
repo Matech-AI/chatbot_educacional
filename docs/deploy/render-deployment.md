@@ -397,12 +397,12 @@ Para dúvidas sobre o deploy:
 2. Configure cada um para usar Docker conforme especificado abaixo
    - **Servidor RAG**:
      - **Tipo:** Web Service
-     - **Porta:** 8001
+     - **Porta:** 5001
      - **Build Command:** `pip install -r config/requirements.txt`
      - **Start Command:** `python rag_server.py --host 0.0.0.0 --port $PORT`
    - **Servidor API**:
      - **Tipo:** Web Service
-     - **Porta:** 8000
+     - **Porta:** 5000
      - **Build Command:** `pip install -r config/requirements.txt`
      - **Start Command:** `python api_server.py --host 0.0.0.0 --port $PORT`
    - **Redis** (Opcional):
@@ -513,7 +513,7 @@ COPY config/ ./config/
 COPY rag_server.py .
 
 RUN mkdir -p /app/data/.chromadb /app/data/materials /app/logs
-EXPOSE 8000
+EXPOSE 5000
 CMD ["python", "rag_server.py"]
 ```
 
@@ -544,7 +544,7 @@ COPY rag_system/ ./rag_system/
 COPY api_server.py .
 
 RUN mkdir -p /app/data/materials /app/logs /app/data/.chromadb
-EXPOSE 8000
+EXPOSE 5000
 CMD ["python", "api_server.py"]
 ```
 
@@ -605,7 +605,7 @@ OPEN_SOURCE_EMBEDDING_MODEL=intfloat/multilingual-e5-large
 CHROMA_PERSIST_DIR=/app/data/.chromadb
 MATERIALS_DIR=/app/data/materials
 LOG_LEVEL=INFO
-PORT=8001
+PORT=5001
 CORS_ORIGINS=https://dna-forca-frontend.onrender.com,https://chatbot-educacional.vercel.app,http://localhost:3000,http://127.0.0.1:3000
 JWT_SECRET_KEY=auto_gerado
 JWT_ALGORITHM=HS256
@@ -629,7 +629,7 @@ GOOGLE_DRIVE_API_KEY=sua_chave_google_drive_aqui
 GOOGLE_CREDENTIALS_PATH=/etc/secrets/credentials.json
 RAG_SERVER_URL=https://dna-forca-rag-server.onrender.com
 DATABASE_URL=postgresql://user:password@localhost/dbname
-PORT=8000
+PORT=5000
 JWT_SECRET_KEY=auto_gerado
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -671,7 +671,7 @@ EMAIL_FROM=seu_email@exemplo.com
 
 ## 🔍 Endpoints Disponíveis
 
-### RAG Server (Porta 8001):
+### RAG Server (Porta 5001):
 
 - `GET /health` - Status do servidor
 - `GET /status` - Status detalhado
@@ -682,7 +682,7 @@ EMAIL_FROM=seu_email@exemplo.com
 - `POST /chat/agent` - Chat com agente
 - `POST /process-materials` - Processar materiais
 
-### API Server (Porta 8000):
+### API Server (Porta 5000):
 
 - `GET /health` - Status do servidor
 - `GET /docs` - Documentação Swagger

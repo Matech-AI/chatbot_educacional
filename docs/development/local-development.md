@@ -94,7 +94,7 @@ GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
 ENVIRONMENT=development
 DEBUG=true
 LOG_LEVEL=DEBUG
-PORT=8000
+PORT=5000
 HOST=0.0.0.0
 
 # ChromaDB
@@ -110,7 +110,7 @@ VITE_SUPABASE_URL=your_supabase_url_here
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
 
 # Backend API
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:5000
 
 # Configurações
 VITE_APP_NAME=DNA da Força
@@ -166,7 +166,7 @@ source .venv/bin/activate  # Linux/Mac
 # Execute o servidor
 python main.py
 # ou
-uvicorn api_server:app --reload --host 0.0.0.0 --port 8000
+uvicorn api_server:app --reload --host 0.0.0.0 --port 5000
 ```
 
 ### **2. Inicie o Frontend**
@@ -180,8 +180,8 @@ npm run dev
 ### **3. Acesse o Sistema**
 
 - **Frontend:** http://localhost:5173
-- **Backend API:** http://localhost:8000
-- **Docs da API:** http://localhost:8000/docs
+- **Backend API:** http://localhost:5000
+- **Docs da API:** http://localhost:5000/docs
 
 ## 🧪 **Testando o Sistema**
 
@@ -203,7 +203,7 @@ python -m pytest tests/integration/
 
 ```bash
 # Teste da API
-curl http://localhost:8000/health
+curl http://localhost:5000/health
 
 # Teste do frontend
 # Abra http://localhost:5173 no navegador
@@ -312,7 +312,7 @@ df -h
 ps aux | grep python
 
 # Portas em uso
-netstat -tulpn | grep :8000
+netstat -tulpn | grep :5000
 ```
 
 ### **2. Performance do ChromaDB:**
@@ -337,9 +337,9 @@ for col in client.list_collections():
 
 ```bash
 # Encontre o processo usando a porta
-lsof -i :8000
+lsof -i :5000
 # ou
-netstat -tulpn | grep :8000
+netstat -tulpn | grep :5000
 
 # Mate o processo
 kill -9 <PID>

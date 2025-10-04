@@ -154,9 +154,9 @@ GOOGLE_DRIVE_API_KEY=your_google_drive_api_key_here
 FRONTEND_HOST=0.0.0.0
 FRONTEND_PORT=3000
 RAG_HOST=0.0.0.0
-RAG_PORT=8000
+RAG_PORT=5000
 API_HOST=0.0.0.0
-API_PORT=8001
+API_PORT=5001
 
 # ===== CONFIGURAÇÕES DO CHROMADB =====
 CHROMA_PERSIST_DIR=/root/dna-forca-complete/data/.chromadb
@@ -344,7 +344,7 @@ source .venv/bin/activate
 # Iniciar RAG Server em background
 echo "🚀 Iniciando RAG Server..."
 cd rag_system
-nohup uvicorn rag_server:app --host 0.0.0.0 --port 8001 --reload > ../logs/rag-server.log 2>&1 &
+nohup uvicorn rag_server:app --host 0.0.0.0 --port 5001 --reload > ../logs/rag-server.log 2>&1 &
 RAG_PID=$!
 echo "✅ RAG Server iniciado com PID: $RAG_PID"
 
@@ -354,7 +354,7 @@ sleep 5
 # Iniciar API Server em background
 echo "🚀 Iniciando API Server..."
 cd ../backend
-nohup uvicorn api_server:app --host 0.0.0.0 --port 8000 --reload > ../logs/api-server.log 2>&1 &
+nohup uvicorn api_server:app --host 0.0.0.0 --port 5000 --reload > ../logs/api-server.log 2>&1 &
 API_PID=$!
 echo "✅ API Server iniciado com PID: $API_PID"
 
@@ -376,8 +376,8 @@ echo $FRONTEND_PID > ../logs/frontend.pid
 echo ""
 echo "🎉 Sistema COMPLETO iniciado!"
 echo "📍 Frontend: http://localhost:3000"
-echo "📍 RAG Server: http://localhost:8001"
-echo "📍 API Server: http://localhost:8000"
+echo "📍 RAG Server: http://localhost:5001"
+echo "📍 API Server: http://localhost:5000"
 echo ""
 echo "�� Para parar: ./stop_all.sh"
 echo "📋 Para status: ./status.sh"
@@ -473,8 +473,8 @@ if [ -f logs/rag-server.pid ]; then
     if kill -0 $RAG_PID 2>/dev/null; then
         echo "✅ Status: ATIVO"
         echo "📍 PID: $RAG_PID"
-        echo "📍 Porta: 8000"
-        echo "📍 URL: http://localhost:8000"
+        echo "📍 Porta: 5000"
+        echo "📍 URL: http://localhost:5000"
     else
         echo "❌ Status: INATIVO (PID inválido)"
         rm logs/rag-server.pid
@@ -491,8 +491,8 @@ if [ -f logs/api-server.pid ]; then
     if kill -0 $API_PID 2>/dev/null; then
         echo "✅ Status: ATIVO"
         echo "📍 PID: $API_PID"
-        echo "📍 Porta: 8001"
-        echo "📍 URL: http://localhost:8001"
+        echo "📍 Porta: 5001"
+        echo "📍 URL: http://localhost:5001"
     else
         echo "❌ Status: INATIVO (PID inválido)"
         rm logs/api-server.pid
@@ -521,7 +521,7 @@ echo "Disco: $(df -h / | awk 'NR==2{print $5}')"
 # Status das portas
 echo ""
 echo "🌐 PORTAS EM USO:"
-netstat -tlnp | grep -E ":3000|:8000|:8001|:6379" | sort
+netstat -tlnp | grep -E ":3000|:5000|:5001|:6379" | sort
 EOF
 
 chmod +x status.sh
@@ -550,8 +550,8 @@ echo "3. Para subir materiais: ./upload_materials.sh"
 echo ""
 echo "🌐 O sistema estará disponível em:"
 echo "   - Frontend: http://31.97.16.142:3000"
-echo "   - RAG Server: http://31.97.16.142:8000"
-echo "   - API Server: http://31.97.16.142:8001"
+echo "   - RAG Server: http://31.97.16.142:5000"
+echo "   - API Server: http://31.97.16.142:5001"
 echo ""
 echo "📋 COMANDOS ÚTEIS:"
 echo "   - Status: ./status.sh"
@@ -559,10 +559,10 @@ echo "   - Parar: ./stop_all.sh"
 echo "   - Iniciar: ./start_all.sh"
 echo "   - Upload materiais: ./upload_materials.sh"
 echo ""
-echo "⚠️ IMPORTANTE: Configure o firewall para permitir acesso às portas 3000, 8000 e 8001"
+echo "⚠️ IMPORTANTE: Configure o firewall para permitir acesso às portas 3000, 5000 e 5001"
 echo "   ufw allow 3000"
-echo "   ufw allow 8000"
-echo "   ufw allow 8001"
+echo "   ufw allow 5000"
+echo "   ufw allow 5001"
 echo ""
 echo "�� PARA SUBIR MATERIAIS E DADOS:"
 echo "1. Copie arquivos do projeto local para o servidor"

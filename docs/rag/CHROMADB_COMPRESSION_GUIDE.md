@@ -158,8 +158,8 @@ C:\repos_github\projeto\.chromadb
 
 ```bash
 # Frontend Environment Variables (LOCAL)
-VITE_API_URL=http://localhost:8000
-VITE_RAG_API_BASE_URL=http://localhost:8001
+VITE_API_URL=http://localhost:5000
+VITE_RAG_API_BASE_URL=http://localhost:5001
 ```
 
 ##### **Produção (Render)**
@@ -182,7 +182,7 @@ MATERIALS_DIR=/app/data/materials
 
 | Ambiente   | Frontend                                  | API Server                                  | RAG Server                                  | ChromaDB Path            |
 | ---------- | ----------------------------------------- | ------------------------------------------- | ------------------------------------------- | ------------------------ |
-| **Local**  | `http://localhost:3000`                   | `http://localhost:8000`                     | `http://localhost:8001`                     | `backend/data/.chromadb` |
+| **Local**  | `http://localhost:3000`                   | `http://localhost:5000`                     | `http://localhost:5001`                     | `backend/data/.chromadb` |
 | **Render** | `https://dna-forca-frontend.onrender.com` | `https://dna-forca-api-server.onrender.com` | `https://dna-forca-rag-server.onrender.com` | `/app/data/.chromadb`    |
 
 ### Configuração do Render (render.yaml)
@@ -281,13 +281,13 @@ Servidor atualizado → ChromaDB funcional → RAG handler ativo → Sistema ope
 
 | Endpoint                        | Método | Descrição                                  | Servidor   | Ambiente |
 | ------------------------------- | ------ | ------------------------------------------ | ---------- | -------- |
-| `/chromadb/upload`              | POST   | Upload de arquivo .tar.gz                  | RAG (8001) | Ambos    |
-| `/chromadb/upload-folder`       | POST   | Upload de pasta .zip                       | RAG (8001) | Ambos    |
-| `/chromadb/download`            | GET    | Download do ChromaDB                       | RAG (8001) | Ambos    |
-| `/chromadb/compress`            | POST   | Compactar ChromaDB ativo                   | RAG (8001) | Ambos    |
-| `/chromadb/compress-local`      | POST   | Compactar pasta local (busca automática)   | RAG (8001) | Local    |
-| `/chromadb/compress-local-path` | POST   | Compactar pasta local (caminho específico) | RAG (8001) | Local    |
-| `/chromadb/status`              | GET    | Status do ChromaDB                         | RAG (8001) | Ambos    |
+| `/chromadb/upload`              | POST   | Upload de arquivo .tar.gz                  | RAG (5001) | Ambos    |
+| `/chromadb/upload-folder`       | POST   | Upload de pasta .zip                       | RAG (5001) | Ambos    |
+| `/chromadb/download`            | GET    | Download do ChromaDB                       | RAG (5001) | Ambos    |
+| `/chromadb/compress`            | POST   | Compactar ChromaDB ativo                   | RAG (5001) | Ambos    |
+| `/chromadb/compress-local`      | POST   | Compactar pasta local (busca automática)   | RAG (5001) | Local    |
+| `/chromadb/compress-local-path` | POST   | Compactar pasta local (caminho específico) | RAG (5001) | Local    |
+| `/chromadb/status`              | GET    | Status do ChromaDB                         | RAG (5001) | Ambos    |
 
 ## 🛠️ Troubleshooting
 
@@ -302,7 +302,7 @@ Servidor atualizado → ChromaDB funcional → RAG handler ativo → Sistema ope
 
 ```bash
 # Local
-VITE_RAG_API_BASE_URL=http://localhost:8001
+VITE_RAG_API_BASE_URL=http://localhost:5001
 
 # Produção (Render)
 VITE_RAG_API_BASE_URL=https://dna-forca-rag-server.onrender.com
@@ -321,7 +321,7 @@ VITE_RAG_API_BASE_URL=https://dna-forca-rag-server.onrender.com
 #### 3. Erro de conexão
 
 **Causa Local**: Servidor RAG não está rodando
-**Solução Local**: Verificar se servidor está ativo na porta 8001
+**Solução Local**: Verificar se servidor está ativo na porta 5001
 
 **Causa Produção**: Problemas de rede ou servidor indisponível
 **Solução Produção**: Verificar status do servidor Render

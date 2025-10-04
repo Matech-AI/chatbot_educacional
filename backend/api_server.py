@@ -73,7 +73,7 @@ app.include_router(supabase_auth_router, prefix="/api/auth", tags=["Supabase Aut
 app.include_router(educational_agent_router)
 
 # RAG Server URL
-RAG_SERVER_URL = os.getenv("RAG_SERVER_URL", "http://localhost:8001")
+RAG_SERVER_URL = os.getenv("RAG_SERVER_URL", "http://localhost:5001")
 
 # User-specific handlers with thread locks
 user_drive_handlers = {}
@@ -3380,4 +3380,4 @@ if __name__ == "__main__":
     import uvicorn
     logger.info(
         "🚀 DNA da Força Backend v1.7 - Complete Recursive Drive Integration")
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=5000, log_level="info")

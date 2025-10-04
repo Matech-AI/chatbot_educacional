@@ -185,7 +185,7 @@ python scripts/test_supabase_integration.py
 
 ```bash
 cd backend
-uvicorn main_simple:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main_simple:app --host 0.0.0.0 --port 5000 --reload
 ```
 
 ### Frontend
@@ -195,8 +195,8 @@ npm run dev
 ```
 
 - Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- Documentação API: http://localhost:8000/docs
+- Backend API: http://localhost:5000
+- Documentação API: http://localhost:5000/docs
 
 ---
 
@@ -266,13 +266,13 @@ chatbot_educacional/
 - **Erro de Dependências:**
   - Execute `pip install -r requirements.txt`
 - **Erro de Porta em Uso:**
-  - Libere a porta 8000 ou altere a configuração
+  - Libere a porta 5000 ou altere a configuração
 
 ### Comandos Úteis
 
 ```bash
 # Status geral
-curl http://localhost:8000/health
+curl http://localhost:5000/health
 # Teste Drive
 python test_drive_connection.py
 # Verificar materiais
@@ -284,7 +284,7 @@ ls -la backend/.chromadb/
 ### Erro de autenticação Google Drive (token expirado ou revogado)
 
 1. Apague o arquivo `token.json` na pasta do backend.
-2. Feche programas que possam estar usando a porta 8080 ou 8000.
+2. Feche programas que possam estar usando a porta 8080 ou 5000.
 3. Rode novamente o script e faça o login Google na janela que abrir.
 4. Se necessário, baixe um novo `credentials.json` no Google Cloud Console.
 
@@ -307,7 +307,7 @@ Teste localmente, verifique endpoints e integração.
 
 - Painel Debug: Interface web para diagnóstico
 - Script de Teste: `test_drive_connection.py`
-- Documentação API: http://localhost:8000/docs
+- Documentação API: http://localhost:5000/docs
 
 Para reportar problemas, inclua:
 

@@ -498,9 +498,9 @@ app.include_router(educational_agent_router, prefix="/chat")
 # Banner de funcionamento ao iniciar (movido para dentro do lifespan)
 def startup_banner():
     try:
-        port = int(os.getenv("PORT", "8001"))
+        port = int(os.getenv("PORT", "5001"))
     except Exception:
-        port = 8001
+        port = 5001
     logger.info("====================================================")
     logger.info(
         f"🚀 DNA da Força RAG Server v1.0.0 funcionando na porta {port}")
@@ -2291,7 +2291,7 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="0.0.0.0",
                         help="Host para o servidor")
     # Permitir que o Render defina a PORT
-    default_port = int(os.getenv("PORT", "8001"))
+    default_port = int(os.getenv("PORT", "5001"))
     parser.add_argument("--port", type=int, default=default_port,
                         help="Porta para o servidor")
     parser.add_argument("--reload", action="store_true",

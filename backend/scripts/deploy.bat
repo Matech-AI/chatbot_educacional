@@ -113,7 +113,7 @@ REM Aguardar um pouco para os serviços inicializarem
 timeout /t 10 /nobreak >nul
 
 REM Verificar RAG Server
-curl -f http://localhost:8001/health >nul 2>&1
+curl -f http://localhost:5001/health >nul 2>&1
 if errorlevel 1 (
     call :print_error "RAG Server não está respondendo"
     exit /b 1
@@ -122,7 +122,7 @@ if errorlevel 1 (
 )
 
 REM Verificar API Server
-curl -f http://localhost:8000/health >nul 2>&1
+curl -f http://localhost:5000/health >nul 2>&1
 if errorlevel 1 (
     call :print_error "API Server não está respondendo"
     exit /b 1
@@ -206,8 +206,8 @@ call :start_services
 call :check_status
 call :print_success "Deploy concluído com sucesso!"
 call :print_message "Servidores disponíveis em:"
-call :print_message "  - API Server: http://localhost:8000"
-call :print_message "  - RAG Server: http://localhost:8001"
+call :print_message "  - API Server: http://localhost:5000"
+call :print_message "  - RAG Server: http://localhost:5001"
 goto :eof
 
 :build

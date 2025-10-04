@@ -30,20 +30,20 @@ else
     echo "❌ Frontend não acessível em localhost:3000"
 fi
 
-# Porta 8000 (RAG Server)
-echo "Porta 8000 (RAG Server):"
-if curl -s --connect-timeout 5 http://localhost:8000 > /dev/null 2>&1; then
-    echo "✅ RAG Server acessível em localhost:8000"
+# Porta 5000 (RAG Server)
+echo "Porta 5000 (RAG Server):"
+if curl -s --connect-timeout 5 http://localhost:5000 > /dev/null 2>&1; then
+    echo "✅ RAG Server acessível em localhost:5000"
 else
-    echo "❌ RAG Server não acessível em localhost:8000"
+    echo "❌ RAG Server não acessível em localhost:5000"
 fi
 
-# Porta 8001 (API Server)
-echo "Porta 8001 (API Server):"
-if curl -s --connect-timeout 5 http://localhost:8001 > /dev/null 2>&1; then
-    echo "✅ API Server acessível em localhost:8001"
+# Porta 5001 (API Server)
+echo "Porta 5001 (API Server):"
+if curl -s --connect-timeout 5 http://localhost:5001 > /dev/null 2>&1; then
+    echo "✅ API Server acessível em localhost:5001"
 else
-    echo "❌ API Server não acessível em localhost:8001"
+    echo "❌ API Server não acessível em localhost:5001"
 fi
 
 # Testar com IP específico do status
@@ -58,17 +58,17 @@ else
 fi
 
 # RAG Server
-if curl -s --connect-timeout 5 http://[2a02:4780:14:42c4::1]:8000 > /dev/null 2>&1; then
-    echo "✅ RAG Server acessível em [2a02:4780:14:42c4::1]:8000"
+if curl -s --connect-timeout 5 http://[2a02:4780:14:42c4::1]:5000 > /dev/null 2>&1; then
+    echo "✅ RAG Server acessível em [2a02:4780:14:42c4::1]:5000"
 else
-    echo "❌ RAG Server não acessível em [2a02:4780:14:42c4::1]:8000"
+    echo "❌ RAG Server não acessível em [2a02:4780:14:42c4::1]:5000"
 fi
 
 # API Server
-if curl -s --connect-timeout 5 http://[2a02:4780:14:42c4::1]:8001 > /dev/null 2>&1; then
-    echo "✅ API Server acessível em [2a02:4780:14:42c4::1]:8001"
+if curl -s --connect-timeout 5 http://[2a02:4780:14:42c4::1]:5001 > /dev/null 2>&1; then
+    echo "✅ API Server acessível em [2a02:4780:14:42c4::1]:5001"
 else
-    echo "❌ API Server não acessível em [2a02:4780:14:42c4::1]:8001"
+    echo "❌ API Server não acessível em [2a02:4780:14:42c4::1]:5001"
 fi
 
 echo ""

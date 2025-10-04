@@ -97,22 +97,22 @@ jobs:
               echo "❌ Frontend não responde (porta 3000)"
             fi
 
-            if curl -s http://localhost:8000/status > /dev/null; then
-              echo "✅ RAG Server funcionando (porta 8000)"
+            if curl -s http://localhost:5000/status > /dev/null; then
+              echo "✅ RAG Server funcionando (porta 5000)"
             else
-              echo "❌ RAG Server não responde (porta 8000)"
+              echo "❌ RAG Server não responde (porta 5000)"
             fi
 
-            if curl -s http://localhost:8001/status > /dev/null; then
-              echo "✅ API Server funcionando (porta 8001)"
+            if curl -s http://localhost:5001/status > /dev/null; then
+              echo "✅ API Server funcionando (porta 5001)"
             else
-              echo "❌ API Server não responde (porta 8001)"
+              echo "❌ API Server não responde (porta 5001)"
             fi
 
             echo ""
             echo "🎉 DEPLOY AUTOMÁTICO CONCLUÍDO - $(date)"
             echo "📍 Frontend: http://31.97.16.142:3000"
-            echo "📍 RAG Server: http://31.97.16.142:8000"
-            echo "📍 API Server: http://31.97.16.142:8001"
+            echo "📍 RAG Server: http://31.97.16.142:5000"
+            echo "📍 API Server: http://31.97.16.142:5001"
             echo "📋 Para verificar status: ./status.sh"
             echo "📋 Para ver logs: tail -f logs/*.log"

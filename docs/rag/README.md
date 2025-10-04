@@ -20,13 +20,13 @@ Este documento descreve, de forma prática e objetiva, como o sistema de RAG (Re
 ### **📊 FLUXO COMPLETO DA CONVERSA:**
 
 ```
-Frontend → API Server (8000) → Educational Agent → RAG Handler → Resposta
+Frontend → API Server (5000) → Educational Agent → RAG Handler → Resposta
 ```
 
 ### **🔄 FLUXO DETALHADO COM FALLBACK AUTOMÁTICO:**
 
 ```
-Frontend → API Server (8000) → Educational Agent → RAG Handler → NVIDIA API ❌ → Fallback ✅ → Resposta
+Frontend → API Server (5000) → Educational Agent → RAG Handler → NVIDIA API ❌ → Fallback ✅ → Resposta
 ```
 
 #### **📋 SEQUÊNCIA DE FALLBACK LLM:**
@@ -751,7 +751,7 @@ O sistema implementa um **sistema de fallback robusto** que garante que sempre h
 #### **📊 FLUXO COMPLETO DE FALLBACK:**
 
 ```
-Frontend → API Server (8000) → Educational Agent → RAG Handler → NVIDIA API ❌ → Fallback ✅ → Resposta
+Frontend → API Server (5000) → Educational Agent → RAG Handler → NVIDIA API ❌ → Fallback ✅ → Resposta
 ```
 
 #### **🔄 SEQUÊNCIA DE TENTATIVAS:**

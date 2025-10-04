@@ -80,7 +80,7 @@ def update_vite_config(server_ip):
             content = f.read()
         
         # Atualiza as configurações do Hostinger
-        if f"apiTarget = 'http://{server_ip}:8000'" not in content:
+        if f"apiTarget = 'http://{server_ip}:5000'" not in content:
             # Substitui as configurações antigas
             content = content.replace(
                 "const serverIP = process.env.SERVER_IP || '0.0.0.0'",
@@ -100,8 +100,8 @@ def test_connectivity(server_ip):
     
     services = {
         "Frontend": 3000,
-        "RAG Server": 8000,
-        "API Server": 8001
+        "RAG Server": 5000,
+        "API Server": 5001
     }
     
     for service_name, port in services.items():
@@ -140,8 +140,8 @@ def main():
     print(f"\n🎉 Configurações atualizadas com sucesso!")
     print(f"📍 IP do servidor: {server_ip}")
     print(f"📍 Frontend: http://{server_ip}:3000")
-    print(f"📍 RAG Server: http://{server_ip}:8000")
-    print(f"📍 API Server: http://{server_ip}:8001")
+    print(f"📍 RAG Server: http://{server_ip}:5000")
+    print(f"📍 API Server: http://{server_ip}:5001")
     
     # Salva o IP em um arquivo para uso posterior
     config_data = {
@@ -149,8 +149,8 @@ def main():
         "hostinger": True,
         "ports": {
             "frontend": 3000,
-            "rag": 8000,
-            "api": 8001
+            "rag": 5000,
+            "api": 5001
         }
     }
     

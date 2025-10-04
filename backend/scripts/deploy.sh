@@ -101,7 +101,7 @@ check_status() {
     sleep 10
     
     # Verificar RAG Server
-    if curl -f http://localhost:8001/health >/dev/null 2>&1; then
+    if curl -f http://localhost:5001/health >/dev/null 2>&1; then
         print_success "RAG Server está respondendo"
     else
         print_error "RAG Server não está respondendo"
@@ -109,7 +109,7 @@ check_status() {
     fi
     
     # Verificar API Server
-    if curl -f http://localhost:8000/health >/dev/null 2>&1; then
+    if curl -f http://localhost:5000/health >/dev/null 2>&1; then
         print_success "API Server está respondendo"
     else
         print_error "API Server não está respondendo"
@@ -183,8 +183,8 @@ main() {
             check_status
             print_success "Deploy concluído com sucesso!"
             print_message "Servidores disponíveis em:"
-            print_message "  - API Server: http://localhost:8000"
-            print_message "  - RAG Server: http://localhost:8001"
+            print_message "  - API Server: http://localhost:5000"
+            print_message "  - RAG Server: http://localhost:5001"
             ;;
         "build")
             check_docker

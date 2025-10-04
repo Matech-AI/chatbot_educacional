@@ -129,7 +129,7 @@ GEMINI_MODEL_NAME=gemini-2.5-flash
 
 ```bash
 # Deve funcionar normalmente
-curl -X POST "http://localhost:8001/chat" \
+curl -X POST "http://localhost:5001/chat" \
   -H "Content-Type: application/json" \
   -d '{"question": "Teste NVIDIA"}'
 ```
@@ -141,7 +141,7 @@ curl -X POST "http://localhost:8001/chat" \
 export NVIDIA_API_KEY="invalid_key"
 
 # Deve ativar OpenAI automaticamente
-curl -X POST "http://localhost:8001/chat" \
+curl -X POST "http://localhost:5001/chat" \
   -H "Content-Type: application/json" \
   -d '{"question": "Teste Fallback"}'
 ```
@@ -158,7 +158,7 @@ docker-compose logs rag-server | grep -i "fallback"
 docker-compose exec rag-server env | grep -E "(OPENAI|GEMINI)_API_KEY"
 
 # Verificar configuração
-curl http://localhost:8001/status
+curl http://localhost:5001/status
 ```
 
 #### **❌ OpenAI não funciona como fallback:**
@@ -192,13 +192,13 @@ docker-compose exec rag-server pip list | grep google-generativeai
 
 ```bash
 # Status geral do sistema
-curl http://localhost:8001/status
+curl http://localhost:5001/status
 
 # Status dos modelos
-curl http://localhost:8001/models
+curl http://localhost:5001/models
 
 # Estatísticas de uso
-curl http://localhost:8001/stats
+curl http://localhost:5001/stats
 ```
 
 #### **Métricas Importantes:**
@@ -220,7 +220,7 @@ curl http://localhost:8001/stats
 
 ## 🏗️ Arquitetura
 
-### Servidor A: RAG Server (Porta 8001)
+### Servidor A: RAG Server (Porta 5001)
 
 - **Função**: Processamento de materiais e consultas RAG com IA avançada
 - **Status**: Sempre rodando
@@ -234,7 +234,7 @@ curl http://localhost:8001/stats
   - Fallbacks automáticos para outros LLMs
   - Processamento de materiais em background
 
-### Servidor B: API Geral (Porta 8000)
+### Servidor B: API Geral (Porta 5000)
 
 - **Função**: Funcionalidades gerais do sistema e interface de usuário
 - **Status**: Ativo quando necessário
@@ -367,7 +367,7 @@ docker-compose down
    - Tipo: Web Service
    - Build Command: `docker build -f Dockerfile.rag -t rag-server .`
    - Start Command: `python rag_server.py`
-   - Porta: 8000
+   - Porta: 5000
    - Variáveis de ambiente: Configure todas as chaves de API
 
    **Servidor API:**
@@ -375,7 +375,7 @@ docker-compose down
    - Tipo: Web Service
    - Build Command: `docker build -f Dockerfile.api -t api-server .`
    - Start Command: `python api_server.py`
-   - Porta: 8000
+   - Porta: 5000
    - Variáveis de ambiente: Configure todas as chaves de API
 
 3. **Configurar Rede**
@@ -409,7 +409,7 @@ GOOGLE_DRIVE_API_KEY=your_google_drive_api_key_here
 GOOGLE_CREDENTIALS_PATH=/app/data/credentials.json
 
 # Configurações do servidor RAG
-RAG_SERVER_URL=http://rag-server:8001
+RAG_SERVER_URL=http://rag-server:5001
 CHROMA_PERSIST_DIR=/app/data/.chromadb
 MATERIALS_DIR=/app/data/materials
 
@@ -463,7 +463,7 @@ Os seguintes volumes são criados automaticamente:
 
 ## 🔌 Endpoints
 
-### Servidor RAG (Porta 8001)
+### Servidor RAG (Porta 5001)
 
 | Endpoint             | Método | Descrição                             |
 | -------------------- | ------ | ------------------------------------- |
@@ -478,7 +478,7 @@ Os seguintes volumes são criados automaticamente:
 | `/models`            | GET    | Status dos modelos NVIDIA/Open Source |
 | `/guardrails`        | GET    | Status do sistema de guardrails       |
 
-### Servidor API (Porta 8000)
+### Servidor API (Porta 5000)
 
 | Endpoint             | Método | Descrição                   |
 | -------------------- | ------ | --------------------------- |
@@ -533,10 +533,10 @@ Ambos os servidores implementam health checks:
 
 ```bash
 # Verificar servidor RAG
-curl http://localhost:8001/health
+curl http://localhost:5001/health
 
 # Verificar servidor API
-curl http://localhost:8000/health
+curl http://localhost:5000/health
 ```
 
 ### Logs
@@ -689,7 +689,7 @@ docker-compose logs -f
    docker-compose logs rag-server | grep -i guardrail
 
    # Testar endpoint de guardrails
-   curl http://localhost:8001/guardrails
+   curl http://localhost:5001/guardrails
    ```
 
 7. **Problemas de Acurácia DNA-Only**
@@ -699,7 +699,7 @@ docker-compose logs -f
    docker-compose logs rag-server | grep -i "accuracy\|validation"
 
    # Testar com pergunta simples
-   curl -X POST "http://localhost:8001/chat" \
+   curl -X POST "http://localhost:5001/chat" \
      -H "Content-Type: application/json" \
      -d '{"question": "Teste de acurácia"}'
    ```

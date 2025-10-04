@@ -8,7 +8,7 @@ Este guia explica como configurar o firewall da Hostinger para permitir acesso e
 
 - **Servidor**: Hostinger VPS
 - **IP Público**: 179.157.157.190
-- **Portas bloqueadas**: 3000, 8000, 8001
+- **Portas bloqueadas**: 3000, 5000, 5001
 - **Sintoma**: Conectividade OK (ping funciona), mas portas não respondem
 
 ## 🛠️ **Solução: Abrir Portas no Firewall**
@@ -18,8 +18,8 @@ Este guia explica como configurar o firewall da Hostinger para permitir acesso e
 | Serviço    | Porta | Protocolo | Descrição                  |
 | ---------- | ----- | --------- | -------------------------- |
 | Frontend   | 3000  | TCP       | Interface React do usuário |
-| RAG Server | 8000  | TCP       | Servidor de IA/RAG         |
-| API Server | 8001  | TCP       | API REST do sistema        |
+| RAG Server | 5000  | TCP       | Servidor de IA/RAG         |
+| API Server | 5001  | TCP       | API REST do sistema        |
 
 ## 📱 **Passo a Passo - Painel da Hostinger**
 
@@ -51,21 +51,21 @@ Origem: 0.0.0.0/0 (todas as origens)
 Descrição: Frontend React - DNA da Força
 ```
 
-#### **Regra 2 - RAG Server (Porta 8000)**
+#### **Regra 2 - RAG Server (Porta 5000)**
 
 ```
 Protocolo: TCP
-Porta: 8000
+Porta: 5000
 Ação: PERMITIR
 Origem: 0.0.0.0/0 (todas as origens)
 Descrição: RAG Server - IA/Processamento
 ```
 
-#### **Regra 3 - API Server (Porta 8001)**
+#### **Regra 3 - API Server (Porta 5001)**
 
 ```
 Protocolo: TCP
-Porta: 8001
+Porta: 5001
 Ação: PERMITIR
 Origem: 0.0.0.0/0 (todas as origens)
 Descrição: API Server - Backend REST
@@ -83,8 +83,8 @@ Descrição: API Server - Backend REST
 ```bash
 # Windows PowerShell
 Test-NetConnection -ComputerName 179.157.157.190 -Port 3000  # ❌ Falha
-Test-NetConnection -ComputerName 179.157.157.190 -Port 8000  # ❌ Falha
-Test-NetConnection -ComputerName 179.157.157.190 -Port 8001  # ❌ Falha
+Test-NetConnection -ComputerName 179.157.157.190 -Port 5000  # ❌ Falha
+Test-NetConnection -ComputerName 179.157.157.190 -Port 5001  # ❌ Falha
 ```
 
 ### **Depois da Configuração:**
@@ -92,8 +92,8 @@ Test-NetConnection -ComputerName 179.157.157.190 -Port 8001  # ❌ Falha
 ```bash
 # Windows PowerShell
 Test-NetConnection -ComputerName 179.157.157.190 -Port 3000  # ✅ Sucesso
-Test-NetConnection -ComputerName 179.157.157.190 -Port 8000  # ✅ Sucesso
-Test-NetConnection -ComputerName 179.157.157.190 -Port 8001  # ✅ Sucesso
+Test-NetConnection -ComputerName 179.157.157.190 -Port 5000  # ✅ Sucesso
+Test-NetConnection -ComputerName 179.157.157.190 -Port 5001  # ✅ Sucesso
 ```
 
 ## 🌐 **URLs de Acesso (Após Configuração)**
@@ -101,8 +101,8 @@ Test-NetConnection -ComputerName 179.157.157.190 -Port 8001  # ✅ Sucesso
 | Serviço    | URL                         | Descrição           |
 | ---------- | --------------------------- | ------------------- |
 | Frontend   | http://179.157.157.190:3000 | Interface principal |
-| RAG Server | http://179.157.157.190:8000 | Servidor de IA      |
-| API Server | http://179.157.157.190:8001 | API REST            |
+| RAG Server | http://179.157.157.190:5000 | Servidor de IA      |
+| API Server | http://179.157.157.190:5001 | API REST            |
 
 ## ⚠️ **Considerações de Segurança**
 
@@ -123,7 +123,7 @@ Origem: [SEU_IP_LOCAL]/32 (seu IP específico)
 
 ### **Se não conseguir configurar:**
 
-1. **Ticket de suporte**: Solicitar abertura das portas 3000, 8000, 8001
+1. **Ticket de suporte**: Solicitar abertura das portas 3000, 5000, 5001
 2. **Portas alternativas**: Usar 80, 443, 8080, 8443
 3. **Proxy reverso**: Configurar nginx para redirecionamento
 

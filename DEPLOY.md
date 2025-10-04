@@ -30,7 +30,7 @@
         GOOGLE_DRIVE_API_KEY=your_google_drive_api_key
         PREFER_OPEN_SOURCE_EMBEDDINGS=true
         OPEN_SOURCE_EMBEDDING_MODEL=intfloat/multilingual-e5-large
-        RAG_SERVER_URL=http://rag-server:8001
+        RAG_SERVER_URL=http://rag-server:5001
         CHROMA_PERSIST_DIR=/app/data/.chromadb
         MATERIALS_DIR=/app/data/materials
         JWT_ALGORITHM=HS256
@@ -44,8 +44,8 @@
         EMAIL_FROM=your_email@gmail.com
         HOSTINGER=false
         SERVER_IP=0.0.0.0
-        RAG_PORT=8000
-        API_PORT=8001
+        RAG_PORT=5000
+        API_PORT=5001
         FRONTEND_PORT=3000
         HOSTINGER_CHROMADB_PATH=/root/dna-forca-complete/backend/data/.chromadb
         HOSTINGER_MATERIALS_PATH=/root/dna-forca-complete/backend/data/materials

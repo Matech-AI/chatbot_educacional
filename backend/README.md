@@ -140,14 +140,14 @@ docker-compose down
    - Tipo: Web Service
    - Build Command: `docker build -f Dockerfile.rag -t rag-server .`
    - Start Command: `python rag_server.py --host 0.0.0.0 --port $PORT`
-   - Porta: 8000
+   - Porta: 5000
    - Variáveis de ambiente: Configure todas as chaves de API
 
    **Servidor API:**
    - Tipo: Web Service
    - Build Command: `docker build -f Dockerfile.api -t api-server .`
    - Start Command: `python api_server.py --host 0.0.0.0 --port $PORT`
-   - Porta: 8000
+   - Porta: 5000
    - Variáveis de ambiente: Configure todas as chaves de API
 
 3. **Configurar Rede**
@@ -167,7 +167,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 GOOGLE_DRIVE_API_KEY=your_google_drive_api_key_here
 
 # Configurações do servidor RAG
-RAG_SERVER_URL=http://rag-server:8000
+RAG_SERVER_URL=http://rag-server:5000
 CHROMA_PERSIST_DIR=/app/data/.chromadb
 MATERIALS_DIR=/app/data/materials
 
@@ -185,7 +185,7 @@ LOG_LEVEL=INFO
 
 ## 🔌 Endpoints
 
-### Servidor RAG (Porta 8001)
+### Servidor RAG (Porta 5001)
 
 | Endpoint             | Método | Descrição                         |
 | -------------------- | ------ | --------------------------------- |
@@ -199,7 +199,7 @@ LOG_LEVEL=INFO
 | `/chat`              | POST   | Chat básico                       |
 | `/chat-auth`         | POST   | Chat autenticado                  |
 
-### Servidor API (Porta 8000)
+### Servidor API (Porta 5000)
 
 | Endpoint             | Método | Descrição                   |
 | -------------------- | ------ | --------------------------- |
@@ -242,10 +242,10 @@ Ambos os servidores implementam health checks:
 
 ```bash
 # Verificar servidor RAG
-curl http://localhost:8001/health
+curl http://localhost:5001/health
 
 # Verificar servidor API
-curl http://localhost:8000/health
+curl http://localhost:5000/health
 ```
 
 ### Logs

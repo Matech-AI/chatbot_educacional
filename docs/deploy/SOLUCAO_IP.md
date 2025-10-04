@@ -137,8 +137,8 @@ Edite o arquivo `vite.config.ts`:
 if (isHostinger) {
   // Usar variável de ambiente ou detectar automaticamente
   const serverIP = process.env.SERVER_IP || "0.0.0.0";
-  apiTarget = `http://${serverIP}:8000`;
-  ragApiTarget = `http://${serverIP}:8001`;
+  apiTarget = `http://${serverIP}:5000`;
+  ragApiTarget = `http://${serverIP}:5001`;
 }
 ```
 
@@ -152,8 +152,8 @@ HOSTINGER=true
 SERVER_IP=2a02:4780:14:42c4::1
 
 # Portas dos serviços
-RAG_PORT=8000
-API_PORT=8001
+RAG_PORT=5000
+API_PORT=5001
 FRONTEND_PORT=3000
 
 # CORS Origins
@@ -179,8 +179,8 @@ chmod +x test_connectivity.sh
 Após a correção, as URLs devem ser:
 
 - **Frontend**: http://2a02:4780:14:42c4::1:3000
-- **RAG Server**: http://2a02:4780:14:42c4::1:8000
-- **API Server**: http://2a02:4780:14:42c4::1:8001
+- **RAG Server**: http://2a02:4780:14:42c4::1:5000
+- **API Server**: http://2a02:4780:14:42c4::1:5001
 
 ## 🚨 PROBLEMAS COMUNS
 
@@ -210,12 +210,12 @@ Certifique-se de que as portas estão abertas:
 
 ```bash
 # Verificar portas abertas
-netstat -tlnp | grep -E ':(3000|8000|8001)'
+netstat -tlnp | grep -E ':(3000|5000|5001)'
 
 # Abrir portas se necessário
 ufw allow 3000
-ufw allow 8000
-ufw allow 8001
+ufw allow 5000
+ufw allow 5001
 ```
 
 ## 🔄 MANUTENÇÃO

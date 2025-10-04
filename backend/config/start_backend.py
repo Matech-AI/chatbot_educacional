@@ -14,7 +14,7 @@ if __name__ == "__main__":
             sys.executable, "-m", "uvicorn",
             "main:app",
             "--host", "127.0.0.1",
-            "--port", "8000",
+            "--port", "5000",
             "--reload"
         ], check=True, cwd=backend_dir)  # Run from backend directory
     except KeyboardInterrupt:

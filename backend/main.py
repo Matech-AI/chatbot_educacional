@@ -2422,4 +2422,4 @@ if __name__ == "__main__":
     import uvicorn
     logger.info(
         "🚀 DNA da Força Backend v1.7 - Complete Recursive Drive Integration")
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="debug")
+    uvicorn.run(app, host="0.0.0.0", port=5000, log_level="debug")

@@ -86,13 +86,13 @@ Referência oficial Render (Persistent Disks e Magic‑Wormhole):
 
 ```
 MATERIALS_DIR=C:/caminho/absoluto/para/backend/data/materials
-RAG_SERVER_URL=http://localhost:8001
+RAG_SERVER_URL=http://localhost:5001
 EXPORT_GOOGLE_DOCS=true
 INCLUDE_DRIVE_VIDEOS=false
 ```
 
-- Rode RAG (porta 8001) e API (8000).
-- Frontend: `npm run dev` (proxy `/api` ➜ `http://localhost:8000`).
+- Rode RAG (porta 5001) e API (5000).
+- Frontend: `npm run dev` (proxy `/api` ➜ `http://localhost:5000`).
 
 ---
 

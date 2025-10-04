@@ -5,8 +5,8 @@
 Substituir **COMPLETAMENTE** o servidor Render com um sistema completo rodando no seu VPS Hostinger, baseado na configuração do `render.yaml`:
 
 - ✅ **Frontend React** (porta 3000) - Interface do usuário
-- ✅ **RAG Server** (porta 8000) - Sistema de IA e documentos
-- ✅ **API Server** (porta 8001) - Autenticação e gerenciamento
+- ✅ **RAG Server** (porta 5000) - Sistema de IA e documentos
+- ✅ **API Server** (porta 5001) - Autenticação e gerenciamento
 - ✅ **Nginx** - Proxy reverso e balanceamento
 - ✅ **Redis** - Cache e sessões
 - ✅ **Sistema completo** de gerenciamento
@@ -247,8 +247,8 @@ npm run dev
 ```bash
 # Em outro terminal SSH
 curl http://localhost:3000          # Frontend
-curl http://localhost:8000/status   # RAG Server
-curl http://localhost:8001/status   # API Server
+curl http://localhost:5000/status   # RAG Server
+curl http://localhost:5001/status   # API Server
 curl http://localhost/health        # Nginx Health Check
 ```
 
@@ -272,8 +272,8 @@ systemctl enable nginx
 ```bash
 ufw allow 80      # Nginx
 ufw allow 3000    # Frontend
-ufw allow 8000    # RAG Server
-ufw allow 8001    # API Server
+ufw allow 5000    # RAG Server
+ufw allow 5001    # API Server
 ufw enable
 ```
 
@@ -804,8 +804,8 @@ supervisorctl restart api-server
 ### **Acesso Direto:**
 
 - **Frontend**: http://31.97.16.142:3000
-- **RAG Server**: http://31.97.16.142:8000
-- **API Server**: http://31.97.16.142:8001
+- **RAG Server**: http://31.97.16.142:5000
+- **API Server**: http://31.97.16.142:5001
 
 ### **Acesso via Nginx (Recomendado):**
 
@@ -903,10 +903,10 @@ tail -f logs/frontend.log
 ```bash
 # Iniciar apenas RAG Server
 cd backend/rag_system
-uvicorn rag_handler:app --host 0.0.0.0 --port 8000 --reload
+uvicorn rag_handler:app --host 0.0.0.0 --port 5000 --reload
 
 # Iniciar apenas API Server
-uvicorn backend.api_server:app --host 0.0.0.0 --port 8001 --reload
+uvicorn backend.api_server:app --host 0.0.0.0 --port 5001 --reload
 
 # Ver logs específicos
 tail -f logs/rag-server.log
@@ -965,7 +965,7 @@ pip list
 
 ```bash
 # Verificar o que está usando as portas
-netstat -tlnp | grep -E ":3000|:8000|:8001"
+netstat -tlnp | grep -E ":3000|:5000|:5001"
 
 # Matar processos
 pkill -f "vite.*preview"
@@ -1138,7 +1138,7 @@ build: {
 
 ```bash
 # Editar start.sh para usar mais workers
-uvicorn rag_server:app --host 0.0.0.0 --port 8000 --workers 4 --worker-class uvicorn.workers.UvicornWorker
+uvicorn rag_server:app --host 0.0.0.0 --port 5000 --workers 4 --worker-class uvicorn.workers.UvicornWorker
 ```
 
 ### **3. Configuração do Nginx**
@@ -1219,8 +1219,8 @@ ufw default allow outgoing
 ufw allow ssh
 ufw allow 80
 ufw allow 3000
-ufw allow 8000
-ufw allow 8001
+ufw allow 5000
+ufw allow 5001
 ufw enable
 ```
 
@@ -1269,8 +1269,8 @@ certbot --nginx -d seu-dominio.com
 # Verificar conectividade
 ping google.com
 curl -I http://localhost:3000
-curl -I http://localhost:8000
-curl -I http://localhost:8001
+curl -I http://localhost:5000
+curl -I http://localhost:5001
 
 # Verificar recursos
 free -h
@@ -1375,8 +1375,8 @@ top
 ```javascript
 // O frontend já está configurado para usar as URLs locais
 // via proxy no vite.config.ts
-const API_BASE = "/api"; // Proxy para localhost:8001
-const RAG_API_BASE = "/rag-api"; // Proxy para localhost:8000
+const API_BASE = "/api"; // Proxy para localhost:5001
+const RAG_API_BASE = "/rag-api"; // Proxy para localhost:5000
 ```
 
 ### **2. Testar funcionalidades**

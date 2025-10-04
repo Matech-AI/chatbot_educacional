@@ -44,10 +44,10 @@ def get_port() -> int:
     """
     if is_render_environment():
         # No Render, usar a porta da variável de ambiente
-        return int(os.getenv("PORT", "8001"))
+        return int(os.getenv("PORT", "5001"))
     else:
         # Em desenvolvimento local
-        return 8001
+        return 5001
 
 
 def get_host() -> str:

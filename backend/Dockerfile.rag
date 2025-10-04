@@ -40,8 +40,8 @@ RUN mkdir -p /app/data/materials /app/logs
 # Copiar script de inicialização do RAG
 COPY rag_server.py .
 
-# Expor porta (ajustar para 8001 conforme render.yaml)
-EXPOSE 8001
+# Expor porta (ajustar para 5001 conforme render.yaml)
+EXPOSE 5001
 
 # Comando de inicialização
 CMD ["python", "rag_server.py"]

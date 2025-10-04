@@ -41,7 +41,7 @@ COPY api_server.py .
 RUN mkdir -p /app/data/materials /app/logs
 
 # Expor porta
-EXPOSE 8000
+EXPOSE 5000
 
 # Comando de inicialização
 CMD ["python", "api_server.py"]

@@ -45,10 +45,10 @@ def get_port() -> int:
     """
     if is_hostinger_environment():
         # No Hostinger, usar as portas configuradas
-        return int(os.getenv("PORT", "8001"))
+        return int(os.getenv("PORT", "5001"))
     else:
         # Em desenvolvimento local
-        return 8001
+        return 5001
 
 
 def get_host() -> str:

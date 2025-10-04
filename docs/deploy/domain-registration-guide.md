@@ -148,7 +148,7 @@ server {
 
     # API Server
     location /api/ {
-        proxy_pass http://localhost:8001/;
+        proxy_pass http://localhost:5001/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -161,7 +161,7 @@ server {
 
     # RAG Server
     location /rag/ {
-        proxy_pass http://localhost:8000/;
+        proxy_pass http://localhost:5000/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -174,7 +174,7 @@ server {
 
     # Health check
     location /health {
-        proxy_pass http://localhost:8001/health;
+        proxy_pass http://localhost:5001/health;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -258,7 +258,7 @@ ufw allow 22/tcp
 
 ```bash
 # Verificar portas abertas
-netstat -tlnp | grep -E ":80|:443|:3000|:8000|:8001"
+netstat -tlnp | grep -E ":80|:443|:3000|:5000|:5001"
 
 # Verificar se Nginx está escutando
 ss -tlnp | grep nginx
@@ -329,12 +329,12 @@ export default defineConfig({
     port: 3000,
     proxy: {
       "/api": {
-        target: "http://localhost:8001",
+        target: "http://localhost:5001",
         changeOrigin: true,
         secure: false,
       },
       "/rag": {
-        target: "http://localhost:8000",
+        target: "http://localhost:5000",
         changeOrigin: true,
         secure: false,
       },
@@ -491,14 +491,14 @@ echo $! > logs/frontend.pid
 echo "🤖 Iniciando RAG Server..."
 cd /root/dna-forca-complete/backend/rag_system
 source /root/dna-forca-complete/.venv/bin/activate
-uvicorn rag_handler:app --host 0.0.0.0 --port 8000 > /root/dna-forca-complete/logs/rag-server.log 2>&1 &
+uvicorn rag_handler:app --host 0.0.0.0 --port 5000 > /root/dna-forca-complete/logs/rag-server.log 2>&1 &
 echo $! > /root/dna-forca-complete/logs/rag-server.pid
 
 # API Server
 echo "🔧 Iniciando API Server..."
 cd /root/dna-forca-complete/backend
 source /root/dna-forca-complete/.venv/bin/activate
-uvicorn api_server:app --host 0.0.0.0 --port 8001 > /root/dna-forca-complete/logs/api-server.log 2>&1 &
+uvicorn api_server:app --host 0.0.0.0 --port 5001 > /root/dna-forca-complete/logs/api-server.log 2>&1 &
 echo $! > /root/dna-forca-complete/logs/api-server.pid
 
 echo "✅ Sistema iniciado!"

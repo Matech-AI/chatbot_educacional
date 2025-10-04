@@ -73,7 +73,7 @@ O Sistema RAG DNA da Força é composto por vários componentes que trabalham em
 #### **Operações Diárias:**
 ```bash
 # Verificar status
-curl http://localhost:8000/api/collections
+curl http://localhost:5000/api/collections
 
 # Verificar tamanho
 du -sh backend/data/.chromadb/
@@ -147,7 +147,7 @@ AI_CONFIGS = {
 tail -f backend/logs/ai_requests.log
 
 # Métricas de performance
-curl http://localhost:8000/api/metrics/ai
+curl http://localhost:5000/api/metrics/ai
 ```
 
 ### **Sistema de Prompts**
@@ -178,7 +178,7 @@ curl http://localhost:8000/api/metrics/ai
 #### **Monitoramento:**
 ```bash
 # Verificar status da sincronização
-curl http://localhost:8000/api/sync/status
+curl http://localhost:5000/api/sync/status
 
 # Verificar logs de sincronização
 tail -f backend/logs/drive_sync.log
@@ -209,25 +209,25 @@ python backend/scripts/repair_sync.py
 #### **Performance:**
 ```bash
 # Response time
-curl http://localhost:8000/api/metrics/performance
+curl http://localhost:5000/api/metrics/performance
 
 # Uso de memória
-curl http://localhost:8000/api/metrics/memory
+curl http://localhost:5000/api/metrics/memory
 
 # Uso de CPU
-curl http://localhost:8000/api/metrics/cpu
+curl http://localhost:5000/api/metrics/cpu
 ```
 
 #### **Negócio:**
 ```bash
 # Usuários ativos
-curl http://localhost:8000/api/metrics/users
+curl http://localhost:5000/api/metrics/users
 
 # Perguntas respondidas
-curl http://localhost:8000/api/metrics/questions
+curl http://localhost:5000/api/metrics/questions
 
 # Qualidade das respostas
-curl http://localhost:8000/api/metrics/quality
+curl http://localhost:5000/api/metrics/quality
 ```
 
 ### **Alertas e Notificações**
@@ -394,7 +394,7 @@ const debouncedSearch = useDebounce(searchTerm, 300);
 docker-compose -f docker-compose.new.yml up -d
 
 # 2. Teste a nova versão
-curl http://localhost:8001/health
+curl http://localhost:5001/health
 
 # 3. Switch de tráfego
 # Atualize load balancer ou proxy
@@ -416,7 +416,7 @@ if error_rate > 5% or response_time > 5s:
 #### **Checklist de Verificação:**
 ```bash
 # 1. Health checks
-curl http://localhost:8000/health
+curl http://localhost:5000/health
 
 # 2. Funcionalidades críticas
 - Login de usuário

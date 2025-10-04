@@ -63,7 +63,7 @@ app.add_middleware(
 ```bash
 # Frontend - Verifique a URL da API
 VITE_API_URL=https://seu-backend.com
-# Não http://localhost:8000 em produção
+# Não http://localhost:5000 em produção
 ```
 
 ---
@@ -111,7 +111,7 @@ AI_PROVIDERS=["openai", "anthropic", "local"]
 #### **Soluções:**
 ```python
 # 1. Reduza o tamanho do contexto
-MAX_CONTEXT_LENGTH = 4000  # Reduza de 8000 para 4000
+MAX_CONTEXT_LENGTH = 4000  # Reduza de 5000 para 4000
 
 # 2. Implemente chunking inteligente
 def smart_chunking(text, max_length=4000):
@@ -236,15 +236,15 @@ def sync_with_retry():
 #### **Soluções:**
 ```bash
 # 1. Encontre o processo usando a porta
-lsof -i :8000
+lsof -i :5000
 # ou
-netstat -tulpn | grep :8000
+netstat -tulpn | grep :5000
 
 # 2. Mate o processo
 kill -9 <PID>
 
 # 3. Ou use uma porta diferente
-PORT=8001 python main.py
+PORT=5001 python main.py
 ```
 
 ---
@@ -398,14 +398,14 @@ ps aux | grep python
 #### **3. Testes de Conectividade:**
 ```bash
 # Teste da API
-curl -v http://localhost:8000/health
+curl -v http://localhost:5000/health
 
 # Teste do banco
-curl -v http://localhost:8000/api/collections
+curl -v http://localhost:5000/api/collections
 
 # Teste de autenticação
 curl -v -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8000/api/user/profile
+  http://localhost:5000/api/user/profile
 ```
 
 ---

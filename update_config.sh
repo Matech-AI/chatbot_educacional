@@ -26,8 +26,8 @@ cd ..
 # Atualizar variáveis de ambiente
 export HOSTINGER=true
 export SERVER_IP=$SERVER_IP
-export RAG_PORT=8000
-export API_PORT=8001
+export RAG_PORT=5000
+export API_PORT=5001
 export FRONTEND_PORT=3000
 
 # Criar arquivo .env se não existir
@@ -39,8 +39,8 @@ HOSTINGER=true
 SERVER_IP=$SERVER_IP
 
 # Portas dos serviços
-RAG_PORT=8000
-API_PORT=8001
+RAG_PORT=5000
+API_PORT=5001
 FRONTEND_PORT=3000
 
 # CORS Origins
@@ -72,19 +72,19 @@ fi
 echo ""
 echo "🔍 Testando conectividade..."
 echo "Frontend: http://$SERVER_IP:3000"
-echo "RAG Server: http://$SERVER_IP:8000"
-echo "API Server: http://$SERVER_IP:8001"
+echo "RAG Server: http://$SERVER_IP:5000"
+echo "API Server: http://$SERVER_IP:5001"
 
 # Verificar se os serviços estão rodando
 echo ""
 echo "📊 Status dos serviços:"
-if pgrep -f "uvicorn.*8000" > /dev/null; then
+if pgrep -f "uvicorn.*5000" > /dev/null; then
     echo "✅ RAG Server: ATIVO"
 else
     echo "❌ RAG Server: INATIVO"
 fi
 
-if pgrep -f "uvicorn.*8001" > /dev/null; then
+if pgrep -f "uvicorn.*5001" > /dev/null; then
     echo "✅ API Server: ATIVO"
 else
     echo "❌ API Server: INATIVO"
@@ -100,8 +100,8 @@ echo ""
 echo "🎉 Configurações atualizadas com sucesso!"
 echo "📍 IP do servidor: $SERVER_IP"
 echo "📍 Frontend: http://$SERVER_IP:3000"
-echo "📍 RAG Server: http://$SERVER_IP:8000"
-echo "📍 API Server: http://$SERVER_IP:8001"
+echo "📍 RAG Server: http://$SERVER_IP:5000"
+echo "📍 API Server: http://$SERVER_IP:5001"
 echo ""
 echo "💡 Para aplicar as mudanças, reinicie os serviços:"
 echo "   ./stop_all.sh && ./start_all.sh"

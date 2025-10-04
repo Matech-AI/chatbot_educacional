@@ -19,8 +19,8 @@ fi
 echo ""
 echo "💡 INSTRUÇÕES DE ACESSO:"
 echo "💡 1. Do seu PC local: http://$SERVER_IP:3000 (Frontend)"
-echo "💡 2. Do seu PC local: http://$SERVER_IP:8000 (RAG Server)"
-echo "💡 3. Do seu PC local: http://$SERVER_IP:8001 (API Server)"
+echo "💡 2. Do seu PC local: http://$SERVER_IP:5000 (RAG Server)"
+echo "💡 3. Do seu PC local: http://$SERVER_IP:5001 (API Server)"
 echo ""
 
 # Status do Frontend
@@ -49,8 +49,8 @@ if [ -f logs/rag-server.pid ]; then
     if kill -0 $RAG_PID 2>/dev/null; then
         echo "✅ Status: ATIVO"
         echo "📍 PID: $RAG_PID"
-        echo "📍 Porta: 8000"
-        echo "📍 URL: http://$SERVER_IP:8000"
+        echo "📍 Porta: 5000"
+        echo "📍 URL: http://$SERVER_IP:5000"
         echo "�� Diretório: backend/rag_system/"
     else
         echo "❌ Status: INATIVO (PID inválido)"
@@ -68,8 +68,8 @@ if [ -f logs/rag-server.pid ]; then
     if kill -0 $API_PID 2>/dev/null; then
         echo "✅ Status: ATIVO"
         echo "📍 PID: $API_PID"
-        echo "📍 Porta: 8001"
-        echo "📍 URL: http://$SERVER_IP:8001"
+        echo "📍 Porta: 5001"
+        echo "📍 URL: http://$SERVER_IP:5001"
         echo "📍 Arquivo: backend/api_server.py"
     else
         echo "❌ Status: INATIVO (PID inválido)"
@@ -99,7 +99,7 @@ echo "Disco: $(df -h / | awk 'NR==2{print $5}')"
 # Status das portas
 echo ""
 echo "🌐 PORTAS EM USO:"
-netstat -tlnp | grep -E ":3000|:8000|:8001|:6379" | sort
+netstat -tlnp | grep -E ":3000|:5000|:5001|:6379" | sort
 
 # Verificar estrutura do projeto
 echo ""
