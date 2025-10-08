@@ -1,12 +1,13 @@
 # Dockerfile para o Servidor RAG
-FROM python:3.11-slim
+# Stage 1: Builder
+FROM python:3.11-slim as builder
 
-# Definir variáveis de ambiente
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Instalar dependências do sistema
+WORKDIR /app
+
+# Install system dependencies for building
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
@@ -16,33 +17,37 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-por \
     && rm -rf /var/lib/apt/lists/*
 
-# Criar diretório de trabalho
-WORKDIR /app
-
-# Copiar requirements principal
-COPY config/requirements.txt .
-
-# Instalar dependências Python
+# Copy only requirements and install them
+COPY backend/config/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar código do servidor RAG
-COPY rag_system/ ./rag_system/
-COPY chat_agents/ ./chat_agents/
-COPY auth/ ./auth/
-COPY utils/ ./utils/
-COPY video_processing/ ./video_processing/
-COPY config/ ./config/
+# Stage 2: Production
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /app
+
+# Copy installed packages from builder stage
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy only necessary application code
+COPY backend/rag_server.py ./backend/
+COPY backend/rag_system/ ./backend/rag_system/
+COPY backend/chat_agents/ ./backend/chat_agents/
+COPY backend/auth/ ./backend/auth/
+COPY backend/utils/ ./backend/utils/
+COPY backend/video_processing/ ./backend/video_processing/
+COPY backend/config/ ./backend/config/
 COPY supabase/ ./supabase/
 
-# Criar apenas diretórios básicos (SEM .chromadb automático)
+# Create basic directories
 RUN mkdir -p /app/data/materials /app/logs
-# NOTA: .chromadb será criado apenas quando necessário, não automaticamente
+# NOTE: .chromadb will be created only when needed, not automatically
 
-# Copiar script de inicialização do RAG
-COPY rag_server.py .
-
-# Expor porta (ajustar para 5001 conforme render.yaml)
 EXPOSE 5001
 
-# Comando de inicialização
-CMD ["python", "rag_server.py"]
+CMD ["python", "backend/rag_server.py"]

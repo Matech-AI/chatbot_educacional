@@ -1,36 +1,51 @@
 # Dockerfile para o Servidor API Geral
-FROM python:3.11-slim
+# Stage 1: Builder
+FROM python:3.11-slim as builder
 
-# Definir variáveis de ambiente
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Instalar dependências do sistema
+WORKDIR /app
+
+# Install system dependencies for building
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Criar diretório de trabalho
-WORKDIR /app
-
-# Copiar requirements
+# Copy only requirements and install them
 COPY backend/config/requirements.txt .
-
-# Instalar dependências Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar todo o código do backend e o diretório supabase
-COPY backend/ ./backend/
+# Stage 2: Production
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /app
+
+# Copy installed packages from builder stage
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy only necessary application code
+COPY backend/api_server.py ./backend/
+COPY backend/main.py ./backend/
+COPY backend/auth/ ./backend/auth/
+COPY backend/data/ ./backend/data/
+COPY backend/config/ ./backend/config/
+COPY backend/utils/ ./backend/utils/
+COPY backend/drive_sync/ ./backend/drive_sync/
+COPY backend/maintenance/ ./backend/maintenance/
+COPY backend/video_processing/ ./backend/video_processing/
 COPY supabase/ ./supabase/
 
-# Criar apenas diretórios básicos (SEM .chromadb automático)
+# Create basic directories
 RUN mkdir -p /app/data/materials /app/logs
 
-# Expor porta
 EXPOSE 5000
 
-# Comando de inicialização
 CMD ["python", "backend/api_server.py"]

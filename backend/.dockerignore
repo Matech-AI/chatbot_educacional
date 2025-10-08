@@ -1,63 +1,16 @@
-# Python
-__pycache__
-*.py[cod]
-*$py.class
-*.so
-.Python
-env
-pip-log.txt
-pip-delete-this-directory.txt
-.tox
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.git
-.mypy_cache
-.pytest_cache
-.hypothesis
-
-# Virtual environments
-.env
-.venv
-env/
+__pycache__/
+*.pyc
+*.pytest_cache/
+.git/
+.venv/
 venv/
-ENV/
-env.bak/
-venv.bak/
-
-# IDE
-.vscode
-.idea
-*.swp
-*.swo
-
-# OS
+.vscode/
 .DS_Store
-Thumbs.db
-
-# Logs
-logs/
 *.log
-
-# Ignorar diretório de dados
-data/
-*.db
-*.sqlite3
-
-# Docker
-Dockerfile*
-docker-compose*
-.dockerignore
-
-# Documentation
+*.env
+env.example
+tests/
+docs/
 README.md
-*.md
-
-# Frontend (não necessário para backend)
-../src/
-../package.json
-../vite.config.ts
+requirements_visualizer.txt
+visualize_vector_db.py
