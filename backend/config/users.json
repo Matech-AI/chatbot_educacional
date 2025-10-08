@@ -1,0 +1,16 @@
+[
+  {
+    "email": "admin@example.com",
+    "password": "adminpassword",
+    "full_name": "Admin User",
+    "role": "admin",
+    "id": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+  },
+  {
+    "email": "user@example.com",
+    "password": "userpassword",
+    "full_name": "Regular User",
+    "role": "student",
+    "id": "f0e9d8c7-b6a5-4321-fedc-ba9876543210"
+  }
+]

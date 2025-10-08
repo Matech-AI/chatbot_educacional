@@ -53,7 +53,6 @@ google-generativeai
 # Autenticação e segurança (se o RAG server precisar de autenticação direta)
 python-jose
 passlib[bcrypt]
-supabase
 sqlalchemy
 
 # Utilitários

@@ -25,10 +25,17 @@ from dotenv import load_dotenv
 import aiohttp
 from drive_sync.drive_handler import DriveHandler
 from drive_sync.drive_handler_recursive import RecursiveDriveHandler
-from auth.auth import get_current_user, User, router as auth_router
-from auth.auth import get_optional_current_user
+from auth.auth import (
+    get_json_current_user,
+    User,
+    router as auth_router,
+    create_access_token,
+    verify_password,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    Token,
+    TokenData
+)
 from auth.user_management import router as user_management_router
-from auth.supabase_auth import router as supabase_auth_router
 # Educational agent router is now part of the RAG server
 from chat_agents.educational_agent import router as educational_agent_router
 import threading
@@ -67,8 +74,6 @@ app.add_middleware(
 app.include_router(user_management_router)
 # Inclua o router de autenticação para endpoints públicos como redefinição de senha
 app.include_router(auth_router)
-# Inclua o router de autenticação Supabase
-app.include_router(supabase_auth_router, prefix="/api/auth", tags=["Supabase Auth"])
 # The educational agent router is now exposed via the RAG server
 app.include_router(educational_agent_router)
 
@@ -172,8 +177,8 @@ def get_default_system_settings():
     }
 
 
-# OAuth2 scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
+# OAuth2 scheme (using the new token URL)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 logger.info(
     "🚀 DNA da Força API v1.7.0 - Microserviços e Configurações Persistentes")
@@ -501,16 +506,35 @@ async def get_status():
 # ========================================
 
 
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    """
+    Handles user login and returns an access token.
+    """
+    user = verify_password(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
 @app.post("/initialize")
 async def initialize_system(
     api_key: str = Form(...),
     drive_folder_id: Optional[str] = Form(None),
     drive_api_key: Optional[str] = Form(None),
     credentials_json: Optional[UploadFile] = File(None),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Initialize the system with API keys and optional Drive materials"""
-    logger.info(f"🚀 System initialization started by: {current_user.username}")
+    logger.info(f"🚀 System initialization started by: {current_user.email}")
     logger.info(f"🔑 OpenAI API Key provided: {len(api_key) > 0}")
     logger.info(f"📁 Drive folder ID: {drive_folder_id}")
     logger.info(
@@ -671,10 +695,10 @@ async def chat(question: Question):
 
 
 @app.post("/chat-auth", response_model=Response)
-async def chat_auth(question: Question, current_user: User = Depends(get_current_user)):
+async def chat_auth(question: Question, current_user: User = Depends(get_json_current_user)):
     """Process a chat question with authentication - forwards to RAG server"""
     logger.info(
-        f"💬 Chat request from {current_user.username}: {question.content[:50]}...")
+        f"💬 Chat request from {current_user.email}: {question.content[:50]}...")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -698,11 +722,11 @@ async def chat_auth(question: Question, current_user: User = Depends(get_current
 
 
 @app.post("/chat/agent")
-async def chat_agent_stream(request: ChatRequest, current_user: User = Depends(get_current_user)):
+async def chat_agent_stream(request: ChatRequest, current_user: User = Depends(get_json_current_user)):
     """Endpoint to stream responses from the chat agent - forwards to RAG server"""
     thread_id = request.thread_id or str(uuid4())
     logger.info(
-        f"🤖 Agent chat request from {current_user.username} on thread {thread_id}: {request.message[:50]}...")
+        f"🤖 Agent chat request from {current_user.email} on thread {thread_id}: {request.message[:50]}...")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -782,33 +806,33 @@ async def get_session_context_proxy(session_id: str):
 
 
 @asynccontextmanager
-async def get_user_drive_handler(username: str, api_key: Optional[str] = None):
+async def get_user_drive_handler(user_email: str, api_key: Optional[str] = None):
     """Get or create a user-specific drive handler with proper locking and auth caching"""
     # Use a global lock when creating user locks to avoid race conditions
     with user_handler_creation_lock:
         # Create lock for this user if it doesn't exist
-        if username not in user_handler_locks:
-            user_handler_locks[username] = threading.Lock()
+        if user_email not in user_handler_locks:
+            user_handler_locks[user_email] = threading.Lock()
 
     # Acquire the lock for this user
-    with user_handler_locks[username]:
+    with user_handler_locks[user_email]:
         # Create handler if it doesn't exist
-        if username not in user_drive_handlers:
-            user_drive_handlers[username] = RecursiveDriveHandler()
-            logger.info(f"Created new drive handler for user: {username}")
+        if user_email not in user_drive_handlers:
+            user_drive_handlers[user_email] = RecursiveDriveHandler()
+            logger.info(f"Created new drive handler for user: {user_email}")
 
         # Get the user's handler
-        handler = user_drive_handlers[username]
+        handler = user_drive_handlers[user_email]
 
         # Verificar se já autenticamos com sucesso anteriormente
         auth_needed = True
-        if username in user_auth_status and user_auth_status[username]['authenticated']:
+        if user_email in user_auth_status and user_auth_status[user_email]['authenticated']:
             # Verificar se o token ainda é válido (verificação a cada 30 minutos)
-            last_check = user_auth_status[username]['last_check']
+            last_check = user_auth_status[user_email]['last_check']
             if time.time() - last_check < 1800:  # 30 minutos
                 auth_needed = False
                 logger.info(
-                    f"Reusing cached authentication for user: {username}")
+                    f"Reusing cached authentication for user: {user_email}")
 
         # Authenticate if needed
         if auth_needed:
@@ -816,7 +840,7 @@ async def get_user_drive_handler(username: str, api_key: Optional[str] = None):
             # ou com api_key se fornecido
             auth_success = handler.authenticate(api_key=api_key)
             # Armazenar status de autenticação
-            user_auth_status[username] = {
+            user_auth_status[user_email] = {
                 'authenticated': auth_success,
                 'last_check': time.time()
             }
@@ -833,25 +857,25 @@ async def get_user_drive_handler(username: str, api_key: Optional[str] = None):
 async def sync_drive_recursive(
     data: RecursiveSync,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Start recursive Google Drive sync"""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    logger.info(f"🔄 Recursive sync requested by: {current_user.username}")
+    logger.info(f"🔄 Recursive sync requested by: {current_user.email}")
     logger.info(f"📁 Folder ID: {data.folder_id}")
 
     try:
         # Get user-specific drive handler
-        async with get_user_drive_handler(current_user.username, data.api_key) as user_handler:
+        async with get_user_drive_handler(current_user.email, data.api_key) as user_handler:
             # Verify authentication
             if not user_handler.service:
                 raise HTTPException(
                     status_code=400, detail="Could not authenticate with Google Drive")
 
             # Start background download
-            download_id = f"download_{current_user.username}_{int(time.time())}"
+            download_id = f"download_{current_user.email}_{int(time.time())}"
 
             # Update download progress with thread safety
             with download_progress_lock:
@@ -863,7 +887,7 @@ async def sync_drive_recursive(
                     "current_file": "",
                     "started_at": datetime.now().isoformat(),
                     "folder_id": data.folder_id,
-                    "user": current_user.username
+                    "user": current_user.email
                 }
                 active_downloads[download_id] = True
 
@@ -949,18 +973,18 @@ async def sync_drive_recursive(
 @app.post("/recursive-drive-analysis")
 async def recursive_drive_analysis(
     data: DriveSync,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Analyze folder structure recursively without downloading"""
     logger.info(
-        f"🔍 Recursive drive analysis requested by: {current_user.username}")
+        f"🔍 Recursive drive analysis requested by: {current_user.email}")
 
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     try:
         # Use user-specific handler for better concurrency
-        async with get_user_drive_handler(current_user.username, data.api_key) as user_handler:
+        async with get_user_drive_handler(current_user.email, data.api_key) as user_handler:
             if not user_handler.service:
                 raise HTTPException(
                     status_code=400, detail="Could not authenticate with Google Drive")
@@ -996,18 +1020,18 @@ async def recursive_drive_analysis(
 
 @app.post("/recursive-drive-force-redownload")
 async def recursive_drive_force_redownload(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Force redownload of all files by clearing cache and rescanning existing files"""
     logger.info(
-        f"🔄 Force redownload requested by: {current_user.username}")
+        f"🔄 Force redownload requested by: {current_user.email}")
 
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     try:
         # Use user-specific handler for better concurrency
-        async with get_user_drive_handler(current_user.username) as user_handler:
+        async with get_user_drive_handler(current_user.email) as user_handler:
             if not user_handler.service:
                 raise HTTPException(
                     status_code=400, detail="Could not authenticate with Google Drive")
@@ -1033,24 +1057,24 @@ async def recursive_drive_force_redownload(
 async def recursive_drive_sync(
     data: DriveSync,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Sync files recursively from the specified Google Drive folder"""
     logger.info(
-        f"🔄 Recursive drive sync requested by: {current_user.username}")
+        f"🔄 Recursive drive sync requested by: {current_user.email}")
 
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     try:
         # Use user-specific handler for better concurrency
-        async with get_user_drive_handler(current_user.username, data.api_key) as user_handler:
+        async with get_user_drive_handler(current_user.email, data.api_key) as user_handler:
             if not user_handler.service:
                 raise HTTPException(
                     status_code=400, detail="Could not authenticate with Google Drive")
 
             # Create a download ID for tracking
-            download_id = f"sync_{current_user.username}_{int(time.time())}"
+            download_id = f"sync_{current_user.email}_{int(time.time())}"
 
             # Update download progress with thread safety
             with download_progress_lock:
@@ -1062,7 +1086,7 @@ async def recursive_drive_sync(
                     "current_file": "",
                     "started_at": datetime.now().isoformat(),
                     "folder_id": data.folder_id,
-                    "user": current_user.username
+                    "user": current_user.email
                 }
                 active_downloads[download_id] = True
 
@@ -1153,15 +1177,15 @@ async def recursive_drive_sync(
 async def analyze_folder(
     folder_id: str,
     api_key: Optional[str] = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Analyze folder structure without downloading"""
     logger.info(
-        f"🔍 Folder analysis requested by {current_user.username}: {folder_id}")
+        f"🔍 Folder analysis requested by {current_user.email}: {folder_id}")
 
     try:
         # Use user-specific handler for better concurrency
-        async with get_user_drive_handler(current_user.username, api_key) as user_handler:
+        async with get_user_drive_handler(current_user.email, api_key) as user_handler:
             if not user_handler.service:
                 raise HTTPException(
                     status_code=400, detail="Authentication failed")
@@ -1184,7 +1208,7 @@ async def analyze_folder(
 @app.get("/drive/download-progress")
 async def get_download_progress(
     download_id: Optional[str] = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Get download progress status"""
     # Use thread safety when accessing shared resources
@@ -1196,7 +1220,7 @@ async def get_download_progress(
 
             # Check if this is the user's download or if user is admin
             progress_info = download_progress[download_id]
-            if current_user.role != "admin" and progress_info.get("user") != current_user.username:
+            if current_user.role != "admin" and progress_info.get("user") != current_user.email:
                 raise HTTPException(
                     status_code=403, detail="Not authorized to view this download")
 
@@ -1214,7 +1238,7 @@ async def get_download_progress(
         user_active_downloads = []
 
         for dl_id, progress in download_progress.items():
-            if progress.get("user") == current_user.username:
+            if progress.get("user") == current_user.email:
                 user_downloads[dl_id] = progress
                 if dl_id in active_downloads:
                     user_active_downloads.append(dl_id)
@@ -1228,7 +1252,7 @@ async def get_download_progress(
 @app.post("/drive/cancel-download")
 async def cancel_download(
     download_id: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Cancel active download"""
     # Use thread safety when accessing shared resources
@@ -1239,7 +1263,7 @@ async def cancel_download(
         # Check if this is the user's download or if user is admin/instructor
         if download_id in download_progress:
             progress_info = download_progress[download_id]
-            if current_user.role not in ["admin", "instructor"] and progress_info.get("user") != current_user.username:
+            if current_user.role not in ["admin", "instructor"] and progress_info.get("user") != current_user.email:
                 raise HTTPException(
                     status_code=403, detail="Not authorized to cancel this download")
 
@@ -1265,7 +1289,7 @@ async def cancel_download(
 
 
 @app.get("/drive/folder-stats")
-async def get_folder_stats(current_user: User = Depends(get_current_user)):
+async def get_folder_stats(current_user: User = Depends(get_json_current_user)):
     """Get detailed folder statistics"""
     try:
         stats = drive_handler.get_download_stats()
@@ -1305,10 +1329,10 @@ async def get_folder_stats(current_user: User = Depends(get_current_user)):
 
 
 @app.get("/drive-stats-detailed")
-async def get_drive_stats_detailed(current_user: User = Depends(get_current_user)):
+async def get_drive_stats_detailed(current_user: User = Depends(get_json_current_user)):
     """Get detailed Drive statistics with folder structure"""
     logger.info(
-        f"📊 Detailed drive stats requested by: {current_user.username}")
+        f"📊 Detailed drive stats requested by: {current_user.email}")
 
     try:
         # Get basic stats from drive handler
@@ -1402,10 +1426,10 @@ async def get_drive_stats_detailed(current_user: User = Depends(get_current_user
 @app.get("/drive/test-connection")
 async def test_drive_connection(
     api_key: Optional[str] = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Test Google Drive connection without performing operations"""
-    logger.info(f"🧪 Drive connection test by: {current_user.username}")
+    logger.info(f"🧪 Drive connection test by: {current_user.email}")
 
     try:
         # Test authentication
@@ -1467,12 +1491,12 @@ async def test_drive_connection(
 
 
 @app.post("/drive/clear-cache")
-async def clear_drive_cache(current_user: User = Depends(get_current_user)):
+async def clear_drive_cache(current_user: User = Depends(get_json_current_user)):
     """Clear drive handler cache and reset state"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    logger.info(f"🧹 Drive cache clear requested by: {current_user.username}")
+    logger.info(f"🧹 Drive cache clear requested by: {current_user.email}")
 
     try:
         # Reset global drive handler state
@@ -1512,12 +1536,12 @@ async def clear_drive_cache(current_user: User = Depends(get_current_user)):
 
 
 @app.post("/maintenance/clear-drive-cache")
-async def maintenance_clear_drive_cache(current_user: User = Depends(get_current_user)):
+async def maintenance_clear_drive_cache(current_user: User = Depends(get_json_current_user)):
     """Clear the drive handler's file hashes cache to allow redownloading files"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    logger.info(f"🧹 Clear drive cache requested by: {current_user.username}")
+    logger.info(f"🧹 Clear drive cache requested by: {current_user.email}")
 
     try:
         # Limpar o cache do simple_drive_handler
@@ -1546,11 +1570,11 @@ async def maintenance_clear_drive_cache(current_user: User = Depends(get_current
 @app.post("/test-drive-folder")
 async def test_drive_folder(
     data: DriveTest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Test access to a Google Drive folder (non-recursive)"""
     logger.info(
-        f"🧪 Drive folder test requested by: {current_user.username}")
+        f"🧪 Drive folder test requested by: {current_user.email}")
 
     try:
         # Alterado para usar o simple_drive_handler em vez do drive_handler recursivo
@@ -1587,10 +1611,10 @@ async def test_drive_folder(
 @app.post("/sync-drive")
 async def sync_drive(
     data: DriveSync,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Sync materials from Google Drive (legacy endpoint)"""
-    logger.info(f"🔄 Legacy drive sync requested by: {current_user.username}")
+    logger.info(f"🔄 Legacy drive sync requested by: {current_user.email}")
 
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -1648,9 +1672,9 @@ async def sync_drive(
 
 
 @app.get("/drive-stats")
-async def get_drive_stats(current_user: User = Depends(get_current_user)):
+async def get_drive_stats(current_user: User = Depends(get_json_current_user)):
     """Get Drive statistics (legacy endpoint)"""
-    logger.info(f"📊 Legacy drive stats requested by: {current_user.username}")
+    logger.info(f"📊 Legacy drive stats requested by: {current_user.email}")
 
     try:
         stats = drive_handler.get_download_stats()
@@ -1677,12 +1701,12 @@ async def get_drive_stats(current_user: User = Depends(get_current_user)):
 
 
 @app.post("/maintenance/cleanup-duplicates")
-async def cleanup_duplicate_files(current_user: User = Depends(get_current_user)):
+async def cleanup_duplicate_files(current_user: User = Depends(get_json_current_user)):
     """Remove duplicate files based on content hash"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    logger.info(f"🧹 Cleanup duplicates requested by: {current_user.username}")
+    logger.info(f"🧹 Cleanup duplicates requested by: {current_user.email}")
 
     try:
         materials_dir = Path("data/materials")
@@ -1737,7 +1761,7 @@ async def cleanup_duplicate_files(current_user: User = Depends(get_current_user)
 
 
 @app.post("/maintenance/cleanup-empty-folders")
-async def cleanup_empty_folders(current_user: User = Depends(get_current_user)):
+async def cleanup_empty_folders(current_user: User = Depends(get_json_current_user)):
     """Remove empty folders"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -1773,13 +1797,13 @@ async def cleanup_empty_folders(current_user: User = Depends(get_current_user)):
 
 
 @app.post("/maintenance/optimize-storage")
-async def optimize_storage(current_user: User = Depends(get_current_user)):
+async def optimize_storage(current_user: User = Depends(get_json_current_user)):
     """Run comprehensive storage optimization"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     logger.info(
-        f"⚡ Storage optimization requested by: {current_user.username}")
+        f"⚡ Storage optimization requested by: {current_user.email}")
 
     try:
         results = {
@@ -1824,12 +1848,12 @@ async def optimize_storage(current_user: User = Depends(get_current_user)):
 
 
 @app.post("/maintenance/reset-materials")
-async def reset_materials_directory(current_user: User = Depends(get_current_user)):
+async def reset_materials_directory(current_user: User = Depends(get_json_current_user)):
     """Completely reset the materials directory"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    logger.info(f"🔄 Materials reset requested by: {current_user.username}")
+    logger.info(f"🔄 Materials reset requested by: {current_user.email}")
 
     try:
         materials_dir = Path("data/materials")
@@ -1864,12 +1888,12 @@ async def reset_materials_directory(current_user: User = Depends(get_current_use
 
 
 @app.post("/maintenance/reset-chromadb")
-async def reset_chromadb(current_user: User = Depends(get_current_user)):
+async def reset_chromadb(current_user: User = Depends(get_json_current_user)):
     """Reset ChromaDB vector database"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    logger.info(f"🗄️ ChromaDB reset requested by: {current_user.username}")
+    logger.info(f"🗄️ ChromaDB reset requested by: {current_user.email}")
 
     try:
         # Reset RAG handler via RAG server
@@ -1916,14 +1940,14 @@ async def reset_chromadb(current_user: User = Depends(get_current_user)):
 @app.post("/maintenance/reset-component")
 async def reset_component(
     data: ResetComponent,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Reset specific system component"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     logger.info(
-        f"🔄 Component reset requested by: {current_user.username} - Component: {data.component}")
+        f"🔄 Component reset requested by: {current_user.email} - Component: {data.component}")
 
     if not data.confirm:
         raise HTTPException(status_code=400, detail="Confirmation required")
@@ -1957,17 +1981,17 @@ async def reset_component(
 
 
 @app.get("/maintenance/system-report")
-async def generate_system_report(current_user: User = Depends(get_current_user)):
+async def generate_system_report(current_user: User = Depends(get_json_current_user)):
     """Generate comprehensive system report"""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    logger.info(f"📊 System report requested by: {current_user.username}")
+    logger.info(f"📊 System report requested by: {current_user.email}")
 
     try:
         report = {
             "timestamp": datetime.now().isoformat(),
-            "generated_by": current_user.username,
+            "generated_by": current_user.email,
             "system_info": {
                 "version": "1.7.0",
                 "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
@@ -2101,9 +2125,9 @@ async def generate_system_report(current_user: User = Depends(get_current_user))
 
 
 @app.get("/maintenance/health-check")
-async def health_check(current_user: User = Depends(get_current_user)):
+async def health_check(current_user: User = Depends(get_json_current_user)):
     """Comprehensive health check"""
-    logger.info(f"🏥 Health check requested by: {current_user.username}")
+    logger.info(f"🏥 Health check requested by: {current_user.email}")
 
     try:
         checks = {
@@ -2187,7 +2211,7 @@ async def health_check(current_user: User = Depends(get_current_user)):
 
 
 @app.get("/analytics/folder-structure")
-async def get_folder_structure_analysis(current_user: User = Depends(get_current_user)):
+async def get_folder_structure_analysis(current_user: User = Depends(get_json_current_user)):
     """Get detailed folder structure analysis"""
     try:
         materials_dir = Path("data/materials")
@@ -2233,7 +2257,7 @@ async def get_folder_structure_analysis(current_user: User = Depends(get_current
 
 
 @app.get("/analytics/file-distribution")
-async def get_file_distribution_analysis(current_user: User = Depends(get_current_user)):
+async def get_file_distribution_analysis(current_user: User = Depends(get_json_current_user)):
     """Get file type and size distribution analysis"""
     try:
         materials_dir = Path("data/materials")
@@ -2287,7 +2311,7 @@ async def get_file_distribution_analysis(current_user: User = Depends(get_curren
 
 
 @app.get("/analytics/storage-efficiency")
-async def get_storage_efficiency_analysis(current_user: User = Depends(get_current_user)):
+async def get_storage_efficiency_analysis(current_user: User = Depends(get_json_current_user)):
     """Get storage efficiency analysis including duplicates"""
     try:
         materials_dir = Path("data/materials")
@@ -2317,7 +2341,7 @@ async def get_storage_efficiency_analysis(current_user: User = Depends(get_curre
 
 
 @app.get("/analytics/download-report")
-async def get_download_report(current_user: User = Depends(get_current_user)):
+async def get_download_report(current_user: User = Depends(get_json_current_user)):
     """Get download activity report"""
     try:
         # Combine download progress and completed downloads
@@ -2367,9 +2391,9 @@ async def get_download_report(current_user: User = Depends(get_current_user)):
 
 
 @app.get("/materials")
-async def list_materials(current_user: User = Depends(get_current_user)):
+async def list_materials(current_user: User = Depends(get_json_current_user)):
     """List all available materials"""
-    logger.info(f"📚 Materials list requested by: {current_user.username}")
+    logger.info(f"📚 Materials list requested by: {current_user.email}")
 
     materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
     materials_dir.mkdir(parents=True, exist_ok=True)
@@ -2389,13 +2413,13 @@ async def upload_material(
     file: UploadFile = File(...),
     description: str = Form(""),
     tags: str = Form(""),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Upload a new material"""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    logger.info(f"📤 File upload by {current_user.username}: {file.filename}")
+    logger.info(f"📤 File upload by {current_user.email}: {file.filename}")
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="File has no name")
@@ -2452,7 +2476,7 @@ async def upload_material(
             "message": "Upload successful",
             "filename": file_path.name,
             "size": len(content),
-            "uploaded_by": current_user.username
+            "uploaded_by": current_user.email
         }
 
     except Exception as e:
@@ -2463,11 +2487,11 @@ async def upload_material(
 @app.get("/materials/browse")
 async def browse_materials(
     path: Optional[str] = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Browse materials by folder. Returns subfolders and files for the given path (non-recursive)."""
     logger.info(
-        f"📂 Browse materials requested by: {current_user.username} | path={path or '/'}")
+        f"📂 Browse materials requested by: {current_user.email} | path={path or '/'}")
 
     materials_root = Path(os.getenv("MATERIALS_DIR", str(
         Path(__file__).resolve().parent / "data" / "materials")))
@@ -2510,7 +2534,7 @@ async def browse_materials(
 
 
 @app.get("/materials/archive")
-async def download_materials_archive(current_user: User = Depends(get_current_user)):
+async def download_materials_archive(current_user: User = Depends(get_json_current_user)):
     """Stream .tar.gz com todos os materiais (server-to-server sync)."""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -2541,7 +2565,7 @@ async def download_materials_archive(current_user: User = Depends(get_current_us
 async def upload_materials_archive(
     archive: UploadFile = File(...),
     destination_subdir: Optional[str] = Form(None),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Upload a .zip or .tar.gz with multiple materials and extract into MATERIALS_DIR"""
     if current_user.role not in ["admin", "instructor"]:
@@ -2557,15 +2581,15 @@ async def upload_materials_archive(
 
         # Save temp
         tmp_dir = Path(tempfile.mkdtemp())
-        tmp_path = tmp_dir / archive.filename
+        tmp_path = tmp_dir / (archive.filename or "temp_archive")
         tmp_path.write_bytes(content)
 
         # Determine destination
-        dest_dir = materials_dir / destination_subdir if destination_subdir else materials_dir
+        dest_dir = materials_dir / (destination_subdir or "") if destination_subdir else materials_dir
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         # Extract
-        name_lower = archive.filename.lower()
+        name_lower = (archive.filename or "").lower()
         extracted_files = []
         if name_lower.endswith(".zip"):
             with zipfile.ZipFile(tmp_path, 'r') as zf:
@@ -2602,7 +2626,7 @@ async def upload_materials_archive(
 
 
 @app.get("/materials/{filename:path}")
-async def download_material(filename: str, download: bool = False, current_user: Optional[User] = Depends(get_optional_current_user)):
+async def download_material(filename: str, download: bool = False, current_user: Optional[User] = Depends(get_json_current_user)):
     """Download a material file with optional authentication"""
     # Verificar se o arquivo deve ser protegido
     requires_auth = should_require_auth(filename)
@@ -2633,7 +2657,7 @@ async def download_material(filename: str, download: bool = False, current_user:
 
     # Registrar o download (opcional)
     logger.info(
-        f"📥 File access: {file_path.name} by {current_user.username if current_user else 'anonymous'}")
+        f"📥 File access: {file_path.name} by {current_user.email if current_user else 'anonymous'}")
 
     # Determinar o tipo MIME com base na extensão do arquivo
     content_type, _ = mimetypes.guess_type(str(file_path))
@@ -2678,7 +2702,7 @@ def should_require_auth(filename: str) -> bool:
 
 
 @app.delete("/materials/{filename:path}")
-async def delete_material(filename: str, current_user: User = Depends(get_current_user)):
+async def delete_material(filename: str, current_user: User = Depends(get_json_current_user)):
     """Delete a material file"""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -2702,7 +2726,7 @@ async def delete_material(filename: str, current_user: User = Depends(get_curren
 
     try:
         file_path.unlink()
-        logger.info(f"🗑️ File deleted by {current_user.username}: {filename}")
+        logger.info(f"🗑️ File deleted by {current_user.email}: {filename}")
         return {"status": "success", "message": f"File deleted: {filename}"}
     except Exception as e:
         logger.error(f"❌ Delete error: {str(e)}")
@@ -2714,13 +2738,13 @@ async def update_material_metadata(
     filename: str,
     description: str = Form(""),
     tags: str = Form(""),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Update material metadata"""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    logger.info(f"✏️ Metadata update by {current_user.username}: {filename}")
+    logger.info(f"✏️ Metadata update by {current_user.email}: {filename}")
 
     # Handle nested file paths
     file_path = Path(os.getenv("MATERIALS_DIR", "data/materials")) / filename
@@ -2778,7 +2802,7 @@ async def update_material_metadata(
 
 
 @app.get("/debug/drive")
-async def debug_drive(current_user: User = Depends(get_current_user)):
+async def debug_drive(current_user: User = Depends(get_json_current_user)):
     """Debug endpoint for Drive handler status"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -2807,17 +2831,17 @@ async def debug_drive(current_user: User = Depends(get_current_user)):
         "materials_directory": drive_handler.get_download_stats()
     }
 
-    logger.info(f"🔍 Debug info requested by: {current_user.username}")
+    logger.info(f"🔍 Debug info requested by: {current_user.email}")
     return debug_info
 
 
 @app.post("/sync-drive-simple")
 async def sync_drive_simple(
     data: DriveSync,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Sync only files from the specified Google Drive folder (non-recursive)"""
-    logger.info(f"🔄 Simple drive sync requested by: {current_user.username}")
+    logger.info(f"🔄 Simple drive sync requested by: {current_user.email}")
 
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -2892,9 +2916,9 @@ async def startup_event():
 
 
 @app.get("/assistant/config")
-async def get_assistant_config(current_user: User = Depends(get_current_user)):
+async def get_assistant_config(current_user: User = Depends(get_json_current_user)):
     """Get current assistant configuration - proxy to RAG server"""
-    logger.info(f"⚙️ Assistant config requested by: {current_user.username}")
+    logger.info(f"⚙️ Assistant config requested by: {current_user.email}")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -2915,9 +2939,9 @@ async def get_assistant_config(current_user: User = Depends(get_current_user)):
 
 
 @app.post("/assistant/config")
-async def update_assistant_config(config: dict, current_user: User = Depends(get_current_user)):
+async def update_assistant_config(config: dict, current_user: User = Depends(get_json_current_user)):
     """Update assistant configuration - proxy to RAG server"""
-    logger.info(f"⚙️ Assistant config update by: {current_user.username}")
+    logger.info(f"⚙️ Assistant config update by: {current_user.email}")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -2938,9 +2962,9 @@ async def update_assistant_config(config: dict, current_user: User = Depends(get
 
 
 @app.get("/assistant/templates")
-async def get_assistant_templates(current_user: User = Depends(get_current_user)):
+async def get_assistant_templates(current_user: User = Depends(get_json_current_user)):
     """Get available assistant templates - proxy to RAG server"""
-    logger.info(f"📋 Assistant templates requested by: {current_user.username}")
+    logger.info(f"📋 Assistant templates requested by: {current_user.email}")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -2961,10 +2985,10 @@ async def get_assistant_templates(current_user: User = Depends(get_current_user)
 
 
 @app.post("/assistant/config/template/{template_name}")
-async def apply_assistant_template(template_name: str, current_user: User = Depends(get_current_user)):
+async def apply_assistant_template(template_name: str, current_user: User = Depends(get_json_current_user)):
     """Apply a specific assistant template - proxy to RAG server"""
     logger.info(
-        f"📋 Applying template '{template_name}' by: {current_user.username}")
+        f"📋 Applying template '{template_name}' by: {current_user.email}")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -2985,9 +3009,9 @@ async def apply_assistant_template(template_name: str, current_user: User = Depe
 
 
 @app.post("/assistant/config/reset")
-async def reset_assistant_config(current_user: User = Depends(get_current_user)):
+async def reset_assistant_config(current_user: User = Depends(get_json_current_user)):
     """Reset assistant configuration to default - proxy to RAG server"""
-    logger.info(f"🔄 Assistant config reset by: {current_user.username}")
+    logger.info(f"🔄 Assistant config reset by: {current_user.email}")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -3012,7 +3036,7 @@ async def reset_assistant_config(current_user: User = Depends(get_current_user))
 # ========================================
 
 @app.get("/settings")
-async def get_system_settings(current_user: User = Depends(get_current_user)):
+async def get_system_settings(current_user: User = Depends(get_json_current_user)):
     """Get system settings"""
     logger.info("⚙️ System settings requested")
 
@@ -3041,7 +3065,7 @@ async def get_system_settings(current_user: User = Depends(get_current_user)):
 
 
 @app.post("/settings")
-async def update_system_settings(settings: SystemSettings, current_user: User = Depends(get_current_user)):
+async def update_system_settings(settings: SystemSettings, current_user: User = Depends(get_json_current_user)):
     """Update system settings"""
     logger.info("⚙️ System settings update requested")
 
@@ -3071,7 +3095,7 @@ async def update_system_settings(settings: SystemSettings, current_user: User = 
 
 
 @app.post("/settings/reset")
-async def reset_system_settings(current_user: User = Depends(get_current_user)):
+async def reset_system_settings(current_user: User = Depends(get_json_current_user)):
     """Reset system settings to default"""
     logger.info("🔄 System settings reset requested")
 
@@ -3119,27 +3143,27 @@ class SelectiveModuleDownload(BaseModel):
 async def download_specific_module(
     data: SelectiveModuleDownload,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """Download a specific module or limited depth from Google Drive"""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    logger.info(f"📚 Module download requested by: {current_user.username}")
+    logger.info(f"📚 Module download requested by: {current_user.email}")
     logger.info(f"📁 Folder ID: {data.folder_id}")
     logger.info(f"📖 Module: {data.module_name or 'All (limited depth)'}")
     logger.info(f"🔍 Max Depth: {data.max_depth}")
 
     try:
         # Get user-specific drive handler
-        async with get_user_drive_handler(current_user.username, data.api_key) as user_handler:
+        async with get_user_drive_handler(current_user.email, data.api_key) as user_handler:
             # Verify authentication
             if not user_handler.service:
                 raise HTTPException(
                     status_code=400, detail="Could not authenticate with Google Drive")
 
             # Start background download
-            download_id = f"module_download_{current_user.username}_{int(time.time())}"
+            download_id = f"module_download_{current_user.email}_{int(time.time())}"
 
             # Update download progress with thread safety
             with download_progress_lock:
@@ -3153,7 +3177,7 @@ async def download_specific_module(
                     "folder_id": data.folder_id,
                     "module_name": data.module_name,
                     "max_depth": data.max_depth,
-                    "user": current_user.username
+                    "user": current_user.email
                 }
                 active_downloads[download_id] = True
 
@@ -3162,6 +3186,7 @@ async def download_specific_module(
             task_handler.authenticate(api_key=data.api_key or "")
 
             async def run_module_download():
+                last_result = None  # Initialize last_result
                 try:
                     # Update status with thread safety
                     with download_progress_lock:
@@ -3274,18 +3299,18 @@ async def download_specific_module(
 async def list_available_modules(
     folder_id: str,
     api_key: Optional[str] = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_json_current_user)
 ):
     """List available modules in the Google Drive folder"""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    logger.info(f"📚 Module listing requested by: {current_user.username}")
+    logger.info(f"📚 Module listing requested by: {current_user.email}")
     logger.info(f"📁 Folder ID: {folder_id}")
 
     try:
         # Get user-specific drive handler
-        async with get_user_drive_handler(current_user.username, api_key) as user_handler:
+        async with get_user_drive_handler(current_user.email, api_key) as user_handler:
             # Verify authentication
             if not user_handler.service:
                 raise HTTPException(
@@ -3324,7 +3349,7 @@ async def list_available_modules(
 
 
 @app.get("/debug/credentials-check")
-async def debug_credentials_check(current_user: User = Depends(get_current_user)):
+async def debug_credentials_check(current_user: User = Depends(get_json_current_user)):
     """Debug endpoint to check where credentials files are located"""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
