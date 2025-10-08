@@ -1,0 +1,35 @@
+# Requirements para o Servidor API
+# Contém apenas as dependências necessárias para o servidor API geral
+
+# Core FastAPI e servidor
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+
+# Autenticação e segurança
+python-jose
+passlib[bcrypt]
+supabase
+sqlalchemy
+
+# Utilitários
+pydantic[email]
+requests
+aiohttp
+pytz
+magic-wormhole
+
+# Google Drive API (se usado pelo API server)
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+
+# Processamento de documentos (se usado pelo API server para upload/análise básica)
+PyPDF2
+python-docx
+openpyxl
+docx2txt
+unstructured
+python-magic
+pandas

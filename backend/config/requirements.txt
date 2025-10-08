@@ -1,7 +1,7 @@
-# Requirements Completo - Sistema RAG + API
-# Combina todas as dependências necessárias para ambos os servidores
+# Requirements para o Servidor RAG
+# Contém as dependências necessárias para o servidor RAG
 
-# Core FastAPI e servidor
+# Core FastAPI e servidor (se o RAG server também for um FastAPI app)
 fastapi
 uvicorn
 python-multipart
@@ -41,7 +41,7 @@ chromadb
 # Processamento de planilhas
 pandas
 
-# Google Drive API
+# Google Drive API (se o RAG server precisar acessar o Drive diretamente)
 google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
@@ -50,33 +50,31 @@ google-api-python-client
 langchain-google-genai
 google-generativeai
 
-# Autenticação e segurança
+# Autenticação e segurança (se o RAG server precisar de autenticação direta)
 python-jose
 passlib[bcrypt]
+supabase
+sqlalchemy
 
 # Utilitários
-pydantic[email]  # Adicionado suporte para validação de email
+pydantic[email]
 requests
 aiohttp
 pytz
-magic-wormhole  # Para transferência segura de arquivos via wormhole
+magic-wormhole
 
 # Performance e cache (opcional)
 redis
 aioredis
 
-# Supabase (se usar)
-supabase
-
 # Dependências adicionais
 langsmith
-sqlalchemy
 
 # Dependências específicas do LangChain (versões compatíveis)
 langchain-community>=0.0.10
 langchain-core>=0.1.10
 
-# Dependências para embeddings open source
+# Dependências para embeddings open source (estas são as grandes)
 transformers
 torch
 torchvision

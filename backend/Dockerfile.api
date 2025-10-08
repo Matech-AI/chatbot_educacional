@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements and install them
-COPY backend/config/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/config/requirements.api.txt .
+RUN pip install --no-cache-dir -r requirements.api.txt
 
 # Stage 2: Production
 FROM python:3.11-slim
