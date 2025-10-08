@@ -1,3 +1,4 @@
+version: "3.8"
 
 services:
   frontend:
@@ -50,6 +51,8 @@ services:
       - RAG_PORT=${RAG_PORT}
       - API_PORT=${API_PORT}
       - FRONTEND_PORT=${FRONTEND_PORT}
+      - HOSTINGER_CHROMADB_PATH=${HOSTINGER_CHROMADB_PATH}
+      - HOSTINGER_MATERIALS_PATH=${HOSTINGER_MATERIALS_PATH}
     volumes:
       - chromadb_data:/app/data/.chromadb
       - materials_data:/app/data/materials
