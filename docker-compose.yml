@@ -69,8 +69,8 @@ services:
 
   rag_server:
     build:
-      context: backend
-      dockerfile: Dockerfile.rag
+      context: .
+      dockerfile: backend/Dockerfile.rag
     ports:
       - "5001:5001"
     environment:

@@ -18,8 +18,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements and install them
-COPY backend/config/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/config/requirements.txt ./backend/config/requirements.txt
+RUN pip install --no-cache-dir -r ./backend/config/requirements.txt
 
 # Stage 2: Production
 FROM python:3.11-slim
@@ -35,7 +35,7 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy only necessary application code
-COPY backend/rag_server.py ./backend/
+COPY backend/rag_server.py ./backend/rag_server.py
 COPY backend/rag_system/ ./backend/rag_system/
 COPY backend/chat_agents/ ./backend/chat_agents/
 COPY backend/auth/ ./backend/auth/
@@ -50,4 +50,4 @@ RUN mkdir -p /app/data/materials /app/logs
 
 EXPOSE 5001
 
-CMD ["python", "backend/rag_server.py"]
+CMD ["python", "./backend/rag_server.py"]
