@@ -35,7 +35,6 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY backend/api_server.py ./backend/
 COPY backend/main.py ./backend/
 COPY backend/auth/ ./backend/auth/
-COPY backend/data/ ./backend/data/
 COPY backend/config/ ./backend/config/
 COPY backend/utils/ ./backend/utils/
 COPY backend/drive_sync/ ./backend/drive_sync/
