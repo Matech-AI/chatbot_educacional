@@ -1,20 +1,12 @@
-version: "3.8"
 
 services:
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-      args:
-        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
-        - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
-        - VITE_API_URL=${VITE_API_URL}
-        - OPENAI_API_KEY=${OPENAI_API_KEY}
     ports:
       - "3000:3000"
     environment:
-      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
-      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
       - VITE_API_URL=${VITE_API_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - GOOGLE_CREDENTIALS_PATH=${GOOGLE_CREDENTIALS_PATH}
@@ -58,16 +50,11 @@ services:
       - RAG_PORT=${RAG_PORT}
       - API_PORT=${API_PORT}
       - FRONTEND_PORT=${FRONTEND_PORT}
-      - HOSTINGER_CHROMADB_PATH=${HOSTINGER_CHROMADB_PATH}
-      - HOSTINGER_MATERIALS_PATH=${HOSTINGER_MATERIALS_PATH}
-      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
-      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
     volumes:
       - chromadb_data:/app/data/.chromadb
       - materials_data:/app/data/materials
 
-  rag_server:
+  rag-server:
     build:
       context: .
       dockerfile: backend/Dockerfile.rag
@@ -82,7 +69,24 @@ services:
       - OPEN_SOURCE_EMBEDDING_MODEL=${OPEN_SOURCE_EMBEDDING_MODEL}
       - CHROMA_PERSIST_DIR=${CHROMA_PERSIST_DIR}
       - MATERIALS_DIR=${MATERIALS_DIR}
+    volumes:
+      - chromadb_data:/app/data/.chromadb
+      - materials_data:/app/data/materials
 
 volumes:
   chromadb_data:
+    external: true
+    name: rag_data
+  api_data:
+    external: true
+    name: api_data
+  redis_data:
+    external: true
+    name: redis_data
   materials_data:
+    driver: local
+
+networks:
+  network_swarm_public:
+    external: true
+    name: network_swarm_public

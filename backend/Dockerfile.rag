@@ -42,7 +42,6 @@ COPY backend/auth/ ./backend/auth/
 COPY backend/utils/ ./backend/utils/
 COPY backend/video_processing/ ./backend/video_processing/
 COPY backend/config/ ./backend/config/
-COPY supabase/ ./supabase/
 
 # Create basic directories
 RUN mkdir -p /app/data/materials /app/logs

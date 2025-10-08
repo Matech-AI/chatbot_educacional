@@ -40,7 +40,6 @@ COPY backend/utils/ ./backend/utils/
 COPY backend/drive_sync/ ./backend/drive_sync/
 COPY backend/maintenance/ ./backend/maintenance/
 COPY backend/video_processing/ ./backend/video_processing/
-COPY supabase/ ./supabase/
 
 # Create basic directories
 RUN mkdir -p /app/data/materials /app/logs
