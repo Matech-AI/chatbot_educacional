@@ -24,7 +24,7 @@ python3 update_config.py
 cd ..
 
 # Atualizar variáveis de ambiente
-export HOSTINGER=true
+export HOSTINGER=false
 export SERVER_IP=$SERVER_IP
 export RAG_PORT=5000
 export API_PORT=5001

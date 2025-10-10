@@ -1,3 +1,10 @@
+
+import sys
+import os
+
+# Add the current directory to Python path to allow imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Request, BackgroundTasks, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -5,9 +12,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from pathlib import Path
-import os
 import json
-import sys
 import time
 import hashlib
 import shutil
@@ -20,19 +25,18 @@ from uuid import uuid4
 import asyncio
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
+import threading
+from contextlib import asynccontextmanager
+from fastapi import APIRouter
 
 # Import RAG handler
 from rag_system.rag_handler import RAGHandler, RAGConfig
 from drive_sync.drive_handler import DriveHandler
 from drive_sync.drive_handler_recursive import RecursiveDriveHandler
-from auth.auth import get_current_user, User, router as auth_router
-from auth.auth import get_optional_current_user
+from auth import get_current_user, User, router as auth_router
+from auth import get_optional_current_user
 from auth.user_management import router as user_management_router
 from chat_agents.educational_agent import router as educational_agent_router
-import threading
-import asyncio
-from contextlib import asynccontextmanager
-from fastapi import APIRouter
 
 # Configure enhanced logging
 logging.basicConfig(
@@ -992,8 +996,7 @@ async def get_folder_stats(current_user: User = Depends(get_current_user)):
             for item in materials_dir.rglob("*"):
                 if item.is_dir():
                     rel_path = str(item.relative_to(materials_dir))
-                    files_in_folder = [
-                        f for f in item.iterdir() if f.is_file()]
+                    files_in_folder = [f for f in item.iterdir() if f.is_file()]
 
                     folder_structure[rel_path] = {
                         "file_count": len(files_in_folder),
@@ -2232,191 +2235,3 @@ async def update_material_metadata(
     """Update material metadata"""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
-
-    logger.info(f"✏️ Metadata update by {current_user.username}: {filename}")
-
-    # Handle nested file paths
-    file_path = Path("data/materials") / filename
-
-    if not file_path.exists() or not file_path.is_file():
-        # Try to find file recursively
-        materials_dir = Path("data/materials")
-        found_files = list(materials_dir.rglob(filename))
-
-        if found_files:
-            file_path = found_files[0]
-        else:
-            raise HTTPException(status_code=404, detail="File not found")
-
-    try:
-        # Atualizar metadados no banco de dados ou em algum arquivo de metadados
-        # Aqui você precisaria implementar a lógica para armazenar os metadados
-        # Por exemplo, você poderia ter um arquivo JSON com os metadados de todos os materiais
-
-        # Exemplo simplificado (você precisaria adaptar isso ao seu sistema de armazenamento de metadados):
-        metadata_file = Path("data/materials_metadata.json")
-
-        if metadata_file.exists():
-            with open(metadata_file, "r") as f:
-                metadata = json.load(f)
-        else:
-            metadata = {}
-
-        # Atualizar metadados do arquivo
-        if filename not in metadata:
-            metadata[filename] = {}
-
-        metadata[filename]["description"] = description
-
-        if tags:
-            try:
-                tags_list = json.loads(tags)
-                metadata[filename]["tags"] = tags_list
-            except:
-                metadata[filename]["tags"] = []
-
-        # Salvar metadados atualizados
-        with open(metadata_file, "w") as f:
-            json.dump(metadata, f)
-
-        logger.info(f"✅ Metadata updated for {filename}")
-        return {"status": "success", "message": f"Metadata updated for {filename}"}
-    except Exception as e:
-        logger.error(f"❌ Update error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Update error: {str(e)}")
-
-# ========================================
-# DEBUG ENDPOINTS
-# ========================================
-
-
-@app.get("/debug/drive")
-async def debug_drive(current_user: User = Depends(get_current_user)):
-    """Debug endpoint for Drive handler status"""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-
-    debug_info = {
-        "drive_handler": {
-            "service_initialized": drive_handler.service is not None,
-            "api_key_set": drive_handler.api_key is not None,
-            "materials_dir": str(drive_handler.materials_dir),
-            "materials_dir_exists": drive_handler.materials_dir.exists(),
-            "scopes": drive_handler.scopes,
-            "processed_files_count": len(drive_handler.processed_files) if hasattr(drive_handler, 'processed_files') else 0,
-            "file_hashes_count": len(drive_handler.file_hashes) if hasattr(drive_handler, 'file_hashes') else 0
-        },
-        "environment": {
-            "google_drive_api_key": bool(os.getenv('GOOGLE_DRIVE_API_KEY')),
-            "credentials_file_exists": os.path.exists('credentials.json'),
-            "token_file_exists": os.path.exists('token.json')
-        },
-        "download_system": {
-            "active_downloads": len(active_downloads),
-            "download_progress_sessions": len(download_progress),
-            "active_download_ids": list(active_downloads.keys()),
-            "recent_downloads": list(download_progress.keys())[-5:]
-        },
-        "materials_directory": drive_handler.get_download_stats()
-    }
-
-    logger.info(f"🔍 Debug info requested by: {current_user.username}")
-    return debug_info
-
-
-@app.post("/sync-drive-simple")
-async def sync_drive_simple(
-    data: DriveSync,
-    current_user: User = Depends(get_current_user)
-):
-    """Sync only files from the specified Google Drive folder (non-recursive)"""
-    logger.info(f"🔄 Simple drive sync requested by: {current_user.username}")
-
-    if current_user.role not in ["admin", "instructor"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    try:
-        # Autentica com o handler simples, agora com cache de autenticação
-        auth_success = simple_drive_handler.authenticate(
-            api_key=data.api_key or "")
-        if not auth_success:
-            raise HTTPException(
-                status_code=400, detail="Could not authenticate with Google Drive")
-
-        # Baixa apenas os arquivos da pasta (não recursivo)
-        processed_files = simple_drive_handler.process_folder(
-            data.folder_id, download_all=data.download_files)
-
-        stats = simple_drive_handler.get_download_stats()
-        return {
-            "status": "success",
-            "message": f"Processed {len(processed_files)} files from Google Drive (non-recursive)",
-            "files": processed_files,
-            "statistics": stats,
-            "folder_info": {
-                "accessible": True,
-                "folder_id": data.folder_id,
-                "file_count": len(processed_files)
-            }
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Simple drive sync error: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Drive sync error: {str(e)}")
-
-# ========================================
-# STARTUP EVENT
-# ========================================
-
-# Inclua o router do Drive no aplicativo principal com um prefixo
-app.include_router(drive_router, prefix="/drive", tags=["drive"])
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize application on startup"""
-    global rag_handler
-    logger.info(
-        "🚀 DNA da Força Backend v1.7 - Complete Recursive Drive Integration Starting...")
-
-    # Create necessary directories
-    Path("data/materials").mkdir(parents=True, exist_ok=True)
-    logger.info("📁 Materials directory created/verified")
-
-    # Initialize RAG handler if API key is available
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if openai_api_key:
-        logger.info("🔑 OpenAI API key found, initializing RAG handler...")
-        try:
-            rag_handler = RAGHandler(api_key=openai_api_key)
-            rag_handler.process_documents()
-            logger.info("✅ RAG handler initialized successfully.")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize RAG handler: {e}")
-    else:
-        logger.warning(
-            "⚠️ OpenAI API key not found. RAG handler not initialized.")
-
-    # Log environment info
-    logger.info(f"📊 Environment check:")
-    logger.info(
-        f"  - OpenAI API Key: {'✅' if openai_api_key else '❌'}")
-    logger.info(
-        f"  - Google Drive API Key: {'✅' if os.getenv('GOOGLE_DRIVE_API_KEY') else '❌'}")
-    logger.info(
-        f"  - Credentials file: {'✅' if os.path.exists('credentials.json') else '❌'}")
-    logger.info(
-        f"  - Materials directory: {Path('data/materials').absolute()}")
-    logger.info(
-        f"  - Concurrency support: ✅ (User-specific handlers with thread locks)")
-
-    logger.info(
-        "✅ Sistema pronto com funcionalidades recursivas completas e suporte a concorrência!")
-
-if __name__ == "__main__":
-    import uvicorn
-    logger.info(
-        "🚀 DNA da Força Backend v1.7 - Complete Recursive Drive Integration")
-    uvicorn.run(app, host="0.0.0.0", port=5000, log_level="debug")
