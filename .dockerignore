@@ -1,0 +1,70 @@
+# Node.js
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist
+build
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+docs/
+
+# Docker files (evitar recursão)
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Backend (não necessário para frontend)
+backend/
+
+# Logs
+*.log
+logs/
+
+# Test files
+coverage/
+.nyc_output
+
+# Temporary files
+*.tmp
+*.temp
+
+# Deployment scripts
+deploy_*.sh
+start_*.sh
+stop_*.sh
+status.sh
+test_connectivity.sh
+update_config.sh
+
+# Supabase (não necessário para frontend)
+supabase/
+
+# Other config files not needed for build
+vercel.json
+render.yaml
