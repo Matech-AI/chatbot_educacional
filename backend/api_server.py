@@ -28,7 +28,6 @@ from drive_sync.drive_handler_recursive import RecursiveDriveHandler
 from auth.auth import get_current_user, User, router as auth_router
 from auth.auth import get_optional_current_user
 from auth.user_management import router as user_management_router
-from auth.supabase_auth import router as supabase_auth_router
 # Educational agent router is now part of the RAG server
 from chat_agents.educational_agent import router as educational_agent_router
 import threading
@@ -54,7 +53,7 @@ app = FastAPI(
 
 # Configure CORS
 cors_origins = os.getenv(
-    "CORS_ORIGINS", "https://dna-forca-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000").split(",")
+    "CORS_ORIGINS", "https://dna-forca-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -67,8 +66,6 @@ app.add_middleware(
 app.include_router(user_management_router)
 # Inclua o router de autenticação para endpoints públicos como redefinição de senha
 app.include_router(auth_router)
-# Inclua o router de autenticação Supabase
-app.include_router(supabase_auth_router, prefix="/api/auth", tags=["Supabase Auth"])
 # The educational agent router is now exposed via the RAG server
 app.include_router(educational_agent_router)
 

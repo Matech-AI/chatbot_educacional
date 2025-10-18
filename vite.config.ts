@@ -34,6 +34,12 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0', // Aceita conexões IPv4 e IPv6
       port: 3000,
+      allowedHosts: [
+        'iadnadaforca.com.br',
+        'www.iadnadaforca.com.br',
+        'localhost',
+        '127.0.0.1'
+      ],
       proxy: {
         // Proxy API calls to backend
         '/api': {

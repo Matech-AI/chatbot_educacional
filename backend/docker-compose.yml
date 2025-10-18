@@ -6,7 +6,7 @@ services:
     ports:
       - "8001:8000"
     environment:
-      - CORS_ORIGINS=https://chatbot-educacional.vercel.app,http://localhost:3000,http://127.0.0.1:3000,https://dna-forca-frontend.vercel.app
+      - CORS_ORIGINS=https://chatbot-educacional.vercel.app,http://localhost:3000,http://127.0.0.1:3000,https://dna-forca-frontend.vercel.app,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br
     volumes:
       - ./data/materials:/app/data/materials:ro
     networks:

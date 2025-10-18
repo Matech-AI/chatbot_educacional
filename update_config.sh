@@ -44,7 +44,7 @@ API_PORT=8001
 FRONTEND_PORT=3000
 
 # CORS Origins
-CORS_ORIGINS=http://$SERVER_IP:3000,http://$SERVER_IP,http://localhost:3000
+CORS_ORIGINS=http://$SERVER_IP:3000,http://$SERVER_IP,http://localhost:3000,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br
 
 # Ambiente
 ENVIRONMENT=production

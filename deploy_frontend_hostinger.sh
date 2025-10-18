@@ -173,7 +173,7 @@ JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 # ===== CONFIGURAÇÕES CORS =====
-CORS_ORIGINS=http://31.97.16.142:3000,http://31.97.16.142,http://localhost:3000
+CORS_ORIGINS=http://31.97.16.142:3000,http://31.97.16.142,http://localhost:3000,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br
 
 # ===== CONFIGURAÇÕES DE PREFERÊNCIA =====
 PREFER_NVIDIA=true

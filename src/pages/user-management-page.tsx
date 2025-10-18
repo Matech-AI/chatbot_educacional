@@ -309,7 +309,12 @@ const UserManagementPage: React.FC = () => {
                     <tr key={userData.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {userData.external_id
-                          ? parseInt(userData.external_id)
+                          ? (() => {
+                              const parsed = parseInt(userData.external_id);
+                              return isNaN(parsed)
+                                ? userData.external_id
+                                : parsed;
+                            })()
                           : "N/A"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
