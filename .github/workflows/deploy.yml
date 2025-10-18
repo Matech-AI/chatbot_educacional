@@ -83,36 +83,85 @@ jobs:
             ./start_all.sh
 
             # Aguardar inicialização
-            sleep 10
+            echo "⏳ Aguardando inicialização dos serviços..."
+            sleep 15
 
             # Verificar status final
             echo "📊 Status final do sistema:"
             ./status.sh
 
-            # Testar endpoints principais
+            # Testar endpoints principais com timeout
             echo "🧪 Testando endpoints..."
-            if curl -s http://localhost:3000 > /dev/null; then
+
+            # Testar Frontend
+            if timeout 10 curl -s http://localhost:3000 > /dev/null; then
               echo "✅ Frontend funcionando (porta 3000)"
             else
               echo "❌ Frontend não responde (porta 3000)"
+              echo "🔍 Verificando logs do frontend..."
+              docker logs $(docker ps -q --filter "name=frontend") --tail 20
             fi
 
-            if curl -s http://localhost:8000/status > /dev/null; then
-              echo "✅ RAG Server funcionando (porta 8000)"
+            # Testar RAG Server
+            if timeout 10 curl -s http://localhost:8001/health > /dev/null; then
+              echo "✅ RAG Server funcionando (porta 8001)"
             else
-              echo "❌ RAG Server não responde (porta 8000)"
+              echo "❌ RAG Server não responde (porta 8001)"
+              echo "🔍 Verificando logs do RAG Server..."
+              docker logs $(docker ps -q --filter "name=rag-server") --tail 20
             fi
 
-            if curl -s http://localhost:8001/status > /dev/null; then
-              echo "✅ API Server funcionando (porta 8001)"
+            # Testar API Server
+            if timeout 10 curl -s http://localhost:8002/health > /dev/null; then
+              echo "✅ API Server funcionando (porta 8002)"
             else
-              echo "❌ API Server não responde (porta 8001)"
+              echo "❌ API Server não responde (porta 8002)"
+              echo "🔍 Verificando logs do API Server..."
+              docker logs $(docker ps -q --filter "name=api-server") --tail 20
+            fi
+
+            # Testar Redis
+            if timeout 5 docker exec $(docker ps -q --filter "name=redis") redis-cli ping > /dev/null 2>&1; then
+              echo "✅ Redis funcionando (porta 6379)"
+            else
+              echo "❌ Redis não responde (porta 6379)"
+            fi
+
+            # Verificar se todos os serviços estão funcionando
+            failed_services=0
+            if ! timeout 10 curl -s http://localhost:3000 > /dev/null; then
+              failed_services=$((failed_services + 1))
+            fi
+            if ! timeout 10 curl -s http://localhost:8001/health > /dev/null; then
+              failed_services=$((failed_services + 1))
+            fi
+            if ! timeout 10 curl -s http://localhost:8002/health > /dev/null; then
+              failed_services=$((failed_services + 1))
+            fi
+
+            if [ $failed_services -gt 0 ]; then
+              echo "⚠️  ATENÇÃO: $failed_services serviço(s) não estão respondendo!"
+              echo "🔍 Verificando logs de todos os serviços..."
+              docker ps --format "table {{.Names}}\t{{.Status}}"
+              echo ""
+              echo "📋 Logs dos serviços:"
+              docker logs $(docker ps -q) --tail 10
+              echo ""
+              echo "❌ Deploy concluído com problemas!"
+              echo "📞 Entre em contato com o administrador se os problemas persistirem."
+            else
+              echo ""
+              echo "🎉 DEPLOY AUTOMÁTICO CONCLUÍDO COM SUCESSO - $(date)"
+              echo "✅ Todos os serviços estão funcionando corretamente!"
             fi
 
             echo ""
-            echo "🎉 DEPLOY AUTOMÁTICO CONCLUÍDO - $(date)"
-            echo "📍 Frontend: http://31.97.16.142:3000"
-            echo "📍 RAG Server: http://31.97.16.142:8000"
-            echo "📍 API Server: http://31.97.16.142:8001"
-            echo "📋 Para verificar status: ./status.sh"
-            echo "📋 Para ver logs: tail -f logs/*.log"
+            echo "📍 URLs de acesso:"
+            echo "   Frontend: http://31.97.16.142:3000"
+            echo "   RAG Server: http://31.97.16.142:8001"
+            echo "   API Server: http://31.97.16.142:8002"
+            echo ""
+            echo "📋 Comandos úteis:"
+            echo "   Verificar status: ./status.sh"
+            echo "   Ver logs: tail -f logs/*.log"
+            echo "   Reiniciar: ./stop_all.sh && ./start_all.sh"
