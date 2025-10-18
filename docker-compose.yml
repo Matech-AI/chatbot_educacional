@@ -1,0 +1,83 @@
+version: "3.8"
+
+services:
+  rag-server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rag
+    ports:
+      - "8001:8001"
+    environment:
+      - CORS_ORIGINS=http://31.97.16.142:3000,http://localhost:3000,http://127.0.0.1:3000,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br
+      - PORT=8001
+      - HOST=0.0.0.0
+    volumes:
+      - ./backend/data:/app/data
+    networks:
+      - network_swarm_public
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  api-server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.api
+    ports:
+      - "8002:8002"
+    environment:
+      - LOG_LEVEL=INFO
+      - PORT=8002
+      - HOST=0.0.0.0
+      - CORS_ORIGINS=http://31.97.16.142:3000,http://localhost:3000,http://127.0.0.1:3000,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br
+    volumes:
+      - ./backend/data:/app/data
+    networks:
+      - network_swarm_public
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - network_swarm_public
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=http://31.97.16.142:8002
+      - VITE_RAG_API_BASE_URL=http://31.97.16.142:8001
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=network_swarm_public"
+      - "traefik.http.routers.frontend.rule=Host(`iadnadaforca.com.br`)"
+      - "traefik.http.routers.frontend.entrypoints=web,websecure"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencryptresolver"
+    networks:
+      - network_swarm_public
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  network_swarm_public:
+    driver: bridge
