@@ -20,6 +20,7 @@ import { Button } from '../ui/button';
 import { SecureVideoPlayer } from '../video/secure-video-player';
 import ReactMarkdown from 'react-markdown';
 import jsPDF from 'jspdf';
+import remarkGfm from 'remark-gfm';
 
 interface EducationalSource {
   title: string;
@@ -134,8 +135,8 @@ export const EducationalMessageBubble: React.FC<EducationalMessageBubbleProps> =
               </div>
             ) : (
               <div>
-                <div className="text-sm prose prose-sm max-w-none">
-                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                <div className={`prose ${isUser ? 'prose-invert' : ''} max-w-none text-sm prose-table:border prose-table:border-gray-300 prose-th:bg-gray-50 prose-th:border prose-th:border-gray-300 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-td:border prose-td:border-gray-300 prose-td:px-3 prose-td:py-2`}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
                 </div>
                 
                 {/* Educational Metadata */}
