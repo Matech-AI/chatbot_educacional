@@ -10,16 +10,16 @@ export default defineConfig(({ mode }) => {
   const isRender = process.env.RENDER === 'true'
   
   // Definir o target baseado no ambiente
-  let apiTarget = 'http://localhost:8000'
+  let apiTarget = 'http://localhost:8002'
   let ragApiTarget = 'http://localhost:8001'
   
   if (isHostinger) {
     // Usar variável de ambiente ou detectar automaticamente
     const serverIP = process.env.SERVER_IP || '0.0.0.0'
-    apiTarget = `http://${serverIP}:8000`
+    apiTarget = `http://${serverIP}:8002`
     ragApiTarget = `http://${serverIP}:8001`
   } else if (isRender) {
-    apiTarget = 'http://localhost:8000' // Render usa localhost interno
+    apiTarget = 'http://localhost:8002' // Render usa localhost interno
     ragApiTarget = 'http://localhost:8001'
   }
   // Em desenvolvimento local, mantém localhost

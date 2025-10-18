@@ -4,15 +4,17 @@ services:
   rag-server:
     image: matheusbnas/rag-server:latest
     ports:
-      - "8001:8000"
+      - "8001:8001"
     environment:
-      - CORS_ORIGINS=https://chatbot-educacional.vercel.app,http://localhost:3000,http://127.0.0.1:3000,https://dna-forca-frontend.vercel.app,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br
+      - CORS_ORIGINS=http://31.97.16.142:3000,http://localhost:3000,http://127.0.0.1:3000,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br
+      - PORT=8001
+      - HOST=0.0.0.0
     volumes:
-      - ./data/materials:/app/data/materials:ro
+      - ./data:/app/data
     networks:
       - network_swarm_public
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -21,16 +23,18 @@ services:
   api-server:
     image: matheusbnas/api-server:latest
     ports:
-      - "8000:8000"
+      - "8002:8002"
     environment:
       - LOG_LEVEL=INFO
-      # Adicione outras variáveis de ambiente necessárias
+      - PORT=8002
+      - HOST=0.0.0.0
+      - CORS_ORIGINS=http://31.97.16.142:3000,http://localhost:3000,http://127.0.0.1:3000,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br
     volumes:
       - ./data:/app/data
     networks:
       - network_swarm_public
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -49,8 +53,11 @@ services:
   frontend:
     image: matheusbnas/frontend:latest
     ports:
-      - "3000:3000"
-    environment: {}
+      - "3000:80"
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=http://31.97.16.142:8002
+      - VITE_RAG_API_BASE_URL=http://31.97.16.142:8001
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=network_swarm_public"
