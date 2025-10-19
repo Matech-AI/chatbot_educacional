@@ -477,7 +477,7 @@ app = FastAPI(
 # Configurar CORS (permitir origem do frontend no Render e locais; também suportar regex e env var)
 cors_origins_env = os.getenv(
     "CORS_ORIGINS",
-    "https://dna-forca-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br",
+    "https://iadnadaforca.com.br,https://www.iadnadaforca.com.br,http://localhost:3000,http://127.0.0.1:3000",
 )
 cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
 cors_origin_regex = os.getenv(

@@ -53,7 +53,7 @@ app = FastAPI(
 
 # Configure CORS
 cors_origins = os.getenv(
-    "CORS_ORIGINS", "https://dna-forca-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br").split(",")
+    "CORS_ORIGINS", "https://iadnadaforca.com.br,https://www.iadnadaforca.com.br,http://localhost:3000,http://127.0.0.1:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,

@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://dna-forca-api-server.onrender.com/$1"
+      "destination": "https://iadnadaforca.com.br/api/$1"
     }
   ],
   "headers": [
@@ -28,6 +28,6 @@
     }
   ],
   "env": {
-    "VITE_API_BASE_URL": "https://dna-forca-api-server.onrender.com"
+    "VITE_API_BASE_URL": "https://iadnadaforca.com.br/api"
   }
 } 
