@@ -13,6 +13,13 @@ services:
       - ./backend/data:/app/data
     networks:
       - network_swarm_public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=network_swarm_public"
+      - "traefik.http.routers.rag.rule=Host(`iadnadaforca.com.br`) && PathPrefix(`/rag`)"
+      - "traefik.http.routers.rag.entrypoints=web,websecure"
+      - "traefik.http.services.rag.loadbalancer.server.port=8001"
+      - "traefik.http.routers.rag.tls.certresolver=letsencryptresolver"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -35,6 +42,13 @@ services:
       - ./backend/data:/app/data
     networks:
       - network_swarm_public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=network_swarm_public"
+      - "traefik.http.routers.api.rule=Host(`iadnadaforca.com.br`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.api.entrypoints=web,websecure"
+      - "traefik.http.services.api.loadbalancer.server.port=8002"
+      - "traefik.http.routers.api.tls.certresolver=letsencryptresolver"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 30s
