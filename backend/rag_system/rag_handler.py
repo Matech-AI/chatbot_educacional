@@ -20,10 +20,10 @@ import json
 import random
 import re
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Any, Type
+from typing import Dict, Any, List, Optional, Type, Tuple
 from dataclasses import dataclass, field
 from pydantic import BaseModel, SecretStr, Field
-from langchain_core.tools import BaseTool
+from langchain.tools import BaseTool
 import pandas as pd
 
 # Configure logging FIRST
@@ -2367,7 +2367,7 @@ class RAGQueryTool(BaseTool):
     """A tool to query the RAG system for educational content."""
     name: str = "search_educational_materials"
     description: str = "Searches and retrieves information from educational materials to answer questions about fitness, exercise science, and strength training."
-    args_schema = RAGQueryToolInput
+    args_schema: Type[BaseModel] = RAGQueryToolInput
     rag_handler: RAGHandler
 
     def _run(self, query: str, user_level: str = "intermediate") -> Dict[str, Any]:
