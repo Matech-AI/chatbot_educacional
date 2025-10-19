@@ -13,7 +13,7 @@ load_dotenv()
 # Configurações de e-mail
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
-EMAIL_USER = os.getenv("EMAIL_USERNAME", "")
+EMAIL_USER = os.getenv("EMAIL_USERNAME", "matheusbnas@gmail.com")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", EMAIL_USER)
 
@@ -26,7 +26,7 @@ AUTH_TOKENS_FILE = Path(__file__).parent.parent / "data" / "auth_tokens.json"
 # Determinar a URL base com base no ambiente
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 if ENVIRONMENT == "production":
-    DEFAULT_BASE_URL = "https://dna-forca-frontend.vercel.app"
+    DEFAULT_BASE_URL = "https://iadnadaforca.com.br"
 else:
     DEFAULT_BASE_URL = "http://localhost:3000"
 
