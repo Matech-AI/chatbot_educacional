@@ -1,10 +1,10 @@
 // API utility functions - FIXED VERSION
 const API_BASE = process.env.NODE_ENV === 'production'
-  ? (import.meta.env.VITE_API_BASE_URL || 'https://dna-forca-api-server.onrender.com')
+  ? (import.meta.env.VITE_API_BASE_URL || 'https://iadnadaforca.com.br/api')
   : '/api';  // Usar /api para que o proxy do Vite funcione
 
 const RAG_API_BASE = process.env.NODE_ENV === 'production'
-  ? (import.meta.env.VITE_RAG_API_BASE_URL || 'https://dna-forca-rag-server.onrender.com')
+  ? (import.meta.env.VITE_RAG_API_BASE_URL || 'https://iadnadaforca.com.br/rag')
   : '/rag-api'; // Use proxy in development
 
 // Get auth token from memory (localStorage not supported in Claude artifacts)
