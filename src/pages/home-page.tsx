@@ -36,7 +36,7 @@ const HomePage: React.FC = () => {
       const apiBase =
         process.env.NODE_ENV === "production"
           ? import.meta.env.VITE_API_BASE_URL ||
-            "https://dna-forca-api-server.onrender.com"
+            "https://iadnadaforca.com.br/api"
           : "/api";
 
       const response = await fetch(`${apiBase}/health`);
