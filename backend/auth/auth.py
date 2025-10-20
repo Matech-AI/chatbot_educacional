@@ -167,10 +167,16 @@ initialize_database()
 
 
 def verify_password(plain_password, hashed_password):
+    # Limitar senha a 72 bytes para compatibilidade com bcrypt
+    if len(plain_password.encode('utf-8')) > 72:
+        plain_password = plain_password[:72]
     return pwd_context.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password):
+    # Limitar senha a 72 bytes para compatibilidade com bcrypt
+    if len(password.encode('utf-8')) > 72:
+        password = password[:72]
     return pwd_context.hash(password)
 
 

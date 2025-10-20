@@ -52,7 +52,8 @@ google-generativeai
 
 # Autenticação e segurança
 python-jose
-passlib[bcrypt]
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 
 # Utilitários
 pydantic[email]  # Adicionado suporte para validação de email
