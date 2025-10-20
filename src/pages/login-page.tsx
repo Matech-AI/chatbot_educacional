@@ -292,8 +292,12 @@ const LoginPage: React.FC = () => {
           {/* Header */}
           <div className="bg-red-600 p-6 text-white">
             <div className="mb-4 flex justify-center">
-              <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center">
-                <Dumbbell size={32} className="text-red-600" />
+              <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-lg">
+                <img
+                  src="/logo_dna_forca_1.jpg"
+                  alt="DNA da Força"
+                  className="w-16 h-16 object-contain"
+                />
               </div>
             </div>
             <h1 className="text-2xl font-bold text-center">DNA da Força</h1>

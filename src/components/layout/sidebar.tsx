@@ -30,20 +30,33 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   useEffect(() => {
     if (user) {
       const currentPath = location.pathname;
-      
+
       // Definir rotas permitidas por perfil
       const allowedPaths = {
-        student: ['/', '/chat'],
-        instructor: ['/', '/chat', '/materials', '/assistant'],
-        admin: ['/', '/chat', '/materials', '/assistant', '/settings', '/users', '/debug']
+        student: ["/", "/chat"],
+        instructor: ["/", "/chat", "/materials", "/assistant"],
+        admin: [
+          "/",
+          "/chat",
+          "/materials",
+          "/assistant",
+          "/settings",
+          "/users",
+          "/debug",
+        ],
       };
-      
-      const userAllowedPaths = allowedPaths[user.role as keyof typeof allowedPaths] || [];
-      
+
+      const userAllowedPaths =
+        allowedPaths[user.role as keyof typeof allowedPaths] || [];
+
       // Se o caminho atual não estiver na lista de permitidos para o perfil do usuário
-      if (!userAllowedPaths.some(path => currentPath === path || currentPath.startsWith(path + '/'))) {
+      if (
+        !userAllowedPaths.some(
+          (path) => currentPath === path || currentPath.startsWith(path + "/")
+        )
+      ) {
         // Redirecionar para a página inicial
-        navigate('/');
+        navigate("/");
       }
     }
   }, [location.pathname, user, navigate]);
@@ -107,8 +120,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
       {/* Header with logo and close button */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-red-600 rounded-md flex items-center justify-center">
-            <Dumbbell size={20} className="text-white" />
+          <div className="w-8 h-8 bg-red-600 rounded-md flex items-center justify-center p-1">
+            <img
+              src="/logo_dna_forca_1.jpg"
+              alt="DNA da Força"
+              className="w-full h-full object-contain"
+            />
           </div>
           <h1 className="text-xl font-bold">DNA da Força</h1>
         </div>
@@ -185,8 +202,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
         </Button>
 
         <div className="mt-4 text-center text-xs text-gray-500">
-                  <p>DNA da Força v1.7</p>
-        <p className="mt-1">Desenvolvido pela Matech AI</p>
+          <p>DNA da Força v1.7</p>
+          <p className="mt-1">Desenvolvido pela Matech AI</p>
         </div>
       </div>
     </div>

@@ -124,9 +124,11 @@ const HomePage: React.FC = () => {
         className="mb-8"
       >
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 bg-red-600 rounded-lg flex items-center justify-center">
-            <Dumbbell size={24} className="text-white" />
-          </div>
+          <img
+            src="/logo_dna_forca.jpg"
+            alt="DNA da Força"
+            className="w-12 h-12 object-contain"
+          />
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
               Bem-vindo, {user?.name}!
