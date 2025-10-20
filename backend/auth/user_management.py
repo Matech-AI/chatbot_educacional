@@ -18,7 +18,7 @@ from auth.auth import (
 )
 from .auth_token_manager import verify_auth_token, mark_token_as_used, clean_expired_tokens
 
-router = APIRouter(prefix="/auth", tags=["authentication"])
+router = APIRouter(tags=["authentication"])
 
 # Modelo para verificação de token
 

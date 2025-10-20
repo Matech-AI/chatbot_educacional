@@ -63,9 +63,9 @@ app.add_middleware(
 )
 
 # Inclua o router de user_management para expor /auth/users e outros endpoints de autenticação
-app.include_router(user_management_router, prefix="/api")
+app.include_router(user_management_router, prefix="/api/auth")
 # Inclua o router de autenticação para endpoints públicos como redefinição de senha
-app.include_router(auth_router, prefix="/api")
+app.include_router(auth_router, prefix="/api/auth")
 # The educational agent router is now exposed via the RAG server
 app.include_router(educational_agent_router, prefix="/api")
 

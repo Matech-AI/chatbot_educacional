@@ -16,7 +16,7 @@ from typing import Optional
 from fastapi import Request
 
 # Adicione esta linha para definir o router
-router = APIRouter(prefix="/auth", tags=["authentication"])
+router = APIRouter(tags=["authentication"])
 
 # Security configuration
 SECRET_KEY = os.getenv(
