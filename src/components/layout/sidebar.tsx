@@ -120,11 +120,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
       {/* Header with logo and close button */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-red-600 rounded-md flex items-center justify-center p-1">
+          <div className="w-12 h-12 bg-white rounded-md flex items-center justify-center shadow-sm">
             <img
               src="/logo_dna_forca_1.jpg"
               alt="DNA da Força"
-              className="w-full h-full object-contain"
+              className="w-10 h-10 object-contain"
             />
           </div>
           <h1 className="text-xl font-bold">DNA da Força</h1>
