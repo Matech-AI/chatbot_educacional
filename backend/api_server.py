@@ -48,10 +48,7 @@ load_dotenv()
 app = FastAPI(
     title="DNA da Força AI API",
     description="Sistema educacional com IA para treinamento físico - Versão Recursiva Completa",
-    version="1.7.0",
-    openapi_url="/api/openapi.json",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc"
+    version="1.7.0"
 )
 
 # Configure CORS
@@ -66,11 +63,11 @@ app.add_middleware(
 )
 
 # Inclua o router de user_management para expor /auth/users e outros endpoints de autenticação
-app.include_router(user_management_router)
+app.include_router(user_management_router, prefix="/api")
 # Inclua o router de autenticação para endpoints públicos como redefinição de senha
-app.include_router(auth_router)
+app.include_router(auth_router, prefix="/api")
 # The educational agent router is now exposed via the RAG server
-app.include_router(educational_agent_router)
+app.include_router(educational_agent_router, prefix="/api")
 
 # RAG Server URL
 RAG_SERVER_URL = os.getenv("RAG_SERVER_URL", "http://localhost:8001")
