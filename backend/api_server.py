@@ -48,7 +48,10 @@ load_dotenv()
 app = FastAPI(
     title="DNA da Força AI API",
     description="Sistema educacional com IA para treinamento físico - Versão Recursiva Completa",
-    version="1.7.0"
+    version="1.7.0",
+    openapi_url="/api/openapi.json",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc"
 )
 
 # Configure CORS

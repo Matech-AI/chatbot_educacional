@@ -49,8 +49,6 @@ services:
       - "traefik.http.routers.api.entrypoints=http,https"
       - "traefik.http.services.api.loadbalancer.server.port=8002"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
-      - "traefik.http.middlewares.api-stripprefix.stripprefix.prefixes=/api"
-      - "traefik.http.routers.api.middlewares=api-stripprefix"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 30s
