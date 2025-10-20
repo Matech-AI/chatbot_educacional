@@ -45,7 +45,7 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: apiTarget,
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api/, ''),
+          // Não remover o /api - deixar passar direto
         },
         // Proxy RAG API calls
         '/rag-api': {

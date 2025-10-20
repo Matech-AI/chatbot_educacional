@@ -415,7 +415,7 @@ def root():
     }
 
 
-@app.get("/health")
+@app.get("/api/health")
 async def health():
     """Health check endpoint"""
     local_default = Path(__file__).resolve().parent / "data" / "materials"
@@ -449,7 +449,7 @@ async def health():
     return status
 
 
-@app.get("/status")
+@app.get("/api/status")
 async def get_status():
     """Get detailed system status"""
     materials_dir = Path(os.getenv("MATERIALS_DIR", str(
@@ -498,7 +498,7 @@ async def get_status():
 # ========================================
 
 
-@app.post("/initialize")
+@app.post("/api/initialize")
 async def initialize_system(
     api_key: str = Form(...),
     drive_folder_id: Optional[str] = Form(None),
@@ -643,7 +643,7 @@ async def initialize_system(
 # ========================================
 
 
-@app.post("/chat", response_model=Response)
+@app.post("/api/chat", response_model=Response)
 async def chat(question: Question):
     """Simplified chat endpoint - forwards to RAG server"""
     logger.info(f"💬 Chat request: {question.content[:50]}...")
@@ -667,7 +667,7 @@ async def chat(question: Question):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/chat-auth", response_model=Response)
+@app.post("/api/chat-auth", response_model=Response)
 async def chat_auth(question: Question, current_user: User = Depends(get_current_user)):
     """Process a chat question with authentication - forwards to RAG server"""
     logger.info(
@@ -694,7 +694,7 @@ async def chat_auth(question: Question, current_user: User = Depends(get_current
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/chat/agent")
+@app.post("/api/chat/agent")
 async def chat_agent_stream(request: ChatRequest, current_user: User = Depends(get_current_user)):
     """Endpoint to stream responses from the chat agent - forwards to RAG server"""
     thread_id = request.thread_id or str(uuid4())
@@ -723,7 +723,7 @@ async def chat_agent_stream(request: ChatRequest, current_user: User = Depends(g
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/chat/educational")
+@app.post("/api/chat/educational")
 async def chat_educational_proxy(request: EducationalChatRequest):
     """Proxy for educational chat to the RAG server"""
     logger.info(
@@ -748,7 +748,7 @@ async def chat_educational_proxy(request: EducationalChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/chat/session/{session_id}/context")
+@app.get("/api/chat/session/{session_id}/context")
 async def get_session_context_proxy(session_id: str):
     """Proxy for getting session context to the RAG server"""
     logger.info(
@@ -826,7 +826,7 @@ async def get_user_drive_handler(username: str, api_key: Optional[str] = None):
             pass
 
 
-@app.post("/drive/sync-recursive")
+@app.post("/api/drive/sync-recursive")
 async def sync_drive_recursive(
     data: RecursiveSync,
     background_tasks: BackgroundTasks,
@@ -943,7 +943,7 @@ async def sync_drive_recursive(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/recursive-drive-analysis")
+@app.post("/api/recursive-drive-analysis")
 async def recursive_drive_analysis(
     data: DriveSync,
     current_user: User = Depends(get_current_user)
@@ -991,7 +991,7 @@ async def recursive_drive_analysis(
             status_code=500, detail=f"Drive analysis error: {str(e)}")
 
 
-@app.post("/recursive-drive-force-redownload")
+@app.post("/api/recursive-drive-force-redownload")
 async def recursive_drive_force_redownload(
     current_user: User = Depends(get_current_user)
 ):
@@ -1026,7 +1026,7 @@ async def recursive_drive_force_redownload(
             status_code=500, detail=f"Force redownload error: {str(e)}")
 
 
-@app.post("/recursive-drive-sync")
+@app.post("/api/recursive-drive-sync")
 async def recursive_drive_sync(
     data: DriveSync,
     background_tasks: BackgroundTasks,
@@ -1146,7 +1146,7 @@ async def recursive_drive_sync(
             status_code=500, detail=f"Drive sync error: {str(e)}")
 
 
-@app.get("/drive/analyze-folder")
+@app.get("/api/drive/analyze-folder")
 async def analyze_folder(
     folder_id: str,
     api_key: Optional[str] = None,
@@ -1178,7 +1178,7 @@ async def analyze_folder(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/drive/download-progress")
+@app.get("/api/drive/download-progress")
 async def get_download_progress(
     download_id: Optional[str] = None,
     current_user: User = Depends(get_current_user)
@@ -1222,7 +1222,7 @@ async def get_download_progress(
         }
 
 
-@app.post("/drive/cancel-download")
+@app.post("/api/drive/cancel-download")
 async def cancel_download(
     download_id: str,
     current_user: User = Depends(get_current_user)
@@ -1261,7 +1261,7 @@ async def cancel_download(
     return {"status": "cancelled", "download_id": download_id}
 
 
-@app.get("/drive/folder-stats")
+@app.get("/api/drive/folder-stats")
 async def get_folder_stats(current_user: User = Depends(get_current_user)):
     """Get detailed folder statistics"""
     try:
@@ -1301,7 +1301,7 @@ async def get_folder_stats(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/drive-stats-detailed")
+@app.get("/api/drive-stats-detailed")
 async def get_drive_stats_detailed(current_user: User = Depends(get_current_user)):
     """Get detailed Drive statistics with folder structure"""
     logger.info(
@@ -1396,7 +1396,7 @@ async def get_drive_stats_detailed(current_user: User = Depends(get_current_user
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/drive/test-connection")
+@app.get("/api/drive/test-connection")
 async def test_drive_connection(
     api_key: Optional[str] = None,
     current_user: User = Depends(get_current_user)
@@ -1463,7 +1463,7 @@ async def test_drive_connection(
         }
 
 
-@app.post("/drive/clear-cache")
+@app.post("/api/drive/clear-cache")
 async def clear_drive_cache(current_user: User = Depends(get_current_user)):
     """Clear drive handler cache and reset state"""
     if current_user.role != "admin":
@@ -1508,7 +1508,7 @@ async def clear_drive_cache(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/maintenance/clear-drive-cache")
+@app.post("/api/maintenance/clear-drive-cache")
 async def maintenance_clear_drive_cache(current_user: User = Depends(get_current_user)):
     """Clear the drive handler's file hashes cache to allow redownloading files"""
     if current_user.role != "admin":
@@ -1540,7 +1540,7 @@ async def maintenance_clear_drive_cache(current_user: User = Depends(get_current
 # ========================================
 
 
-@app.post("/test-drive-folder")
+@app.post("/api/test-drive-folder")
 async def test_drive_folder(
     data: DriveTest,
     current_user: User = Depends(get_current_user)
@@ -1581,7 +1581,7 @@ async def test_drive_folder(
         return {"accessible": False, "error": str(e)}
 
 
-@app.post("/sync-drive")
+@app.post("/api/sync-drive")
 async def sync_drive(
     data: DriveSync,
     current_user: User = Depends(get_current_user)
@@ -1644,7 +1644,7 @@ async def sync_drive(
             status_code=500, detail=f"Drive sync error: {str(e)}")
 
 
-@app.get("/drive-stats")
+@app.get("/api/drive-stats")
 async def get_drive_stats(current_user: User = Depends(get_current_user)):
     """Get Drive statistics (legacy endpoint)"""
     logger.info(f"📊 Legacy drive stats requested by: {current_user.username}")
@@ -1673,7 +1673,7 @@ async def get_drive_stats(current_user: User = Depends(get_current_user)):
 # ========================================
 
 
-@app.post("/maintenance/cleanup-duplicates")
+@app.post("/api/maintenance/cleanup-duplicates")
 async def cleanup_duplicate_files(current_user: User = Depends(get_current_user)):
     """Remove duplicate files based on content hash"""
     if current_user.role != "admin":
@@ -1733,7 +1733,7 @@ async def cleanup_duplicate_files(current_user: User = Depends(get_current_user)
         raise HTTPException(status_code=500, detail=f"Cleanup error: {str(e)}")
 
 
-@app.post("/maintenance/cleanup-empty-folders")
+@app.post("/api/maintenance/cleanup-empty-folders")
 async def cleanup_empty_folders(current_user: User = Depends(get_current_user)):
     """Remove empty folders"""
     if current_user.role != "admin":
@@ -1769,7 +1769,7 @@ async def cleanup_empty_folders(current_user: User = Depends(get_current_user)):
             status_code=500, detail=f"Folder cleanup error: {str(e)}")
 
 
-@app.post("/maintenance/optimize-storage")
+@app.post("/api/maintenance/optimize-storage")
 async def optimize_storage(current_user: User = Depends(get_current_user)):
     """Run comprehensive storage optimization"""
     if current_user.role != "admin":
@@ -1820,7 +1820,7 @@ async def optimize_storage(current_user: User = Depends(get_current_user)):
             status_code=500, detail=f"Storage optimization error: {str(e)}")
 
 
-@app.post("/maintenance/reset-materials")
+@app.post("/api/maintenance/reset-materials")
 async def reset_materials_directory(current_user: User = Depends(get_current_user)):
     """Completely reset the materials directory"""
     if current_user.role != "admin":
@@ -1860,7 +1860,7 @@ async def reset_materials_directory(current_user: User = Depends(get_current_use
             status_code=500, detail=f"Materials reset error: {str(e)}")
 
 
-@app.post("/maintenance/reset-chromadb")
+@app.post("/api/maintenance/reset-chromadb")
 async def reset_chromadb(current_user: User = Depends(get_current_user)):
     """Reset ChromaDB vector database"""
     if current_user.role != "admin":
@@ -1910,7 +1910,7 @@ async def reset_chromadb(current_user: User = Depends(get_current_user)):
             status_code=500, detail=f"ChromaDB reset error: {str(e)}")
 
 
-@app.post("/maintenance/reset-component")
+@app.post("/api/maintenance/reset-component")
 async def reset_component(
     data: ResetComponent,
     current_user: User = Depends(get_current_user)
@@ -1953,7 +1953,7 @@ async def reset_component(
             status_code=500, detail=f"Component reset error: {str(e)}")
 
 
-@app.get("/maintenance/system-report")
+@app.get("/api/maintenance/system-report")
 async def generate_system_report(current_user: User = Depends(get_current_user)):
     """Generate comprehensive system report"""
     if current_user.role not in ["admin", "instructor"]:
@@ -2097,7 +2097,7 @@ async def generate_system_report(current_user: User = Depends(get_current_user))
             status_code=500, detail=f"Report generation error: {str(e)}")
 
 
-@app.get("/maintenance/health-check")
+@app.get("/api/maintenance/health-check")
 async def health_check(current_user: User = Depends(get_current_user)):
     """Comprehensive health check"""
     logger.info(f"🏥 Health check requested by: {current_user.username}")
@@ -2183,7 +2183,7 @@ async def health_check(current_user: User = Depends(get_current_user)):
 # ========================================
 
 
-@app.get("/analytics/folder-structure")
+@app.get("/api/analytics/folder-structure")
 async def get_folder_structure_analysis(current_user: User = Depends(get_current_user)):
     """Get detailed folder structure analysis"""
     try:
@@ -2229,7 +2229,7 @@ async def get_folder_structure_analysis(current_user: User = Depends(get_current
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/analytics/file-distribution")
+@app.get("/api/analytics/file-distribution")
 async def get_file_distribution_analysis(current_user: User = Depends(get_current_user)):
     """Get file type and size distribution analysis"""
     try:
@@ -2283,7 +2283,7 @@ async def get_file_distribution_analysis(current_user: User = Depends(get_curren
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/analytics/storage-efficiency")
+@app.get("/api/analytics/storage-efficiency")
 async def get_storage_efficiency_analysis(current_user: User = Depends(get_current_user)):
     """Get storage efficiency analysis including duplicates"""
     try:
@@ -2313,7 +2313,7 @@ async def get_storage_efficiency_analysis(current_user: User = Depends(get_curre
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/analytics/download-report")
+@app.get("/api/analytics/download-report")
 async def get_download_report(current_user: User = Depends(get_current_user)):
     """Get download activity report"""
     try:
@@ -2363,7 +2363,7 @@ async def get_download_report(current_user: User = Depends(get_current_user)):
 # ========================================
 
 
-@app.get("/materials")
+@app.get("/api/materials")
 async def list_materials(current_user: User = Depends(get_current_user)):
     """List all available materials"""
     logger.info(f"📚 Materials list requested by: {current_user.username}")
@@ -2381,7 +2381,7 @@ async def list_materials(current_user: User = Depends(get_current_user)):
     return materials
 
 
-@app.post("/materials/upload")
+@app.post("/api/materials/upload")
 async def upload_material(
     file: UploadFile = File(...),
     description: str = Form(""),
@@ -2457,7 +2457,7 @@ async def upload_material(
         raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
 
 
-@app.get("/materials/browse")
+@app.get("/api/materials/browse")
 async def browse_materials(
     path: Optional[str] = None,
     current_user: User = Depends(get_current_user)
@@ -2506,7 +2506,7 @@ async def browse_materials(
     }
 
 
-@app.get("/materials/archive")
+@app.get("/api/materials/archive")
 async def download_materials_archive(current_user: User = Depends(get_current_user)):
     """Stream .tar.gz com todos os materiais (server-to-server sync)."""
     if current_user.role not in ["admin", "instructor"]:
@@ -2534,7 +2534,7 @@ async def download_materials_archive(current_user: User = Depends(get_current_us
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/materials/upload-archive")
+@app.post("/api/materials/upload-archive")
 async def upload_materials_archive(
     archive: UploadFile = File(...),
     destination_subdir: Optional[str] = Form(None),
@@ -2598,7 +2598,7 @@ async def upload_materials_archive(
             status_code=500, detail=f"Archive upload error: {str(e)}")
 
 
-@app.get("/materials/{filename:path}")
+@app.get("/api/materials/{filename:path}")
 async def download_material(filename: str, download: bool = False, current_user: Optional[User] = Depends(get_optional_current_user)):
     """Download a material file with optional authentication"""
     # Verificar se o arquivo deve ser protegido
@@ -2674,7 +2674,7 @@ def should_require_auth(filename: str) -> bool:
     return True
 
 
-@app.delete("/materials/{filename:path}")
+@app.delete("/api/materials/{filename:path}")
 async def delete_material(filename: str, current_user: User = Depends(get_current_user)):
     """Delete a material file"""
     if current_user.role not in ["admin", "instructor"]:
@@ -2706,7 +2706,7 @@ async def delete_material(filename: str, current_user: User = Depends(get_curren
         raise HTTPException(status_code=500, detail=f"Delete error: {str(e)}")
 
 
-@app.put("/materials/{filename:path}/metadata")
+@app.put("/api/materials/{filename:path}/metadata")
 async def update_material_metadata(
     filename: str,
     description: str = Form(""),
@@ -2774,7 +2774,7 @@ async def update_material_metadata(
 # ========================================
 
 
-@app.get("/debug/drive")
+@app.get("/api/debug/drive")
 async def debug_drive(current_user: User = Depends(get_current_user)):
     """Debug endpoint for Drive handler status"""
     if current_user.role != "admin":
@@ -2808,7 +2808,7 @@ async def debug_drive(current_user: User = Depends(get_current_user)):
     return debug_info
 
 
-@app.post("/sync-drive-simple")
+@app.post("/api/sync-drive-simple")
 async def sync_drive_simple(
     data: DriveSync,
     current_user: User = Depends(get_current_user)
@@ -2888,7 +2888,7 @@ async def startup_event():
 # ========================================
 
 
-@app.get("/assistant/config")
+@app.get("/api/assistant/config")
 async def get_assistant_config(current_user: User = Depends(get_current_user)):
     """Get current assistant configuration - proxy to RAG server"""
     logger.info(f"⚙️ Assistant config requested by: {current_user.username}")
@@ -2911,7 +2911,7 @@ async def get_assistant_config(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/assistant/config")
+@app.post("/api/assistant/config")
 async def update_assistant_config(config: dict, current_user: User = Depends(get_current_user)):
     """Update assistant configuration - proxy to RAG server"""
     logger.info(f"⚙️ Assistant config update by: {current_user.username}")
@@ -2934,7 +2934,7 @@ async def update_assistant_config(config: dict, current_user: User = Depends(get
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/assistant/templates")
+@app.get("/api/assistant/templates")
 async def get_assistant_templates(current_user: User = Depends(get_current_user)):
     """Get available assistant templates - proxy to RAG server"""
     logger.info(f"📋 Assistant templates requested by: {current_user.username}")
@@ -2957,7 +2957,7 @@ async def get_assistant_templates(current_user: User = Depends(get_current_user)
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/assistant/config/template/{template_name}")
+@app.post("/api/assistant/config/template/{template_name}")
 async def apply_assistant_template(template_name: str, current_user: User = Depends(get_current_user)):
     """Apply a specific assistant template - proxy to RAG server"""
     logger.info(
@@ -2981,7 +2981,7 @@ async def apply_assistant_template(template_name: str, current_user: User = Depe
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/assistant/config/reset")
+@app.post("/api/assistant/config/reset")
 async def reset_assistant_config(current_user: User = Depends(get_current_user)):
     """Reset assistant configuration to default - proxy to RAG server"""
     logger.info(f"🔄 Assistant config reset by: {current_user.username}")
@@ -3008,7 +3008,7 @@ async def reset_assistant_config(current_user: User = Depends(get_current_user))
 # SYSTEM SETTINGS ENDPOINTS
 # ========================================
 
-@app.get("/settings")
+@app.get("/api/settings")
 async def get_system_settings(current_user: User = Depends(get_current_user)):
     """Get system settings"""
     logger.info("⚙️ System settings requested")
@@ -3037,7 +3037,7 @@ async def get_system_settings(current_user: User = Depends(get_current_user)):
     }
 
 
-@app.post("/settings")
+@app.post("/api/settings")
 async def update_system_settings(settings: SystemSettings, current_user: User = Depends(get_current_user)):
     """Update system settings"""
     logger.info("⚙️ System settings update requested")
@@ -3067,7 +3067,7 @@ async def update_system_settings(settings: SystemSettings, current_user: User = 
             status_code=500, detail=f"Erro ao atualizar configurações: {str(e)}")
 
 
-@app.post("/settings/reset")
+@app.post("/api/settings/reset")
 async def reset_system_settings(current_user: User = Depends(get_current_user)):
     """Reset system settings to default"""
     logger.info("🔄 System settings reset requested")
@@ -3112,7 +3112,7 @@ class SelectiveModuleDownload(BaseModel):
     batch_size: Optional[int] = 3
 
 
-@app.post("/drive/download-module")
+@app.post("/api/drive/download-module")
 async def download_specific_module(
     data: SelectiveModuleDownload,
     background_tasks: BackgroundTasks,
@@ -3267,7 +3267,7 @@ async def download_specific_module(
 # ========================================
 
 
-@app.get("/drive/list-modules")
+@app.get("/api/drive/list-modules")
 async def list_available_modules(
     folder_id: str,
     api_key: Optional[str] = None,
@@ -3320,7 +3320,7 @@ async def list_available_modules(
 # ========================================
 
 
-@app.get("/debug/credentials-check")
+@app.get("/api/debug/credentials-check")
 async def debug_credentials_check(current_user: User = Depends(get_current_user)):
     """Debug endpoint to check where credentials files are located"""
     if current_user.role not in ["admin", "instructor"]:
