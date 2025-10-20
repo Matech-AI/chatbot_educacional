@@ -38,6 +38,7 @@ services:
       - PORT=8002
       - HOST=0.0.0.0
       - CORS_ORIGINS=https://iadnadaforca.com.br,https://www.iadnadaforca.com.br,http://localhost:3000,http://127.0.0.1:3000
+      - RAG_SERVER_URL=http://rag-server:8001
     volumes:
       - ./backend/data:/app/data
     networks:
