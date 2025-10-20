@@ -23,6 +23,8 @@ services:
       - "traefik.http.routers.rag.entrypoints=http,https"
       - "traefik.http.services.rag.loadbalancer.server.port=8001"
       - "traefik.http.routers.rag.tls.certresolver=letsencrypt"
+      - "traefik.http.middlewares.rag-stripprefix.stripprefix.prefixes=/rag"
+      - "traefik.http.routers.rag.middlewares=rag-stripprefix"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
