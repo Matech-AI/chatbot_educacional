@@ -34,6 +34,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0', // Aceita conexões IPv4 e IPv6
       port: 3000,
+      open: false, // Desabilita abertura automática para evitar erro no Linux/Windows
       allowedHosts: [
         'iadnadaforca.com.br',
         'www.iadnadaforca.com.br',
