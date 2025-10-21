@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Request, BackgroundTasks, status
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Request, BackgroundTasks, status, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import FileResponse, StreamingResponse
@@ -68,6 +68,12 @@ app.include_router(user_management_router, prefix="/api/auth")
 app.include_router(auth_router, prefix="/api/auth")
 # The educational agent router is now exposed via the RAG server
 app.include_router(educational_agent_router, prefix="/api")
+
+# Create drive router
+drive_router = APIRouter()
+
+# Include drive router
+app.include_router(drive_router, prefix="/api", tags=["drive"])
 
 # RAG Server URL
 RAG_SERVER_URL = os.getenv("RAG_SERVER_URL", "http://localhost:8001")
@@ -943,7 +949,7 @@ async def sync_drive_recursive(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/recursive-drive-analysis")
+@drive_router.post("/recursive-drive-analysis")
 async def recursive_drive_analysis(
     data: DriveSync,
     current_user: User = Depends(get_current_user)
