@@ -393,44 +393,47 @@ Desculpe, ocorreu um erro ao processar sua pergunta.
   }
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex flex-col lg:flex-row">
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200 p-4 flex-shrink-0">
-          <div className="flex items-center justify-between mb-4">
-            <div>
+        <header className="bg-white border-b border-gray-200 p-3 lg:p-4 flex-shrink-0">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-3 lg:mb-4 space-y-2 lg:space-y-0">
+            <div className="flex-1">
               <BackButton />
-              <h1 className="text-xl font-semibold text-gray-900 mt-2 flex items-center space-x-2">
-                <Brain className="text-red-600" size={24} />
-                <span>Assistente Educacional</span>
+              <h1 className="text-lg lg:text-xl font-semibold text-gray-900 mt-2 flex items-center space-x-2">
+                <Brain className="text-red-600" size={20} />
+                <span className="truncate">Assistente Educacional</span>
               </h1>
               {sessionContext?.current_focus && (
-                <p className="text-sm text-gray-600 mt-1">
+                <p className="text-xs lg:text-sm text-gray-600 mt-1 truncate">
                   Foco atual: {sessionContext.current_focus}
                 </p>
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button
                 onClick={() => setShowLearningPath(!showLearningPath)}
                 variant={showLearningPath ? "default" : "outline"}
                 size="sm"
-                className="flex items-center gap-1"
+                className="flex items-center gap-1 text-xs lg:text-sm"
               >
-                <BookOpen size={16} />
-                <span>Trilha de Aprendizado</span>
+                <BookOpen size={14} />
+                <span className="hidden sm:inline">Trilha de Aprendizado</span>
+                <span className="sm:hidden">Trilha</span>
               </Button>
 
               <Button
                 onClick={handleNewSession}
                 variant="outline"
-                className="flex items-center gap-1"
+                size="sm"
+                className="flex items-center gap-1 text-xs lg:text-sm"
                 disabled={isProcessing}
               >
-                <PlusCircle size={16} />
-                <span>Nova conversa</span>
+                <PlusCircle size={14} />
+                <span className="hidden sm:inline">Nova conversa</span>
+                <span className="sm:hidden">Nova</span>
               </Button>
             </div>
           </div>
@@ -472,46 +475,55 @@ Desculpe, ocorreu um erro ao processar sua pergunta.
         </header>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-3 lg:space-y-4">
           <AnimatePresence>
             {educationalMessages.length === 0 ? (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-center py-12"
+                className="text-center py-8 lg:py-12"
               >
-                <Brain size={48} className="mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                <Brain
+                  size={40}
+                  className="mx-auto text-gray-400 mb-4 lg:hidden"
+                />
+                <Brain
+                  size={48}
+                  className="mx-auto text-gray-400 mb-4 hidden lg:block"
+                />
+                <h3 className="text-base lg:text-lg font-medium text-gray-900 mb-2">
                   Bem-vindo ao Assistente Educacional!
                 </h3>
-                <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                <p className="text-sm lg:text-base text-gray-600 mb-4 lg:mb-6 max-w-md mx-auto px-4">
                   Faça perguntas sobre treinamento físico e receba respostas
                   detalhadas com fontes, sugestões de aprofundamento e trilhas
                   de aprendizado personalizadas.
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto">
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <Target className="text-blue-600 mb-2" size={24} />
-                    <h4 className="font-medium text-blue-900">Personalizado</h4>
-                    <p className="text-sm text-blue-700">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 max-w-3xl mx-auto px-4">
+                  <div className="bg-blue-50 p-3 lg:p-4 rounded-lg">
+                    <Target className="text-blue-600 mb-2" size={20} />
+                    <h4 className="font-medium text-blue-900 text-sm lg:text-base">
+                      Personalizado
+                    </h4>
+                    <p className="text-xs lg:text-sm text-blue-700">
                       Adapta o nível de complexidade ao seu conhecimento
                     </p>
                   </div>
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <BookOpen className="text-green-600 mb-2" size={24} />
-                    <h4 className="font-medium text-green-900">
+                  <div className="bg-green-50 p-3 lg:p-4 rounded-lg">
+                    <BookOpen className="text-green-600 mb-2" size={20} />
+                    <h4 className="font-medium text-green-900 text-sm lg:text-base">
                       Fontes Confiáveis
                     </h4>
-                    <p className="text-sm text-green-700">
+                    <p className="text-xs lg:text-sm text-green-700">
                       Respostas baseadas em materiais científicos e práticos
                     </p>
                   </div>
-                  <div className="bg-purple-50 p-4 rounded-lg">
-                    <TrendingUp className="text-purple-600 mb-2" size={24} />
-                    <h4 className="font-medium text-purple-900">
+                  <div className="bg-purple-50 p-3 lg:p-4 rounded-lg sm:col-span-2 lg:col-span-1">
+                    <TrendingUp className="text-purple-600 mb-2" size={20} />
+                    <h4 className="font-medium text-purple-900 text-sm lg:text-base">
                       Aprendizado Progressivo
                     </h4>
-                    <p className="text-sm text-purple-700">
+                    <p className="text-xs lg:text-sm text-purple-700">
                       Trilhas estruturadas para aprofundar conhecimentos
                     </p>
                   </div>
@@ -549,20 +561,20 @@ Desculpe, ocorreu um erro ao processar sua pergunta.
         {showLearningPath && (
           <motion.div
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 400, opacity: 1 }}
+            animate={{ width: "100%", opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            className="border-l border-gray-200 bg-gray-50 overflow-hidden"
+            className="border-l border-gray-200 bg-gray-50 overflow-hidden lg:w-96"
           >
-            <div className="p-4 h-full overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">
+            <div className="p-3 lg:p-4 h-full overflow-y-auto">
+              <div className="flex items-center justify-between mb-3 lg:mb-4">
+                <h3 className="text-base lg:text-lg font-semibold text-gray-900">
                   Trilha de Aprendizado
                 </h3>
                 <button
                   onClick={() => setShowLearningPath(false)}
                   className="text-gray-400 hover:text-gray-600"
                 >
-                  <ChevronRight size={20} />
+                  <ChevronRight size={18} />
                 </button>
               </div>
 
@@ -576,9 +588,16 @@ Desculpe, ocorreu um erro ao processar sua pergunta.
                   onTopicExplore={handleTopicExplore}
                 />
               ) : (
-                <div className="text-center py-12">
-                  <BookOpen size={48} className="mx-auto text-gray-400 mb-4" />
-                  <p className="text-gray-600">
+                <div className="text-center py-8 lg:py-12">
+                  <BookOpen
+                    size={40}
+                    className="mx-auto text-gray-400 mb-4 lg:hidden"
+                  />
+                  <BookOpen
+                    size={48}
+                    className="mx-auto text-gray-400 mb-4 hidden lg:block"
+                  />
+                  <p className="text-sm lg:text-base text-gray-600 px-4">
                     Selecione um tópico na conversa para ver a trilha de
                     aprendizado
                   </p>

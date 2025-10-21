@@ -127,14 +127,14 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
   };
 
   return (
-    <div className="border-t border-gray-200 bg-white p-4">
+    <div className="border-t border-gray-200 bg-white p-3 lg:p-4">
       {/* Session Context Display */}
       {sessionContext?.current_focus && (
-        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="mb-3 p-2 lg:p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <Target size={16} className="text-blue-600" />
-              <span className="text-sm font-medium text-blue-800">
+              <Target size={14} className="text-blue-600" />
+              <span className="text-xs lg:text-sm font-medium text-blue-800 truncate">
                 Foco atual: {sessionContext.current_focus}
               </span>
             </div>
@@ -142,7 +142,7 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
               Array.isArray(sessionContext.topics_covered) &&
               sessionContext.topics_covered.length > 0 && (
                 <div className="text-xs text-blue-600">
-                  {sessionContext.topics_covered.length} tópicos explorados
+                  {sessionContext.topics_covered.length} tópicos
                 </div>
               )}
           </div>
@@ -150,12 +150,12 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
       )}
 
       {/* Quick Actions */}
-      <div className="mb-3 flex flex-wrap gap-2">
+      <div className="mb-3 flex flex-wrap gap-1 lg:gap-2">
         {suggestedQuestions.map((question, index) => (
           <button
             key={index}
             onClick={() => setMessage(question)}
-            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full px-3 py-1 transition-colors"
+            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full px-2 lg:px-3 py-1 transition-colors"
           >
             {question}
           </button>
@@ -165,7 +165,7 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
       {/* Preferências removidas da UI por solicitação */}
 
       {/* Main Input Area */}
-      <div className="flex space-x-3">
+      <div className="flex space-x-2 lg:space-x-3">
         <div className="flex-1 relative">
           <textarea
             ref={textareaRef}
@@ -173,7 +173,7 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Digite sua pergunta sobre treinamento..."
-            className="w-full min-h-[44px] max-h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all"
+            className="w-full min-h-[40px] lg:min-h-[44px] max-h-24 lg:max-h-32 px-3 lg:px-4 py-2 lg:py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all text-sm lg:text-base"
             disabled={isLoading}
           />
         </div>
@@ -182,12 +182,13 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
           <Button
             onClick={handleSend}
             disabled={!message.trim() || isLoading}
-            className="bg-red-600 hover:bg-red-700 p-2"
+            className="bg-red-600 hover:bg-red-700 p-2 lg:p-2"
+            size="sm"
           >
             {isLoading ? (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
             ) : (
-              <Send size={18} />
+              <Send size={16} />
             )}
           </Button>
         </div>
@@ -206,12 +207,12 @@ export const EnhancedChatInput: React.FC<EnhancedChatInputProps> = ({
                 Explorar tópicos relacionados:
               </span>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1 lg:gap-2">
               {topics.slice(-3).map((topic, index) => (
                 <button
                   key={index}
                   onClick={() => onTopicExplore?.(topic)}
-                  className="text-xs bg-green-100 text-green-700 hover:bg-green-200 rounded-full px-3 py-1 transition-colors"
+                  className="text-xs bg-green-100 text-green-700 hover:bg-green-200 rounded-full px-2 lg:px-3 py-1 transition-colors"
                 >
                   {topic}
                 </button>
