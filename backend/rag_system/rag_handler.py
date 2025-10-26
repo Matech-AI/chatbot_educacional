@@ -264,8 +264,8 @@ class RAGConfig:
     embedding_model: str = "text-embedding-3-small"
     gemini_embedding_model: str = "models/text-embedding-004"
     nvidia_embedding_model: str = "nvidia/nv-embedqa-e5-v5"  # NOVO: Embedding NVIDIA
-    # NOVO: Embedding Open Source de alta qualidade (384d)
-    open_source_embedding_model: str = "intfloat/multilingual-e5-large"
+    # NOVO: Embedding Open Source de alta qualidade (768d) - versão BASE para menos memória
+    open_source_embedding_model: str = "intfloat/multilingual-e5-base"  # Mudado de -large para -base para evitar erro de memória
     temperature: float = 0.2
     max_tokens: int = 4096  # Aumentado para 4096
 
@@ -274,8 +274,8 @@ class RAGConfig:
         "PREFER_NVIDIA", "true").lower() == "true"  # NOVO: Preferir NVIDIA
     prefer_openai: bool = os.getenv(
         "PREFER_OPENAI", "false").lower() == "true"  # Mantido False
-    prefer_open_source: bool = os.getenv("PREFER_OPEN_SOURCE_EMBEDDINGS", "true").lower(
-    ) == "true"  # NOVO: Preferir embeddings open source
+    prefer_open_source: bool = os.getenv("PREFER_OPEN_SOURCE_EMBEDDINGS", "false").lower(
+    ) == "true"  # Embeddings open source habilitados (usando e5-base para reduzir uso de memória)
 
     # NVIDIA specific settings
     nvidia_retry_attempts: int = 2  # NOVO: Tentativas de retry
@@ -425,40 +425,30 @@ class RAGHandler:
         logger.info(
             f"   - Gemini API Key: {'✅ Configurada' if self.gemini_api_key else '❌ Não configurada'}")
 
-        # Open Source como prioridade se prefer_open_source for True
-        if self.config.prefer_open_source and OpenSourceEmbeddings:
-            providers_to_try.append(("open_source", None))
-            logger.info("🎯 Adicionando Open Source como PRIORIDADE")
-
-        # NVIDIA como prioridade se prefer_nvidia for True
-        if self.config.prefer_nvidia and self.nvidia_api_key:
+        # NVIDIA como prioridade PRIMEIRO (melhor para Q&A e reduzir alucinações)
+        if self.nvidia_api_key:
             providers_to_try.append(("nvidia", self.nvidia_api_key))
-            logger.info("🎯 Adicionando NVIDIA como PRIORIDADE")
+            logger.info("🎯 Adicionando NVIDIA como PRIMEIRA PRIORIDADE (melhor para Q&A)")
 
         if self.config.prefer_openai:
             if self.openai_api_key:
                 providers_to_try.append(("openai", self.openai_api_key))
-                logger.info("🎯 Adicionando OpenAI como PRIORIDADE")
-            if self.gemini_api_key and GoogleGenerativeAIEmbeddings:
-                providers_to_try.append(("gemini", self.gemini_api_key))
-                logger.info("🎯 Adicionando Gemini como PRIORIDADE")
-        else:
+                logger.info("🎯 Adicionando OpenAI como fallback")
             if self.gemini_api_key and GoogleGenerativeAIEmbeddings:
                 providers_to_try.append(("gemini", self.gemini_api_key))
                 logger.info("🔄 Adicionando Gemini como fallback")
+        else:
             if self.openai_api_key:
                 providers_to_try.append(("openai", self.openai_api_key))
                 logger.info("🔄 Adicionando OpenAI como fallback")
+            if self.gemini_api_key and GoogleGenerativeAIEmbeddings:
+                providers_to_try.append(("gemini", self.gemini_api_key))
+                logger.info("🔄 Adicionando Gemini como fallback")
 
-        # Adicionar NVIDIA como fallback se não foi adicionado como prioridade
-        if not self.config.prefer_nvidia and self.nvidia_api_key:
-            providers_to_try.append(("nvidia", self.nvidia_api_key))
-            logger.info("🔄 Adicionando NVIDIA como fallback")
-
-        # Adicionar Open Source como fallback se não foi adicionado como prioridade
-        if not self.config.prefer_open_source and OpenSourceEmbeddings:
+        # Open Source como ÚLTIMO fallback (só se todos os outros falharem)
+        if OpenSourceEmbeddings:
             providers_to_try.append(("open_source", None))
-            logger.info("🔄 Adicionando Open Source como fallback")
+            logger.info("🔄 Adicionando Open Source como último fallback")
 
         logger.info(
             f"📋 Ordem de tentativa dos providers: {[p[0] for p in providers_to_try]}")
@@ -481,6 +471,7 @@ class RAGHandler:
                     self.embeddings = NVIDIAEmbeddings(
                         nvidia_api_key=api_key,
                         model=self.config.nvidia_embedding_model,
+                        model_name=self.config.nvidia_embedding_model,
                         base_url=self.config.nvidia_base_url,
                         retry_attempts=self.config.nvidia_retry_attempts,
                         retry_delay=self.config.nvidia_retry_delay

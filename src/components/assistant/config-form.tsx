@@ -174,7 +174,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
         {/* Embedding model */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Modelo de Embedding
+            Modelo de Embedding (Fallback)
           </label>
           <select
             name="embeddingModel"
@@ -182,18 +182,40 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
             onChange={handleChange}
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value="text-embedding-ada-002">
-              text-embedding-ada-002
-            </option>
-            <option value="text-embedding-3-small">
-              text-embedding-3-small
-            </option>
-            <option value="text-embedding-3-large">
-              text-embedding-3-large
-            </option>
+            <optgroup label="OpenAI - Usado apenas se NVIDIA falhar">
+              <option value="text-embedding-3-large">
+                text-embedding-3-large (melhor acurácia)
+              </option>
+              <option value="text-embedding-3-small">
+                text-embedding-3-small (economia)
+              </option>
+            </optgroup>
           </select>
           <p className="text-xs text-gray-500 mt-1">
-            Modelo usado para converter texto em vetores
+            Sistema usa NVIDIA nv-embedqa-e5-v5 por padrão. Este modelo é usado
+            apenas como fallback.
+          </p>
+        </div>
+
+        {/* Retrieval search type */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Tipo de Busca
+          </label>
+          <select
+            name="retrievalSearchType"
+            value={formState.retrievalSearchType || "mmr"}
+            onChange={handleChange}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="mmr">
+              MMR - Maximum Marginal Relevance (melhor diversidade)
+            </option>
+            <option value="similarity">Similarity - Máxima similaridade</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            MMR traz resultados mais diversos, Similarity traz os mais
+            relevantes
           </p>
         </div>
 
