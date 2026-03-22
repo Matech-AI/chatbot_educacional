@@ -393,34 +393,30 @@ async def lifespan(app: FastAPI):
             "💡 ChromaDB não configurado - RAG handler será inicializado quando necessário")
         logger.info("💡 Use a rota /initialize para configurar manualmente")
     else:
-        if nvidia_api_key and nvidia_api_key != "your_nvidia_api_key_here":
+        # Tentar inicializar com múltiplas APIs se disponíveis
+        if nvidia_api_key and nvidia_api_key != "your_nvidia_api_key_here" and openai_api_key and openai_api_key != "your_openai_api_key_here":
             try:
-                logger.info("🚀 Inicializando RAG handler com NVIDIA API...")
+                logger.info("🚀 Inicializando RAG handler com OpenAI e NVIDIA API...")
                 rag_handler = RAGHandler(
-                    api_key=nvidia_api_key,
+                    api_key=openai_api_key,
+                    nvidia_api_key=nvidia_api_key,
                     persist_dir=str(chroma_persist_dir),
                     materials_dir=str(materials_dir)
                 )
-                logger.info("✅ RAG handler inicializado com NVIDIA API")
+                logger.info("✅ RAG handler inicializado com OpenAI + NVIDIA API")
             except Exception as e:
-                logger.warning(f"⚠️  Falha ao inicializar com NVIDIA: {e}")
-                # Fallback para OpenAI se NVIDIA falhar
-                if openai_api_key and openai_api_key != "your_openai_api_key_here":
-                    try:
-                        logger.info(
-                            "🔄 Fallback: Inicializando RAG handler com OpenAI...")
-                        rag_handler = RAGHandler(
-                            api_key=openai_api_key,
-                            persist_dir=str(chroma_persist_dir),
-                            materials_dir=str(materials_dir)
-                        )
-                        logger.info(
-                            "✅ RAG handler inicializado com OpenAI (fallback)")
-                    except Exception as e2:
-                        logger.warning(f"⚠️  Falha no fallback OpenAI: {e2}")
-                else:
-                    logger.info(
-                        "💡 Use a rota /initialize para inicializar manualmente")
+                logger.warning(f"⚠️  Falha ao inicializar com OpenAI + NVIDIA: {e}")
+                # Fallback para apenas OpenAI
+                try:
+                    logger.info("🔄 Fallback: Inicializando apenas com OpenAI...")
+                    rag_handler = RAGHandler(
+                        api_key=openai_api_key,
+                        persist_dir=str(chroma_persist_dir),
+                        materials_dir=str(materials_dir)
+                    )
+                    logger.info("✅ RAG handler inicializado com OpenAI")
+                except Exception as e2:
+                    logger.error(f"❌ Falha ao inicializar com OpenAI: {e2}")
         elif openai_api_key and openai_api_key != "your_openai_api_key_here":
             try:
                 logger.info("🔧 Inicializando RAG handler com OpenAI API...")
@@ -697,21 +693,31 @@ async def reprocess_enhanced_materials(background_tasks: BackgroundTasks):
 
     try:
         logger.info("🚀 Starting enhanced material reprocessing...")
+        
+        # Verificar se rag_handler está inicializado
+        if not rag_handler:
+            logger.error("❌ RAG handler not initialized")
+            raise HTTPException(status_code=503, detail="RAG handler not initialized")
 
         # Forçar a ativação de recursos educacionais para este processo
         rag_handler.config.enable_educational_features = True
+        logger.info("✅ Educational features enabled")
 
         # Adicionar a tarefa de reprocessamento em segundo plano
         background_tasks.add_task(
             rag_handler.process_documents, force_reprocess=True)
+        logger.info("✅ Background task added successfully")
 
         return ProcessResponse(
             success=True,
             message="Enhanced material reprocessing started in the background."
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Error starting enhanced reprocessing: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"❌ Traceback: ", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
 # ========================================

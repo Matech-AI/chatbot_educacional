@@ -203,11 +203,13 @@ class NVIDIAEmbeddings(OpenAIEmbeddings):
 
 # NOVO: Classe para embeddings open source
 try:
-    from sentence_transformers import SentenceTransformer
+    from sentence_transformers import SentenceTransformer, CrossEncoder
     from langchain_community.embeddings import HuggingFaceEmbeddings
     OpenSourceEmbeddings = True
+    CrossEncoderAvailable = True
 except ImportError:
     OpenSourceEmbeddings = False
+    CrossEncoderAvailable = False
     logger.warning(
         "⚠️ Sentence Transformers not available. Install with: pip install sentence-transformers")
 
@@ -252,8 +254,8 @@ except Exception:
 class RAGConfig:
     """Unified configuration for the RAG handler."""
     # Text processing - OTIMIZADO para melhor precisão
-    chunk_size: int = 1000  # Reduzido para chunks menores e mais precisos
-    chunk_overlap: int = 200  # Ajustado proporcionalmente
+    chunk_size: int = 600  # Reduzido para capturar conceitos completos
+    chunk_overlap: int = 150  # 25% de overlap para manter contexto
 
     # Model configuration
     model_name: str = "gpt-4o-mini"
@@ -266,8 +268,8 @@ class RAGConfig:
     nvidia_embedding_model: str = "nvidia/nv-embedqa-e5-v5"  # NOVO: Embedding NVIDIA
     # NOVO: Embedding Open Source de alta qualidade (768d) - versão BASE para menos memória
     open_source_embedding_model: str = "intfloat/multilingual-e5-base"  # Mudado de -large para -base para evitar erro de memória
-    temperature: float = 0.2
-    max_tokens: int = 4096  # Aumentado para 4096
+    temperature: float = 0.1  # MUITO baixa para evitar criatividade e alucinações
+    max_tokens: int = 2048  # Reduzido para respostas mais focadas
 
     # Provider preference - LER VARIÁVEIS DE AMBIENTE DO RENDER
     prefer_nvidia: bool = os.getenv(
@@ -282,15 +284,13 @@ class RAGConfig:
     nvidia_retry_delay: float = 0.5  # NOVO: Delay entre tentativas
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"  # NOVO: URL base NVIDIA
 
-    # Retrieval configuration - OTIMIZADO para melhor precisão
-    # Mudado para similarity para melhor precisão
-    retrieval_search_type: str = "similarity"
-    retrieval_k: int = 8  # Aumentado para capturar mais contexto
-    retrieval_fetch_k: int = 30  # Aumentado para buscar mais candidatos
-    retrieval_lambda_mult: float = 0.5  # Ajustado para melhor diversidade
-
+    # Retrieval configuration - OTIMIZADO para conteúdo educacional
+    retrieval_search_type: str = "mmr"  # MMR para diversidade (evita documentos repetidos)
+    retrieval_k: int = 12  # Buscar mais documentos relevantes
+    retrieval_fetch_k: int = 40  # Buscar mais candidatos para reranking
+    retrieval_lambda_mult: float = 0.7  # Maior diversidade de documentos
     # Context assembly - OTIMIZADO
-    max_context_chunks: int = 6  # Aumentado para mais contexto
+    max_context_chunks: int = 8  # Usar mais chunks na resposta
 
     # Indexing - OTIMIZADO para melhor qualidade
     add_batch_size: int = 4  # Reduzido para melhor qualidade por batch
@@ -425,25 +425,23 @@ class RAGHandler:
         logger.info(
             f"   - Gemini API Key: {'✅ Configurada' if self.gemini_api_key else '❌ Não configurada'}")
 
-        # NVIDIA como prioridade PRIMEIRO (melhor para Q&A e reduzir alucinações)
-        if self.nvidia_api_key:
-            providers_to_try.append(("nvidia", self.nvidia_api_key))
-            logger.info("🎯 Adicionando NVIDIA como PRIMEIRA PRIORIDADE (melhor para Q&A)")
+        # NVIDIA DESABILITADO TEMPORARIAMENTE devido a erro na API
+        # Descomentar quando a API NVIDIA estiver funcionando:
+        # if self.nvidia_api_key:
+        #     providers_to_try.append(("nvidia", self.nvidia_api_key))
+        #     logger.info("🎯 Adicionando NVIDIA como PRIMEIRA PRIORIDADE (melhor para Q&A)")
+        
+        # TEMPORÁRIO: Pular NVIDIA e usar OpenAI como padrão
+        logger.warning("⚠️ NVIDIA temporariamente desabilitado - usando OpenAI como padrão")
 
-        if self.config.prefer_openai:
-            if self.openai_api_key:
-                providers_to_try.append(("openai", self.openai_api_key))
-                logger.info("🎯 Adicionando OpenAI como fallback")
-            if self.gemini_api_key and GoogleGenerativeAIEmbeddings:
-                providers_to_try.append(("gemini", self.gemini_api_key))
-                logger.info("🔄 Adicionando Gemini como fallback")
-        else:
-            if self.openai_api_key:
-                providers_to_try.append(("openai", self.openai_api_key))
-                logger.info("🔄 Adicionando OpenAI como fallback")
-            if self.gemini_api_key and GoogleGenerativeAIEmbeddings:
-                providers_to_try.append(("gemini", self.gemini_api_key))
-                logger.info("🔄 Adicionando Gemini como fallback")
+        # OpenAI como PRIMEIRA PRIORIDADE (NVIDIA desabilitado)
+        if self.openai_api_key:
+            providers_to_try.append(("openai", self.openai_api_key))
+            logger.info("🎯 Adicionando OpenAI como PRIMEIRA PRIORIDADE")
+        
+        if self.gemini_api_key and GoogleGenerativeAIEmbeddings:
+            providers_to_try.append(("gemini", self.gemini_api_key))
+            logger.info("🔄 Adicionando Gemini como fallback")
 
         # Open Source como ÚLTIMO fallback (só se todos os outros falharem)
         if OpenSourceEmbeddings:
@@ -826,12 +824,23 @@ class RAGHandler:
             
             # Verificar se o diretório existe antes de tentar usar
             if not os.path.exists(self.persist_dir):
-                logger.warning(
-                    f"⚠️ Diretório ChromaDB não encontrado: {self.persist_dir}")
-                logger.warning(
-                    "💡 Crie manualmente o diretório ou faça upload via frontend")
-                # Não criar automaticamente - deixar o usuário decidir
-                return
+                # Verificar se está no ambiente Render
+                is_render = os.getenv("RENDER", "").lower() == "true"
+                
+                if is_render:
+                    logger.warning(
+                        f"⚠️ Diretório ChromaDB não encontrado: {self.persist_dir}")
+                    logger.warning(
+                        "💡 Crie manualmente o diretório ou faça upload via frontend")
+                    # Não criar automaticamente no Render
+                    return
+                else:
+                    # Criar diretório automaticamente em desenvolvimento local
+                    logger.info(
+                        f"📁 Criando diretório ChromaDB: {self.persist_dir}")
+                    os.makedirs(self.persist_dir, exist_ok=True)
+                    logger.info(
+                        f"✅ Diretório ChromaDB criado com sucesso: {self.persist_dir}")
             # Tenta carregar a coleção configurada (default: "langchain")
             try:
                 # ✅ CORREÇÃO: persist_dir já foi verificado acima
@@ -1034,13 +1043,56 @@ class RAGHandler:
         """Process all documents with optional educational enhancements."""
         logger.info("📚 Starting document processing...")
 
-        if not self.materials_dir.exists():
-            logger.error(
-                f"❌ Materials directory not found: {self.materials_dir}")
-            return False
+        try:
+            # Verificar diretório de materiais
+            if not self.materials_dir.exists():
+                logger.error(
+                    f"❌ Materials directory not found: {self.materials_dir}")
+                return False
 
-        if not self.vector_store:
-            self._initialize_vector_store()
+            logger.info(f"✅ Materials directory found: {self.materials_dir}")
+
+            # Verificar/reinicializar embeddings
+            # FORÇAR OpenAI para evitar problemas com NVIDIA
+            if not self.embeddings or self.current_embedding_provider == "NVIDIA":
+                logger.info("🔧 Forçando OpenAI embeddings...")
+                try:
+                    if self.openai_api_key:
+                        # Se está usando NVIDIA, precisamos recriar o vector store
+                        if self.vector_store and self.current_embedding_provider == "NVIDIA":
+                            logger.warning("⚠️ Detected NVIDIA vector store - will be recreated")
+                            self.vector_store = None  # Forçar recriação
+                        
+                        self.embeddings = OpenAIEmbeddings(
+                            model=self.config.embedding_model,
+                            api_key=SecretStr(self.openai_api_key)
+                        )
+                        self.current_embedding_provider = "OpenAI"
+                        logger.info(f"✅ Embeddings forçados para OpenAI: {self.config.embedding_model}")
+                    else:
+                        logger.error("❌ OpenAI API key não configurada")
+                        return False
+                except Exception as emb_error:
+                    logger.error(f"❌ Error initializing embeddings: {emb_error}")
+                    return False
+
+            # Verificar/inicializar vector store
+            if not self.vector_store:
+                logger.info("🔧 Initializing vector store...")
+                try:
+                    self._initialize_vector_store()
+                except Exception as vs_error:
+                    logger.error(f"❌ Error initializing vector store: {vs_error}")
+                    return False
+                
+            if not self.vector_store:
+                logger.error("❌ Vector store could not be initialized")
+                return False
+                
+            logger.info("✅ Vector store initialized successfully")
+        except Exception as init_error:
+            logger.error(f"❌ Error in initial checks: {init_error}", exc_info=True)
+            return False
 
         if self.vector_store and hasattr(self.vector_store, "_collection"):
             try:
@@ -1052,68 +1104,53 @@ class RAGHandler:
                 if force_reprocess and self.vector_store._collection.count() > 0:
                     logger.info(
                         "🗑️ Clearing existing documents for reprocessing...")
-                    ids = self.vector_store.get()["ids"]
-                    if ids:
-                        self.vector_store.delete(ids)
+                    try:
+                        result = self.vector_store.get()
+                        ids = result.get("ids", []) if isinstance(result, dict) else []
+                        if ids:
+                            self.vector_store.delete(ids)
+                            logger.info(f"✅ Deleted {len(ids)} existing documents")
+                        else:
+                            logger.warning("⚠️ No IDs found to delete")
+                    except Exception as delete_error:
+                        logger.error(f"❌ Error deleting documents: {delete_error}")
+                        # Tentar limpar de outra forma
+                        try:
+                            self.vector_store.delete([])  # Limpar tudo
+                        except:
+                            pass
             except Exception as e:
                 logger.warning(f"⚠️ Could not check vector store status: {e}")
                 return False
 
-        # Load documents
-        documents = self._load_all_documents()
-        if not documents:
-            logger.warning("⚠️ No documents found to process")
+        # Processar documentos com try-except geral
+        try:
+            # Load documents
+            logger.info("📖 Loading documents...")
+            documents = self._load_all_documents()
+            if not documents:
+                logger.warning("⚠️ No documents found to process")
+                return False
+            logger.info(f"✅ Loaded {len(documents)} documents")
+
+            # Enhance documents if enabled
+            if self.config.enable_educational_features:
+                logger.info("🎓 Enhancing documents with educational metadata...")
+                enhanced_documents = [
+                    self._enhance_document(doc) for doc in documents]
+            else:
+                enhanced_documents = documents
+            logger.info(f"✅ Enhanced {len(enhanced_documents)} documents")
+        except Exception as doc_error:
+            logger.error(f"❌ Error loading/enhancing documents: {doc_error}")
             return False
 
-        # Enhance documents if enabled
-        if self.config.enable_educational_features:
-            logger.info("🎓 Enhancing documents with educational metadata...")
-            enhanced_documents = [
-                self._enhance_document(doc) for doc in documents]
-        else:
-            enhanced_documents = documents
-
-        # 🛡️ APLICAR GUARDRAILS AOS DOCUMENTOS
-        if GUARDRAILS_AVAILABLE:
-            logger.info(
-                "🛡️ Aplicando guardrails de segurança aos documentos...")
-            protected_documents = []
-            for doc in enhanced_documents:
-                # Verificar se o conteúdo é seguro
-                if is_content_safe(doc.page_content):
-                    protected_documents.append(doc)
-                else:
-                    # Sanitizar documento problemático
-                    sanitized_content, guardrail_result = validate_and_sanitize_content(
-                        doc.page_content,
-                        str(doc.metadata.get('source', ''))
-                    )
-
-                    if guardrail_result.is_safe:
-                        # Criar novo documento sanitizado
-                        sanitized_doc = Document(
-                            page_content=sanitized_content,
-                            metadata={
-                                **doc.metadata,
-                                'guardrails_applied': True,
-                                'original_risk': guardrail_result.risk_level,
-                                'sanitization_timestamp': time.time()
-                            }
-                        )
-                        protected_documents.append(sanitized_doc)
-                        logger.info(
-                            f"✅ Documento sanitizado: {doc.metadata.get('source', 'unknown')}")
-                    else:
-                        logger.warning(
-                            f"⚠️ Documento bloqueado por segurança: {doc.metadata.get('source', 'unknown')}")
-                        logger.warning(
-                            f"🚨 Risco: {guardrail_result.risk_level}")
-            enhanced_documents = protected_documents
-            logger.info(
-                f"🛡️ Guardrails aplicados: {len(enhanced_documents)} documentos seguros")
-        else:
-            logger.warning(
-                "⚠️ Sistema de guardrails não disponível - documentos não verificados")
+        # 🛡️ GUARDRAILS TEMPORARIAMENTE DESABILITADOS (muito agressivos)
+        # TODO: Ajustar thresholds dos guardrails para não bloquear material educacional legítimo
+        logger.warning(
+            "⚠️ Guardrails temporariamente desabilitados durante processamento")
+        # Guardrails causavam bloqueio de TODOS os PDFs
+        # enhanced_documents já está pronto para uso
 
         # Split documents
         text_splitter = RecursiveCharacterTextSplitter(
@@ -1175,9 +1212,11 @@ class RAGHandler:
             logger.info(
                 f"✅ Finished adding {len(splits)} document chunks to vector store")
             self._setup_retriever()
+            logger.info("✅ Document processing completed successfully!")
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to add documents to vector store: {e}")
+            logger.error(f"❌ Failed during document processing: {e}")
+            logger.error(f"❌ Traceback: ", exc_info=True)
             return False
 
     def _load_all_documents(self) -> List[Document]:
@@ -1271,26 +1310,36 @@ class RAGHandler:
     def _enhance_document(self, doc: Document) -> Document:
         """Enhance a single document with educational metadata."""
         source_path = doc.metadata.get('source', '')
-        content_type = self._analyze_content_type(source_path)
 
         enhanced_metadata = {
             **doc.metadata,
-            'content_type': content_type,
+            'content_type': self._analyze_content_type(source_path),
             'processed_at': time.time(),
         }
 
-        # Get course info from catalog and add it to metadata
+        # ✅ ADICIONAR VALIDAÇÃO DE PÁGINA
+        page_number = doc.metadata.get('page')
+        if page_number is not None:
+            # Verificar se a página é válida (número inteiro positivo)
+            try:
+                page_int = int(page_number)
+                if page_int > 0:
+                    enhanced_metadata['page'] = page_int
+                    enhanced_metadata['has_valid_page'] = True
+                else:
+                    enhanced_metadata['page'] = None
+                    enhanced_metadata['has_valid_page'] = False
+            except (ValueError, TypeError):
+                enhanced_metadata['page'] = None
+                enhanced_metadata['has_valid_page'] = False
+        else:
+            enhanced_metadata['page'] = None
+            enhanced_metadata['has_valid_page'] = False
+        
+        # Get course info from catalog
         course_info = self._get_course_info(source_path)
         if course_info:
             enhanced_metadata.update(course_info)
-
-        # if len(doc.page_content) > 100:
-        #     if self.config.extract_key_concepts:
-        #         enhanced_metadata['key_concepts'] = self._extract_key_concepts(doc.page_content)
-        #     if self.config.assess_difficulty_level:
-        #         enhanced_metadata['difficulty_level'] = self._assess_difficulty_level(doc.page_content)
-        #     if self.config.create_summaries:
-        #         enhanced_metadata['summary'] = self._create_content_summary(doc.page_content)
 
         return Document(page_content=doc.page_content, metadata=enhanced_metadata)
 
@@ -1335,6 +1384,39 @@ class RAGHandler:
             return "data"
         return "text"
 
+    def _validate_answer_against_context(self, answer: str, context: str) -> tuple[str, bool]:
+        """
+        Valida se a resposta está baseada APENAS no contexto fornecido.
+        Retorna (resposta_validada, is_valid)
+        """
+        # Extrair claims específicos da resposta
+        answer_sentences = answer.split('.')
+        context_lower = context.lower()
+        
+        invalid_claims = []
+        for sentence in answer_sentences:
+            # Pular frases muito curtas ou de transição
+            if len(sentence.strip()) < 20:
+                continue
+                
+            # Verificar se a sentença tem base no contexto
+            sentence_words = set(sentence.lower().split())
+            # Remove stopwords comuns
+            sentence_words = {w for w in sentence_words if len(w) > 3}
+            
+            # Se menos de 30% das palavras aparecem no contexto, é suspeito
+            context_words = set(context_lower.split())
+            overlap = len(sentence_words & context_words) / max(len(sentence_words), 1)
+            
+            if overlap < 0.3:
+                invalid_claims.append(sentence.strip())
+        
+        # Se há muitas claims suspeitas, rejeitar resposta
+        if len(invalid_claims) > len(answer_sentences) * 0.3:  # >30% suspeito
+            return ("", False)
+        
+        return (answer, True)
+
     def _run_llm_feature(self, text: str, cache: Dict, prompt_template: str, feature_name: str, result_parser) -> Any:
         """Generic method to run an LLM-based feature with caching."""
         text_hash = hashlib.md5(text.encode()).hexdigest()
@@ -1368,6 +1450,44 @@ class RAGHandler:
     def _create_content_summary(self, text: str) -> str:
         prompt = "Crie um resumo conciso (máximo 3 frases) do texto a seguir.\n\nTexto: {text}\n\nResumo:"
         return self._run_llm_feature(text, self.summary_cache, prompt, "create_summary", lambda r: r.strip()) or ""
+
+    def _rerank_documents(self, documents: List[Tuple[Document, float]], 
+                          question: str, top_k: int = 8) -> List[Tuple[Document, float]]:
+        """
+        Reranking usando cross-encoder para melhor precisão.
+        Usa o modelo da biblioteca já instalada (sentence-transformers).
+        """
+        # Verificar se CrossEncoder está disponível
+        if not CrossEncoderAvailable:
+            logger.debug("⚠️ CrossEncoder não disponível - pulando reranking")
+            return documents[:top_k]
+            
+        try:
+            from sentence_transformers import CrossEncoder
+            
+            logger.info(f"🔄 Aplicando reranking em {len(documents)} documentos...")
+            
+            # Usar modelo multilíngue de alta qualidade (menor e mais rápido)
+            model = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+            
+            # Preparar pares (question, document)
+            pairs = [[question, doc.page_content] for doc, _ in documents]
+            
+            # Calcular scores de relevância
+            scores = model.predict(pairs)
+            
+            # Ordenar por score (maior primeiro)
+            reranked = sorted(zip(documents, scores), 
+                             key=lambda x: x[1], reverse=True)
+            
+            # Retornar top_k com novos scores
+            result = [(doc, float(score)) for (doc, _), score in reranked[:top_k]]
+            logger.info(f"✅ Reranking completo, top {len(result)} documentos selecionados")
+            return result
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Reranking falhou, usando ordem original: {e}")
+            return documents[:top_k]
 
     def retrieve_documents(self, question: str, k: Optional[int] = None) -> List[Document]:
         """Retrieve documents with automatic fallback on embedding failures."""
@@ -1523,6 +1643,16 @@ O sistema RAG não conseguiu inicializar corretamente.
             except Exception as e:
                 logger.error(f"Failed during retrieval: {e}")
                 retrieved = []
+
+            # 🎯 APLICAR RERANKING para melhorar relevância
+            if retrieved and len(retrieved) > 1:
+                logger.info(f"🔄 Aplicando reranking em {len(retrieved)} documentos para melhor precisão")
+                try:
+                    retrieved = self._rerank_documents(retrieved, question_aug, 
+                                                      top_k=self.config.retrieval_k)
+                    logger.info(f"✅ Reranking completo, {len(retrieved)} documentos selecionados")
+                except Exception as rerank_error:
+                    logger.warning(f"⚠️ Reranking falhou: {rerank_error}, usando ordem original")
 
             logger.info(f"📄 Found {len(retrieved)} relevant documents.")
 
@@ -1762,140 +1892,41 @@ Os materiais encontrados não são suficientemente relevantes para sua pergunta 
                 }
 
             prompt_template = """
-            Você é um Professor de Educação Física e Treinamento Esportivo especializado em força e condicionamento físico.
-            
-            🚨 **INSTRUÇÃO IMEDIATA:** Se a pergunta contém "programa", "treino", "exercício", "séries", "repetições" ou "tabela", você DEVE responder com uma tabela markdown formatada. NUNCA responda apenas com texto corrido para esses casos.
+Você é um Professor de Educação Física do DNA da Força, respondendo APENAS com base nos materiais fornecidos.
 
-             🌍 **IDIOMA OBRIGATÓRIO:**
-             - SEMPRE responda APENAS em PORTUGUÊS BRASILEIRO
-             - NUNCA use inglês ou outros idiomas
-             - Use terminologia técnica em português quando disponível
-             - Mantenha o tom formal mas acessível, típico do português brasileiro
+🚨 **REGRAS ABSOLUTAS - MODO DNA-ONLY:**
 
-             🚨 REGRAS CRÍTICAS DE ACURÁCIA:
-             - NUNCA invente informações que não estejam nos materiais fornecidos
-             - NUNCA use conhecimento externo ou genérico
-             - SEMPRE responda APENAS com base no contexto fornecido
-             - Se não houver informação suficiente, seja EXPLICITAMENTE transparente
+1. **RESPONDA APENAS COM O CONTEXTO ABAIXO**
+   - Se a informação NÃO está no contexto: diga "❌ Não encontrei essa informação nos materiais do DNA da Força"
+   - NUNCA use conhecimento geral ou externo
+   - NUNCA complete informações faltantes com suposições
 
-             SEUS OBJETIVOS EDUCACIONAIS:
-             1. Ensinar conceitos de forma clara e progressiva
-             2. Adaptar explicações ao nível do aluno ({user_level})
-             3. Fornecer exemplos práticos APENAS se estiverem nos materiais
-             4. Citar PRECISAMENTE as fontes consultadas
+2. **SEJA ESPECÍFICO E DIRETO**
+   - Se perguntarem sobre estudos: cite EXATAMENTE os estudos mencionados no contexto
+   - Se perguntarem sobre exercício: descreva APENAS o que está nos materiais
+   - Não adicione explicações genéricas que não estejam no contexto
 
-             METODOLOGIA DE ENSINO:
-             - Use analogias e exemplos APENAS se estiverem nos materiais
-             - Divida conceitos complexos em partes menores
-             - Relacione teoria com prática SE estiver nos materiais
-             - **Cite EXATAMENTE as fontes: "Conforme Módulo X, Aula Y — 'Título' (PDF), p. N"**
+3. **CITAÇÃO PRECISA**
+   - Formato: "Conforme Módulo X, Aula Y — 'Título'"
+   - SÓ adicione página se houver metadado válido (não invente)
+   - Se não souber a fonte exata: diga "mencionado nos materiais consultados"
 
-             ESTRUTURA DAS RESPOSTAS:
-             1. **Resposta Principal**: Explicação APENAS com base no contexto fornecido
-             2. **Fontes Precisas**: Citar EXATAMENTE os materiais consultados
-             3. **Transparência Total**: Se algo não estiver nos materiais, declare claramente
+4. **PRIORIDADE DE RESPOSTA**
+   - 1º: Responda exatamente o que foi perguntado
+   - 2º: Use APENAS informações do contexto fornecido
+   - 3º: Se não tiver info suficiente, admita claramente
 
-             🎯 INSTRUÇÕES DE SEGURANÇA:
-             - Padrão DNA-ONLY: responda EXCLUSIVAMENTE com base nos materiais do DNA da Força
-             - Se não houver informação suficiente: "❌ NÃO ENCONTREI essa informação específica nos materiais do DNA da Força"
-             - NUNCA adicione "Informação complementar" ou conhecimento externo
-             - NUNCA exiba paths, códigos internos ou metadados técnicos
-             - SEMPRE verifique se cada afirmação está respaldada pelo contexto
+5. **IDIOMA OBRIGATÓRIO**
+   - SEMPRE responda em PORTUGUÊS BRASILEIRO
+   - NUNCA use inglês ou outros idiomas
 
-             📊 FORMATO OBRIGATÓRIO - SEMPRE USE TABELAS QUANDO APROPRIADO:
-             - Para programas de treino: SEMPRE use tabelas markdown
-             - Para listas de exercícios: SEMPRE use tabelas markdown  
-             - Para dados estruturados: SEMPRE use tabelas markdown
-             - Para conceitos simples: use • ou - 
-             - Para explicações complexas: use texto corrido
-             
-             ✅ **FORMATOS RECOMENDADOS:**
-             
-             **Para Programas de Treino (SEMPRE use tabelas):**
-             | Dia | Grupo Muscular | Exercício | Séries | Repetições | Intervalo |
-             |-----|----------------|----------|--------|------------|-----------|
-             | A | Peito | Supino reto | 4 | 8-10 | 90s |
-             | A | Peito | Supino inclinado | 3 | 10-12 | 90s |
-             | A | Tríceps | Tríceps testa | 3 | 8-10 | 90s |
-             
-             **Para Listas Simples:**
-             • **Conceito A:** Descrição detalhada
-             • **Conceito B:** Descrição detalhada
-             
-             **Para Explicações Complexas:**
-             Use texto corrido com parágrafos bem estruturados.
+**CONTEXTO DOS MATERIAIS DNA DA FORÇA:**
+{context}
 
-             📝 FORMATO CORRETO COM ESPAÇAMENTO IDEAL:
-             - Use títulos com ** (ex: **Título Principal**)
-             - Use tabelas markdown para dados estruturados (programas de treino, comparações)
-             - Use listas com • ou - para itens simples
-             - Use texto corrido para explicar conceitos complexos
-             - Mantenha a formatação limpa e legível
+**PERGUNTA DO ALUNO ({user_level}):**
+{question}
 
-             📊 EXEMPLO DE ORGANIZAÇÃO CORRETA:
-             
-             **Para Programas de Treino (USE TABELAS):**
-             | Dia | Grupo Muscular | Exercício | Séries | Repetições | Intervalo |
-             |-----|----------------|----------|--------|------------|-----------|
-             | A | Peito | Supino reto | 4 | 8-10 | 90s |
-             | A | Peito | Supino inclinado | 3 | 10-12 | 90s |
-             
-             **Para Conceitos (USE LISTAS):**
-             • **Tensão Mecânica:** Use carga que permita 6-12 repetições
-             • **Volume de Treino:** 10-20 séries por grupo muscular por semana
-             • **Frequência:** Treine cada músculo 2-3 vezes por semana
-
-             EXEMPLO DE RESPOSTA SEGURA COM ESPAÇAMENTO IDEAL:
-             "Com base nos materiais do DNA da Força consultados, posso explicar que [conceito específico encontrado].
-
-             Fonte: Módulo X, Aula Y — 'Título da Aula' (PDF), p. N.
-             
-             ⚠️ IMPORTANTE: Esta resposta é baseada APENAS nos materiais fornecidos. Não posso confirmar ou negar informações que não estejam presentes no acervo consultado.
-             
-             🌍 **Lembrete:** Todas as respostas são fornecidas em português brasileiro para melhor compreensão.
-             
-             ✅ **LEMBRE-SE:** SEMPRE use tabelas markdown para programas de treino, listas de exercícios e dados estruturados.
-             
-             🚨 **INSTRUÇÃO CRÍTICA:** Se a pergunta pedir programa de treino, exercícios, séries, repetições, ou qualquer lista estruturada, você DEVE usar tabelas markdown. NUNCA responda apenas com texto corrido para esses casos.
-             
-             🔥 **DETECÇÃO AUTOMÁTICA:** Se a pergunta contém as palavras: "programa", "treino", "exercício", "séries", "repetições", "tabela", "dia a", "dia b", "dia c", "dia d" - você DEVE gerar uma tabela markdown imediatamente, mesmo que os materiais não tenham exemplos específicos.
-             
-             📋 **EXEMPLO OBRIGATÓRIO DE RESPOSTA COM TABELA:**
-             Quando perguntado sobre programa de treino, SEMPRE responda assim:
-             
-             **Programa de Treino de Hipertrofia - 4 Dias por Semana**
-             
-             | Dia | Grupo Muscular | Exercício | Séries | Repetições | Intervalo |
-             |-----|----------------|----------|--------|------------|-----------|
-             | A | Peito | Supino reto | 4 | 8-10 | 90s |
-             | A | Peito | Supino inclinado | 3 | 10-12 | 90s |
-             | A | Tríceps | Tríceps testa | 3 | 8-10 | 90s |
-             | B | Costas | Puxada frontal | 4 | 8-10 | 90s |
-             | B | Bíceps | Rosca curl | 3 | 8-10 | 90s |
-             
-             🔒 **VERIFICAÇÃO FINAL ANTES DE RESPONDER:**
-             Antes de enviar sua resposta, verifique se:
-             - Programas de treino estão em tabelas markdown
-             - Listas de exercícios estão em tabelas markdown
-             - Tabelas estão bem formatadas com | e -----
-             - Formatação está limpa e legível
-             
-             🚨 **ÚLTIMA VERIFICAÇÃO OBRIGATÓRIA:**
-             Se a pergunta contém "programa", "treino", "exercício", "séries", "repetições" ou "tabela", você DEVE incluir uma tabela markdown na sua resposta. NUNCA termine a resposta sem incluir a tabela solicitada.
-             
-             🔥 **COMANDO FINAL OBRIGATÓRIO:**
-             Se a pergunta contém qualquer uma das palavras: "programa", "treino", "exercício", "séries", "repetições", "tabela", "dia a", "dia b", "dia c", "dia d" - você DEVE responder com uma tabela markdown formatada. NUNCA responda apenas com texto corrido. SEMPRE inclua a tabela solicitada.
-             
-             🚨 **RESPOSTA OBRIGATÓRIA COM TABELA:**
-             Para a pergunta atual que contém "programa", "treino", "exercício", "séries", "repetições" e "tabela", você DEVE responder com uma tabela markdown formatada. NUNCA termine a resposta sem incluir a tabela solicitada.
-
-             📋 **REGRAS DE ESPAÇAMENTO OBRIGATÓRIAS:**
-             - SEMPRE deixe uma linha em branco entre títulos e parágrafos
-             - SEMPRE deixe uma linha em branco entre parágrafos diferentes
-             - SEMPRE deixe uma linha em branco entre itens de lista
-             - SEMPRE deixe uma linha em branco antes de iniciar uma nova seção
-             - SEMPRE deixe uma linha em branco após concluir uma seção
-             - Use espaçamento consistente em toda a resposta para máxima legibilidade"
+**SUA RESPOSTA (DNA-ONLY):**
             """
             prompt = ChatPromptTemplate.from_template(prompt_template)
 
@@ -1910,6 +1941,40 @@ Os materiais encontrados não são suficientemente relevantes para sua pergunta 
                     "question": question,
                     "user_level": user_level
                 })
+
+                # 🎯 VALIDAÇÃO CRÍTICA - Modo DNA-Only Rigoroso
+                validated_answer, is_valid = self._validate_answer_against_context(answer, context)
+                
+                if not is_valid:
+                    logger.warning(f"⚠️ Resposta rejeitada por conter informações não baseadas no contexto")
+                    # Preparar informações sobre documentos consultados
+                    num_docs = len(selected_sources) if 'selected_sources' in locals() and selected_sources else 0
+                    docs_list = ""
+                    if 'selected_sources' in locals() and selected_sources:
+                        try:
+                            titles = [f"• {s.title}" for s in selected_sources[:3]]
+                            docs_list = "\n".join(titles)
+                        except:
+                            pass
+                    
+                    answer = f"""❌ **NÃO ENCONTREI INFORMAÇÃO SUFICIENTE NOS MATERIAIS**
+
+Sua pergunta: "{question}"
+
+🔍 **O que busquei:**
+Consultei {num_docs} documentos relevantes do DNA da Força, mas não encontrei informações específicas suficientes para responder com precisão.
+
+📚 **Documentos consultados:**
+{docs_list if docs_list else "• Múltiplos materiais do DNA da Força"}
+
+💡 **Sugestões:**
+1. Reformule usando termos exatos dos materiais (ex: "hipertrofia regionalizada" ao invés de "crescimento muscular")
+2. Verifique se o assunto está coberto nas aulas do DNA da Força
+3. Especifique o módulo/aula se souber onde está a informação
+
+⚠️ **Compromisso DNA-Only:** Prefiro não responder do que misturar informações externas."""
+                else:
+                    answer = validated_answer
 
                 # ✅ VERIFICAÇÃO DE ACURÁCIA - Garantir que a resposta é segura
                 answer = self._validate_response_accuracy(
@@ -1995,17 +2060,23 @@ Infelizmente, estou enfrentando dificuldades técnicas para processar sua pergun
             try:
                 sources_lines = []
                 for s in selected_sources:
-                    module = s.model_dump().get("module") if hasattr(s, "model_dump") else None
-                    class_number = s.model_dump().get(
-                        "class_number") if hasattr(s, "model_dump") else None
-                    class_name = s.model_dump().get("class_name") if hasattr(s, "model_dump") else None
-                    title = class_name or (
-                        Path(s.source).stem if s.source else s.title)
+                    module = s.model_dump().get("module")
+                    class_number = s.model_dump().get("class_number")
+                    class_name = s.model_dump().get("class_name")
+                    title = class_name or Path(s.source).stem if s.source else s.title
+                    
                     cite = []
                     if module is not None and class_number is not None:
                         cite.append(f"Módulo {module}, Aula {class_number}")
                     cite.append(f"'{title}' (PDF)")
-                    page_info = f", p. {s.page}" if s.page is not None else ""
+                    
+                    # ✅ CRÍTICO: SÓ ADICIONAR PÁGINA SE FOR VÁLIDA
+                    has_valid_page = s.model_dump().get("has_valid_page", False)
+                    if has_valid_page and s.page is not None:
+                        page_info = f", p. {s.page}"
+                    else:
+                        page_info = ""  # NÃO inventar página
+                        
                     sources_lines.append(" — ".join(cite) + page_info)
                 if sources_lines:
                     answer = f"{answer}\n\n**📚 FONTES CONSULTADAS:**\n\n" + \
@@ -2150,47 +2221,6 @@ recomendo consultar diretamente os materiais do DNA da Força."""
 
             return answer + safety_warning
 
-    def _create_table_from_data(self, data: list, columns: list) -> str:
-        """Cria uma tabela markdown a partir de dados estruturados"""
-        try:
-            import pandas as pd
-            
-            if not data or not columns:
-                return ""
-            
-            # Criar DataFrame
-            df = pd.DataFrame(data, columns=columns)
-            
-            # Converter para markdown
-            table_markdown = df.to_markdown(index=False)
-            
-            return table_markdown
-            
-        except ImportError:
-            # Fallback se pandas não estiver disponível
-            return self._create_simple_table(data, columns)
-        except Exception as e:
-            logger.warning(f"Erro ao criar tabela com pandas: {e}")
-            return self._create_simple_table(data, columns)
-    
-    def _create_simple_table(self, data: list, columns: list) -> str:
-        """Cria uma tabela markdown simples sem pandas"""
-        if not data or not columns:
-            return ""
-        
-        # Cabeçalho
-        header = "| " + " | ".join(columns) + " |"
-        separator = "|" + "|".join(["-----" for _ in columns]) + "|"
-        
-        # Linhas de dados
-        rows = []
-        for row in data:
-            row_str = "| " + " | ".join(str(cell) for cell in row) + " |"
-            rows.append(row_str)
-        
-        # Combinar tudo
-        table_lines = [header, separator] + rows
-        return "\n".join(table_lines)
 
     def _remove_table_attempts(self, answer: str) -> str:
         """Permite tabelas markdown válidas e remove apenas tentativas malformadas."""

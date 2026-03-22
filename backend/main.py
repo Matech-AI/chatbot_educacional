@@ -382,7 +382,7 @@ async def initialize_system(
 
         # Initialize RAG handler
         logger.info("🤖 Initializing RAG handler...")
-        rag_handler = RAGHandler(api_key)
+        rag_handler = RAGHandler(api_key=api_key)
         messages.append("✓ Initialized RAG handler")
         logger.info("✅ RAG handler initialized successfully")
 
