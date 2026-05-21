@@ -4,7 +4,6 @@ import { Sidebar } from "./sidebar";
 import { useAuthStore } from "../../store/auth-store";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu } from "lucide-react";
-import { Button } from "../ui/button";
 import TemporaryPasswordCheck from "./temporary-password-check";
 
 const AppLayout: React.FC = () => {
@@ -46,20 +45,20 @@ const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className="h-screen w-full bg-gray-50 text-gray-900 overflow-hidden flex">
+    <div className="h-screen w-full bg-slate-100 text-slate-900 overflow-hidden flex">
       {/* Verificação de senha temporária */}
       <TemporaryPasswordCheck />
       
       {/* Mobile toggle button */}
       <div className="lg:hidden fixed top-4 left-4 z-50">
-        <Button
-          variant="ghost"
-          size="icon"
+        <button
+          type="button"
           onClick={toggleSidebar}
-          className="bg-white/80 backdrop-blur-sm shadow-md rounded-full"
+          className="p-2.5 bg-[#0f1419] text-white shadow-lg rounded-xl hover:bg-gray-800 transition-colors"
+          aria-label="Abrir menu"
         >
           <Menu size={20} />
-        </Button>
+        </button>
       </div>
 
       {/* Sidebar - Always rendered but transforms based on state */}

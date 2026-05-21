@@ -367,7 +367,8 @@ const LoginPage: React.FC = () => {
 
               <Button
                 type="submit"
-                className="w-full bg-red-600 hover:bg-red-700"
+                variant="accent"
+                className="w-full"
                 isLoading={isLoading}
               >
                 Entrar

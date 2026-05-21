@@ -52,7 +52,7 @@ const ResetPasswordPage = lazy(() => import("./pages/reset-password-page"));
 const LoadingSpinner: React.FC<{ message?: string }> = ({
   message = "Carregando...",
 }) => (
-  <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+  <div className="min-h-screen bg-slate-50 flex items-center justify-center">
     <div className="text-center">
       <div className="w-24 h-24 mx-auto mb-4 bg-gray-900 rounded-xl flex items-center justify-center p-3">
         <img

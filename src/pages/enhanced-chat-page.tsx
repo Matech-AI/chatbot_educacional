@@ -27,9 +27,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Settings,
-  Brain,
 } from "lucide-react";
 import { api } from "../lib/api";
+import { LOGO_PATH, SITE_NAME } from "../constants/branding";
+import { useAuthStore } from "../store/auth-store";
 
 interface EducationalMessage {
   id: string;
@@ -66,6 +67,7 @@ const EnhancedChatPage: React.FC = () => {
   } = useChatActions();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { isAuthenticated } = useAuthStore();
 
   // Enhanced chat state
   const [educationalMessages, setEducationalMessages] = useState<
@@ -359,76 +361,62 @@ Desculpe, ocorreu um erro ao processar sua pergunta.
     }
   }, [activeSessionId, sessionMessages.length]);
 
-  // Verificar se há usuário logado
-  if (!currentUserId) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto p-6">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-red-600"
-            >
-              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="m22 2-7 20-4-9-9-4 20-7z" />
-            </svg>
-          </div>
-          <h3 className="text-xl font-semibold mb-2">Usuário não logado</h3>
-          <p className="text-gray-600 mb-4">
-            Você precisa estar logado para acessar o assistente educacional.
-          </p>
-          <Button onClick={() => navigate("/login")}>Fazer Login</Button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="h-full flex flex-col lg:flex-row">
+    <div className="h-full flex flex-col lg:flex-row bg-slate-50">
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200 p-3 lg:p-4 flex-shrink-0">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-3 lg:mb-4 space-y-2 lg:space-y-0">
-            <div className="flex-1">
+        <header className="bg-white border-b border-slate-200 px-4 lg:px-6 py-4 flex-shrink-0">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div className="flex-1 min-w-0">
               <BackButton />
-              <h1 className="text-lg lg:text-xl font-semibold text-gray-900 mt-2 flex items-center space-x-2">
-                <Brain className="text-red-600" size={20} />
-                <span className="truncate">Assistente Educacional</span>
-              </h1>
-              {sessionContext?.current_focus && (
-                <p className="text-xs lg:text-sm text-gray-600 mt-1 truncate">
-                  Foco atual: {sessionContext.current_focus}
-                </p>
-              )}
+              <div className="flex items-center gap-3 mt-1">
+                <div className="w-9 h-9 rounded-lg bg-[#0f1419] flex items-center justify-center shrink-0 p-1.5">
+                  <img
+                    src={LOGO_PATH}
+                    alt={SITE_NAME}
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg font-semibold text-slate-900 tracking-tight truncate">
+                    Assistente Educacional
+                  </h1>
+                  {sessionContext?.current_focus ? (
+                    <p className="text-xs text-slate-500 mt-0.5 truncate">
+                      Foco: {sessionContext.current_focus}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {isAuthenticated
+                        ? "Treinamento com IA"
+                        : "Acesso público · Matech.AI"}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
               <Button
                 onClick={() => setShowLearningPath(!showLearningPath)}
-                variant={showLearningPath ? "default" : "outline"}
+                variant={showLearningPath ? "accent" : "outline"}
                 size="sm"
-                className="flex items-center gap-1 text-xs lg:text-sm"
+                className={`flex items-center gap-1.5 text-xs ${
+                  !showLearningPath
+                    ? "border-slate-200 text-slate-700 hover:bg-slate-50"
+                    : ""
+                }`}
               >
                 <BookOpen size={14} />
-                <span className="hidden sm:inline">Trilha de Aprendizado</span>
-                <span className="sm:hidden">Trilha</span>
+                <span className="hidden sm:inline">Trilha</span>
               </Button>
 
               <Button
                 onClick={handleNewSession}
                 variant="outline"
                 size="sm"
-                className="flex items-center gap-1 text-xs lg:text-sm"
+                className="flex items-center gap-1.5 text-xs border-slate-200 text-slate-700 hover:bg-slate-50"
                 disabled={isProcessing}
               >
                 <PlusCircle size={14} />
@@ -440,14 +428,14 @@ Desculpe, ocorreu um erro ao processar sua pergunta.
 
           {/* Session Tabs */}
           {sessions.length > 1 && (
-            <div className="flex items-center gap-2 overflow-x-auto pb-2">
+            <div className="flex items-center gap-2 overflow-x-auto mt-4 pt-3 border-t border-slate-100">
               {sessions.map((session) => (
                 <motion.div
                   key={session.id}
-                  className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm whitespace-nowrap cursor-pointer transition-colors ${
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm whitespace-nowrap cursor-pointer transition-colors ${
                     session.id === activeSessionId
-                      ? "bg-red-100 text-red-700"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                   onClick={() => {
                     setActiveSession(session.id);
@@ -475,58 +463,57 @@ Desculpe, ocorreu um erro ao processar sua pergunta.
         </header>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-3 lg:space-y-4">
+        <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-4 space-y-4">
           <AnimatePresence>
             {educationalMessages.length === 0 ? (
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-center py-8 lg:py-12"
+                className="max-w-2xl mx-auto text-center py-10 lg:py-16"
               >
-                <Brain
-                  size={40}
-                  className="mx-auto text-gray-400 mb-4 lg:hidden"
-                />
-                <Brain
-                  size={48}
-                  className="mx-auto text-gray-400 mb-4 hidden lg:block"
-                />
-                <h3 className="text-base lg:text-lg font-medium text-gray-900 mb-2">
-                  Bem-vindo ao Assistente Educacional!
+                <div className="w-14 h-14 mx-auto mb-5 rounded-2xl bg-[#0f1419] flex items-center justify-center p-3">
+                  <img
+                    src={LOGO_PATH}
+                    alt={SITE_NAME}
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <h3 className="text-xl font-semibold text-slate-900 mb-2">
+                  Como posso ajudar?
                 </h3>
-                <p className="text-sm lg:text-base text-gray-600 mb-4 lg:mb-6 max-w-md mx-auto px-4">
-                  Faça perguntas sobre treinamento físico e receba respostas
-                  detalhadas com fontes, sugestões de aprofundamento e trilhas
-                  de aprendizado personalizadas.
+                <p className="text-sm text-slate-500 mb-8 leading-relaxed max-w-md mx-auto">
+                  Pergunte sobre treinamento físico e receba respostas com
+                  fontes e sugestões de aprofundamento.
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 max-w-3xl mx-auto px-4">
-                  <div className="bg-blue-50 p-3 lg:p-4 rounded-lg">
-                    <Target className="text-blue-600 mb-2" size={20} />
-                    <h4 className="font-medium text-blue-900 text-sm lg:text-base">
-                      Personalizado
-                    </h4>
-                    <p className="text-xs lg:text-sm text-blue-700">
-                      Adapta o nível de complexidade ao seu conhecimento
-                    </p>
-                  </div>
-                  <div className="bg-green-50 p-3 lg:p-4 rounded-lg">
-                    <BookOpen className="text-green-600 mb-2" size={20} />
-                    <h4 className="font-medium text-green-900 text-sm lg:text-base">
-                      Fontes Confiáveis
-                    </h4>
-                    <p className="text-xs lg:text-sm text-green-700">
-                      Respostas baseadas em materiais científicos e práticos
-                    </p>
-                  </div>
-                  <div className="bg-purple-50 p-3 lg:p-4 rounded-lg sm:col-span-2 lg:col-span-1">
-                    <TrendingUp className="text-purple-600 mb-2" size={20} />
-                    <h4 className="font-medium text-purple-900 text-sm lg:text-base">
-                      Aprendizado Progressivo
-                    </h4>
-                    <p className="text-xs lg:text-sm text-purple-700">
-                      Trilhas estruturadas para aprofundar conhecimentos
-                    </p>
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
+                  {[
+                    {
+                      icon: <Target size={18} className="text-red-500" />,
+                      title: "Personalizado",
+                      desc: "Adaptado ao seu nível",
+                    },
+                    {
+                      icon: <BookOpen size={18} className="text-red-500" />,
+                      title: "Com fontes",
+                      desc: "Base científica e prática",
+                    },
+                    {
+                      icon: <TrendingUp size={18} className="text-red-500" />,
+                      title: "Progressivo",
+                      desc: "Trilhas de aprendizado",
+                    },
+                  ].map((card) => (
+                    <div
+                      key={card.title}
+                      className="p-4 rounded-xl border border-slate-200 bg-white shadow-sm"
+                    >
+                      <div className="mb-2">{card.icon}</div>
+                      <h4 className="font-medium text-slate-900 text-sm">
+                        {card.title}
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1">{card.desc}</p>
+                    </div>
+                  ))}
                 </div>
               </motion.div>
             ) : (
@@ -563,7 +550,7 @@ Desculpe, ocorreu um erro ao processar sua pergunta.
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: "100%", opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            className="border-l border-gray-200 bg-gray-50 overflow-hidden lg:w-96"
+            className="border-l border-slate-200 bg-white overflow-hidden lg:w-96"
           >
             <div className="p-3 lg:p-4 h-full overflow-y-auto">
               <div className="flex items-center justify-between mb-3 lg:mb-4">
