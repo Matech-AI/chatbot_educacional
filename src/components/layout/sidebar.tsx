@@ -14,24 +14,31 @@ import {
   Users,
   ChevronRight,
   X,
-  Dumbbell,
+  LogIn,
 } from "lucide-react";
+import { LOGO_PATH, SITE_NAME, SITE_TAGLINE } from "../../constants/branding";
 
 interface SidebarProps {
   onClose?: () => void;
 }
 
+const guestMenuItems = [
+  {
+    name: "Assistente",
+    path: "/chat",
+    icon: <MessageSquare size={20} />,
+  },
+];
+
 export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
-  const { user, logout } = useAuthStore();
+  const { user, logout, isAuthenticated } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Efeito para redirecionar usuários que tentam acessar páginas não autorizadas
   useEffect(() => {
     if (user) {
       const currentPath = location.pathname;
 
-      // Definir rotas permitidas por perfil
       const allowedPaths = {
         student: ["/", "/chat"],
         instructor: ["/", "/chat", "/materials", "/assistant"],
@@ -49,13 +56,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
       const userAllowedPaths =
         allowedPaths[user.role as keyof typeof allowedPaths] || [];
 
-      // Se o caminho atual não estiver na lista de permitidos para o perfil do usuário
       if (
         !userAllowedPaths.some(
           (path) => currentPath === path || currentPath.startsWith(path + "/")
         )
       ) {
-        // Redirecionar para a página inicial
         navigate("/");
       }
     }
@@ -63,7 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
 
   const handleLogout = () => {
     logout();
-    navigate("/login");
+    navigate("/chat");
   };
 
   const menuItems = [
@@ -74,13 +79,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
       roles: ["admin", "instructor", "student"],
     },
     {
-      name: "Assistente de Treino",
+      name: "Assistente",
       path: "/chat",
       icon: <MessageSquare size={20} />,
       roles: ["admin", "instructor", "student"],
     },
     {
-      name: "Materiais de Treino",
+      name: "Materiais",
       path: "/materials",
       icon: <Book size={20} />,
       roles: ["admin", "instructor"],
@@ -111,57 +116,66 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
     },
   ];
 
-  const filteredItems = menuItems.filter(
-    (item) => user && item.roles.includes(user.role)
-  );
+  const filteredItems = isAuthenticated
+    ? menuItems.filter((item) => user && item.roles.includes(user.role))
+    : guestMenuItems;
 
   return (
-    <div className="flex flex-col h-full bg-white border-r border-gray-200 shadow-sm">
-      {/* Header with logo and close button */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+    <div className="flex flex-col h-full bg-gray-900 border-r border-gray-800 shadow-sm text-white">
+      <div className="flex items-center justify-between p-4 border-b border-gray-800">
         <div className="flex items-center gap-2">
-          <div className="w-12 h-12 bg-white rounded-md flex items-center justify-center shadow-sm">
+          <div className="w-12 h-12 rounded-md flex items-center justify-center">
             <img
-              src="/logo_dna_forca_1.jpg"
-              alt="DNA da Força"
+              src={LOGO_PATH}
+              alt={SITE_NAME}
               className="w-10 h-10 object-contain"
             />
           </div>
-          <h1 className="text-xl font-bold">DNA da Força</h1>
+          <div>
+            <h1 className="text-lg font-bold leading-tight">{SITE_NAME}</h1>
+            <p className="text-xs text-gray-400">{SITE_TAGLINE}</p>
+          </div>
         </div>
 
         <button
           onClick={onClose}
-          className="lg:hidden text-gray-500 hover:text-gray-700"
+          className="lg:hidden text-gray-400 hover:text-white"
         >
           <X size={20} />
         </button>
       </div>
 
-      {/* User info */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center gap-3">
-          {user?.avatarUrl ? (
-            <img
-              src={user.avatarUrl}
-              alt={user.name}
-              className="w-10 h-10 rounded-full object-cover"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-              <span className="text-red-600 font-medium">
-                {user?.name?.charAt(0) || "?"}
-              </span>
+      {isAuthenticated && user ? (
+        <div className="p-4 border-b border-gray-800">
+          <div className="flex items-center gap-3">
+            {user.avatarUrl ? (
+              <img
+                src={user.avatarUrl}
+                alt={user.name}
+                className="w-10 h-10 rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-red-900/50 flex items-center justify-center">
+                <span className="text-red-300 font-medium">
+                  {user.name?.charAt(0) || "?"}
+                </span>
+              </div>
+            )}
+            <div>
+              <p className="font-medium text-sm">{user.name}</p>
+              <p className="text-xs text-gray-400 capitalize">{user.role}</p>
             </div>
-          )}
-          <div>
-            <p className="font-medium text-sm">{user?.name}</p>
-            <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="p-4 border-b border-gray-800">
+          <p className="text-sm text-gray-300">Acesso público ao assistente</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Faça login para recursos administrativos
+          </p>
+        </div>
+      )}
 
-      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-3">
         <ul className="space-y-1">
           {filteredItems.map((item) => {
@@ -175,8 +189,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                     whileTap={{ scale: 0.98 }}
                     className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
                       isActive
-                        ? "bg-red-50 text-red-600 font-medium"
-                        : "text-gray-700 hover:bg-gray-100"
+                        ? "bg-red-900/40 text-red-300 font-medium"
+                        : "text-gray-300 hover:bg-gray-800"
                     }`}
                   >
                     {item.icon}
@@ -190,20 +204,39 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
         </ul>
       </nav>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-gray-200">
-        <Button
-          variant="outline"
-          className="w-full flex items-center justify-center gap-2"
-          onClick={handleLogout}
-        >
-          <LogOut size={16} />
-          <span>Sair</span>
-        </Button>
+      <div className="p-4 border-t border-gray-800">
+        {isAuthenticated ? (
+          <Button
+            variant="outline"
+            className="w-full flex items-center justify-center gap-2 border-gray-700 text-gray-200 hover:bg-gray-800"
+            onClick={handleLogout}
+          >
+            <LogOut size={16} />
+            <span>Sair</span>
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            className="w-full flex items-center justify-center gap-2 border-gray-700 text-gray-200 hover:bg-gray-800"
+            onClick={() => navigate("/login")}
+          >
+            <LogIn size={16} />
+            <span>Entrar</span>
+          </Button>
+        )}
 
         <div className="mt-4 text-center text-xs text-gray-500">
-          <p>DNA da Força v1.7</p>
-          <p className="mt-1">Desenvolvido pela Matech AI</p>
+          <p>{SITE_NAME}</p>
+          <p className="mt-1">
+            <a
+              href="https://matechai.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-gray-300"
+            >
+              matechai.com
+            </a>
+          </p>
         </div>
       </div>
     </div>

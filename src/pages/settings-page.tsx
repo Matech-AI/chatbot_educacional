@@ -8,6 +8,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
+import { SITE_NAME } from "../constants/branding";
 import {
   Settings,
   Database,
@@ -150,7 +151,7 @@ const SettingsPage: React.FC = () => {
               Configurações do Sistema
             </h1>
             <p className="text-gray-600 mt-1">
-              Gerencie configurações, manutenção e otimizações do DNA da Força
+              Gerencie configurações, manutenção e otimizações do {SITE_NAME}
             </p>
           </div>
 

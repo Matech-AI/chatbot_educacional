@@ -440,7 +440,7 @@ export const EducationalMessageBubble: React.FC<
       doc.setFontSize(8);
       doc.setFont("helvetica", "normal");
       doc.text(`Página ${i} de ${pageCount}`, 20, 285);
-      doc.text("DNA da Força AI - Chatbot Educacional", 120, 285);
+      doc.text("Matech.AI - Chatbot Educacional", 120, 285);
     }
 
     doc.save(`resposta_chatbot_${new Date().toISOString().split("T")[0]}.pdf`);

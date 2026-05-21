@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "../store/auth-store";
+import { LOGO_PATH, SITE_NAME } from "../constants/branding";
 import { useMaterialsStore } from "../store/materials-store";
 import { motion } from "framer-motion";
 import {
@@ -124,17 +125,19 @@ const HomePage: React.FC = () => {
         className="mb-8"
       >
         <div className="flex items-center gap-3 mb-4">
-          <img
-            src="/logo_dna_forca.jpg"
-            alt="DNA da Força"
-            className="w-12 h-12 object-contain"
-          />
+          <div className="w-12 h-12 bg-gray-900 rounded-lg flex items-center justify-center p-1">
+            <img
+              src={LOGO_PATH}
+              alt={SITE_NAME}
+              className="w-10 h-10 object-contain"
+            />
+          </div>
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
               Bem-vindo, {user?.name}!
             </h1>
             <p className="text-gray-600">
-              Sistema DNA da Força -{" "}
+              {SITE_NAME} -{" "}
               {user?.role === "admin"
                 ? "Administrador"
                 : user?.role === "instructor"
@@ -302,8 +305,17 @@ const HomePage: React.FC = () => {
         transition={{ delay: 0.5 }}
         className="mt-12 text-center text-sm text-gray-500"
       >
-        <p>DNA da Força v1.7 - Assistente de Treinamento</p>
-        <p className="mt-1">Desenvolvido pela Matech AI</p>
+        <p>{SITE_NAME} — Assistente Educacional</p>
+        <p className="mt-1">
+          <a
+            href="https://matechai.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-gray-700"
+          >
+            matechai.com
+          </a>
+        </p>
       </motion.div>
     </div>
   );

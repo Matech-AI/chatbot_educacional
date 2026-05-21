@@ -5,6 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { User, Lock, Dumbbell, Eye, EyeOff } from "lucide-react";
 import { motion } from "framer-motion";
+import { LOGO_PATH, SITE_NAME, SITE_TAGLINE } from "../constants/branding";
 
 interface ChangePasswordModalProps {
   onClose: () => void;
@@ -290,20 +291,18 @@ const LoginPage: React.FC = () => {
       >
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
           {/* Header */}
-          <div className="bg-red-600 p-6 text-white">
+          <div className="bg-gray-900 p-6 text-white">
             <div className="mb-4 flex justify-center">
-              <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-lg">
+              <div className="w-24 h-24 flex items-center justify-center">
                 <img
-                  src="/logo_dna_forca_1.jpg"
-                  alt="DNA da Força"
-                  className="w-16 h-16 object-contain"
+                  src={LOGO_PATH}
+                  alt={SITE_NAME}
+                  className="w-20 h-20 object-contain"
                 />
               </div>
             </div>
-            <h1 className="text-2xl font-bold text-center">DNA da Força</h1>
-            <p className="text-center text-red-200 mt-1">
-              Assistente de Treinamento
-            </p>
+            <h1 className="text-2xl font-bold text-center">{SITE_NAME}</h1>
+            <p className="text-center text-gray-400 mt-1">{SITE_TAGLINE}</p>
           </div>
 
           {/* Form */}
@@ -393,8 +392,17 @@ const LoginPage: React.FC = () => {
 
           {/* Footer */}
           <div className="px-6 py-4 text-center text-xs text-gray-500 border-t border-gray-200">
-            <p>DNA da Força v1.7 - Assistente de Treinamento</p>
-            <p className="mt-1">Desenvolvido pela Matech AI</p>
+            <p>{SITE_NAME} — Assistente Educacional</p>
+            <p className="mt-1">
+              <a
+                href="https://matechai.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline"
+              >
+                matechai.com
+              </a>
+            </p>
           </div>
         </div>
       </motion.div>

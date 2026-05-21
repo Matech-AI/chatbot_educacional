@@ -11,6 +11,17 @@ import {
 // IMPORTS ESSENCIAIS (carregados imediatamente)
 // ========================================
 import { useAuthStore } from "./store/auth-store";
+import { LOGO_PATH, SITE_NAME, SITE_TAGLINE } from "./constants/branding";
+
+const PUBLIC_PATHS = ["/chat", "/chat/classic"];
+
+function isPublicPath(path?: string): boolean {
+  if (!path) return false;
+  return PUBLIC_PATHS.some(
+    (publicPath) =>
+      path === publicPath || path.startsWith(`${publicPath}/`)
+  );
+}
 
 // ========================================
 // IMPORTS LAZY (carregados sob demanda)
@@ -43,12 +54,15 @@ const LoadingSpinner: React.FC<{ message?: string }> = ({
 }) => (
   <div className="min-h-screen bg-gray-50 flex items-center justify-center">
     <div className="text-center">
-      <img
-        src="/logo_dna_forca.jpg"
-        alt="DNA da Força"
-        className="w-20 h-20 mx-auto mb-4 object-contain"
-      />
-      <h1 className="text-xl font-semibold text-gray-900 mb-2">DNA da Força</h1>
+      <div className="w-24 h-24 mx-auto mb-4 bg-gray-900 rounded-xl flex items-center justify-center p-3">
+        <img
+          src={LOGO_PATH}
+          alt={SITE_NAME}
+          className="w-full h-full object-contain"
+        />
+      </div>
+      <h1 className="text-xl font-semibold text-gray-900 mb-2">{SITE_NAME}</h1>
+      <p className="text-sm text-gray-500 mb-2">{SITE_TAGLINE}</p>
       <p className="text-gray-600">{message}</p>
     </div>
   </div>
@@ -84,7 +98,7 @@ const ErrorFallback: React.FC<{ error?: string; onRetry?: () => void }> = ({
         <button
           onClick={() => {
             localStorage.clear();
-            window.location.href = "/login";
+            window.location.href = "/chat";
           }}
           className="w-full bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700"
         >
@@ -165,10 +179,26 @@ const ProtectedRouteBase: React.FC<{
   console.log("ProtectedRouteBase - isAuthenticated:", isAuthenticated);
 
   if (!isAuthenticated) {
+    if (currentPath && isPublicPath(currentPath)) {
+      console.log("ProtectedRouteBase - Public path, access granted");
+      return (
+        <Suspense fallback={<LoadingSpinner />}>
+          <ErrorBoundary>{children}</ErrorBoundary>
+        </Suspense>
+      );
+    }
+
+    if (currentPath === "/") {
+      console.log(
+        "ProtectedRouteBase - Not authenticated, redirecting to /chat"
+      );
+      return <Navigate to="/chat" replace />;
+    }
+
     console.log(
-      "ProtectedRouteBase - Not authenticated, redirecting to /login"
+      "ProtectedRouteBase - Not authenticated, redirecting to /chat"
     );
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/chat" replace />;
   }
 
   // Verificação adicional para estudantes
@@ -284,7 +314,7 @@ function App() {
   useEffect(() => {
     const initializeAuth = () => {
       try {
-        console.log("🚀 DNA da Força - Iniciando verificação de autenticação");
+        console.log("🚀 Matech.AI - Iniciando verificação de autenticação");
         checkAuth();
         setIsInitialized(true);
         console.log("✅ Autenticação verificada");
@@ -463,7 +493,7 @@ function App() {
               isAuthenticated ? (
                 <Navigate to="/" replace />
               ) : (
-                <Navigate to="/login" replace />
+                <Navigate to="/chat" replace />
               )
             }
           />

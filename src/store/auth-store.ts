@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { User, UserRole } from '../types';
 import { api } from '../lib/api';
 import { useChatStore } from './chat-store';
+import { GUEST_USER_ID } from '../constants/branding';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -141,7 +142,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const token = localStorage.getItem('token');
     
     if (!token) {
-      console.log('🔐 No token found');
+      console.log('🔐 No token found — modo visitante');
+      useChatStore.getState().setCurrentUser(GUEST_USER_ID);
       set({ 
         isAuthenticated: false,
         user: null,
@@ -181,6 +183,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .catch(error => {
           console.error('❌ Token validation failed on backend:', error);
           localStorage.removeItem('token');
+          useChatStore.getState().setCurrentUser(GUEST_USER_ID);
           set({ 
             isAuthenticated: false,
             user: null,
@@ -190,6 +193,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (error) {
       console.error('❌ Token validation failed:', error);
       localStorage.removeItem('token');
+      useChatStore.getState().setCurrentUser(GUEST_USER_ID);
       set({ 
         isAuthenticated: false,
         user: null,
@@ -267,8 +271,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     console.log('🚪 Logging out...');
     localStorage.removeItem('token');
     
-    // Limpar dados do chat do usuário
+    // Limpar sessão autenticada e voltar ao modo visitante
     useChatStore.getState().clearUserData();
+    useChatStore.getState().setCurrentUser(GUEST_USER_ID);
     
     set({ 
       isAuthenticated: false, 

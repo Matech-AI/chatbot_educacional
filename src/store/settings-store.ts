@@ -39,7 +39,7 @@ interface SettingsState {
 // Configuração padrão
 const DEFAULT_SETTINGS: SystemSettings = {
   general: {
-    siteName: "DNA da Força",
+    siteName: "Matech.AI",
     description: "Sistema Educacional de Treinamento Físico",
     language: "pt-BR",
     timezone: "America/Sao_Paulo",
