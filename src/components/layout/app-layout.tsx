@@ -54,7 +54,7 @@ const AppLayout: React.FC = () => {
         <button
           type="button"
           onClick={toggleSidebar}
-          className="p-2.5 bg-[#0f1419] text-white shadow-lg rounded-xl hover:bg-gray-800 transition-colors"
+          className="p-2.5 bg-white text-slate-700 border border-slate-200 shadow-md rounded-xl hover:bg-slate-50 transition-colors"
           aria-label="Abrir menu"
         >
           <Menu size={20} />
@@ -66,7 +66,7 @@ const AppLayout: React.FC = () => {
         className={`fixed lg:relative z-40 h-full transition-transform duration-300 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
-        style={{ width: isMobile ? "280px" : "320px" }}
+        style={{ width: isMobile ? "260px" : "240px" }}
       >
         <Sidebar onClose={() => isMobile && setSidebarOpen(false)} />
       </div>
