@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any, Set
 import io
+import mimetypes
 import requests
 import json
 import time
@@ -12,7 +13,7 @@ from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload, MediaIoBaseUpload
 
 # Configure enhanced logging
 logging.basicConfig(
@@ -47,10 +48,9 @@ class RecursiveDriveHandler:
         # Flag para controlar cancelamento de operações
         self.cancel_flag = False
 
-        # Updated scopes for better access
+        # Full drive access needed for bidirectional sync (read + write)
         self.scopes = [
-            'https://www.googleapis.com/auth/drive.readonly',
-            'https://www.googleapis.com/auth/drive.metadata.readonly'
+            'https://www.googleapis.com/auth/drive'
         ]
 
         # Adicionar cache de autenticação
@@ -1274,3 +1274,185 @@ class RecursiveDriveHandler:
         """Define o flag de cancelamento para interromper operações em andamento"""
         self.cancel_flag = value
         logger.info(f"🛑 Flag de cancelamento definido como: {value}")
+
+    # ==========================================
+    # UPLOAD / CREATE METHODS (bidirectional sync)
+    # ==========================================
+
+    def create_folder(self, folder_name: str, parent_folder_id: str) -> Optional[str]:
+        """Create a folder in Google Drive and return its ID."""
+        if not self.service:
+            logger.error("❌ Service not initialized")
+            return None
+        try:
+            metadata = {
+                'name': folder_name,
+                'mimeType': 'application/vnd.google-apps.folder',
+                'parents': [parent_folder_id]
+            }
+            folder = self.service.files().create(
+                body=metadata, fields='id'
+            ).execute()
+            folder_id = folder.get('id')
+            logger.info(f"📁 Created folder '{folder_name}' with id: {folder_id}")
+            return folder_id
+        except HttpError as e:
+            logger.error(f"❌ HTTP error creating folder '{folder_name}': {e}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error creating folder '{folder_name}': {e}")
+            return None
+
+    def ensure_folder_exists(self, folder_name: str, parent_folder_id: str) -> Optional[str]:
+        """Return the ID of a folder named folder_name inside parent, creating it if needed."""
+        if not self.service:
+            logger.error("❌ Service not initialized")
+            return None
+        try:
+            query = (
+                f"name = '{folder_name}' "
+                f"and '{parent_folder_id}' in parents "
+                f"and mimeType = 'application/vnd.google-apps.folder' "
+                f"and trashed = false"
+            )
+            results = self.service.files().list(
+                q=query, fields="files(id, name)", pageSize=1
+            ).execute()
+            files = results.get('files', [])
+            if files:
+                folder_id = files[0]['id']
+                logger.info(f"📁 Found existing folder '{folder_name}': {folder_id}")
+                return folder_id
+            logger.info(f"📁 Folder '{folder_name}' not found — creating it")
+            return self.create_folder(folder_name, parent_folder_id)
+        except HttpError as e:
+            logger.error(f"❌ HTTP error checking folder '{folder_name}': {e}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error checking folder '{folder_name}': {e}")
+            return None
+
+    def upload_file_to_drive(
+        self,
+        file_path: str,
+        parent_folder_id: str,
+        filename: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Upload a local file to a Google Drive folder.
+
+        Returns a dict with id, name, webViewLink on success, or None.
+        """
+        if not self.service:
+            logger.error("❌ Service not initialized")
+            return None
+        try:
+            local_path = Path(file_path)
+            if not local_path.exists():
+                logger.error(f"❌ File not found: {file_path}")
+                return None
+
+            upload_name = filename or local_path.name
+            mime_type, _ = mimetypes.guess_type(str(local_path))
+            mime_type = mime_type or 'application/octet-stream'
+
+            metadata = {
+                'name': upload_name,
+                'parents': [parent_folder_id]
+            }
+            media = MediaFileUpload(str(local_path), mimetype=mime_type, resumable=True)
+            file_obj = self.service.files().create(
+                body=metadata,
+                media_body=media,
+                fields='id, name, webViewLink'
+            ).execute()
+
+            logger.info(f"⬆️ Uploaded '{upload_name}' → {file_obj.get('webViewLink', '')}")
+            return file_obj
+        except HttpError as e:
+            logger.error(f"❌ HTTP error uploading '{file_path}': {e}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error uploading '{file_path}': {e}")
+            return None
+
+    def upload_bytes_to_drive(
+        self,
+        file_content: bytes,
+        filename: str,
+        parent_folder_id: str,
+        mime_type: str = 'application/octet-stream'
+    ) -> Optional[Dict[str, Any]]:
+        """Upload raw bytes as a file to a Google Drive folder."""
+        if not self.service:
+            logger.error("❌ Service not initialized")
+            return None
+        try:
+            metadata = {
+                'name': filename,
+                'parents': [parent_folder_id]
+            }
+            media = MediaIoBaseUpload(io.BytesIO(file_content), mimetype=mime_type, resumable=True)
+            file_obj = self.service.files().create(
+                body=metadata,
+                media_body=media,
+                fields='id, name, webViewLink'
+            ).execute()
+            logger.info(f"⬆️ Uploaded bytes as '{filename}' → {file_obj.get('webViewLink', '')}")
+            return file_obj
+        except HttpError as e:
+            logger.error(f"❌ HTTP error uploading bytes '{filename}': {e}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error uploading bytes '{filename}': {e}")
+            return None
+
+    def upload_to_materiais_chatbot_educacional(
+        self,
+        file_path: str,
+        discipline: str,
+        root_folder_id: str,
+        root_folder_name: str = 'materiais_chatbot_educacional'
+    ) -> Optional[Dict[str, Any]]:
+        """Upload file_path to root_folder_id/materiais_chatbot_educacional/discipline/filename.
+
+        Creates intermediate folders if they don't exist.
+        Returns Drive file metadata on success, or None.
+        """
+        if not self.service:
+            logger.error("❌ Service not initialized — authenticate first")
+            return None
+
+        materiais_id = self.ensure_folder_exists(root_folder_name, root_folder_id)
+        if not materiais_id:
+            logger.error(f"❌ Could not find/create '{root_folder_name}' folder")
+            return None
+
+        discipline_id = self.ensure_folder_exists(discipline, materiais_id)
+        if not discipline_id:
+            logger.error(f"❌ Could not find/create discipline folder '{discipline}'")
+            return None
+
+        return self.upload_file_to_drive(file_path, discipline_id)
+
+    def list_discipline_folders(self, root_folder_id: str, root_folder_name: str = 'materiais_chatbot_educacional') -> List[Dict[str, Any]]:
+        """Return the list of subfolders (disciplines) inside materiais_chatbot_educacional."""
+        if not self.service:
+            return []
+        materiais_id = self.ensure_folder_exists(root_folder_name, root_folder_id)
+        if not materiais_id:
+            return []
+        try:
+            query = (
+                f"'{materiais_id}' in parents "
+                f"and mimeType = 'application/vnd.google-apps.folder' "
+                f"and trashed = false"
+            )
+            results = self.service.files().list(
+                q=query,
+                fields="files(id, name)",
+                orderBy="name"
+            ).execute()
+            return results.get('files', [])
+        except Exception as e:
+            logger.error(f"❌ Error listing discipline folders: {e}")
+            return []

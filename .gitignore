@@ -44,6 +44,14 @@ backend/auth_simple.py
 # Backend environment
 backend/.env
 
+# Google Drive OAuth credentials and tokens (NEVER commit these)
+credentials.json
+backend/credentials.json
+token.json
+backend/token.json
+backend/data/token.json
+*.json.bak
+
 # ChromaDB
 .chromadb/
 backend/data/*

@@ -2857,6 +2857,162 @@ async def sync_drive_simple(
             status_code=500, detail=f"Drive sync error: {str(e)}")
 
 # ========================================
+# DRIVE UPLOAD / BIDIRECTIONAL SYNC ENDPOINTS
+# ========================================
+
+
+class DriveUpload(BaseModel):
+    discipline: str
+    api_key: Optional[str] = None
+    root_folder_id: Optional[str] = None
+    root_folder_name: str = "materiais_chatbot_educacional"
+
+
+class DriveCreateFolder(BaseModel):
+    discipline: str
+    api_key: Optional[str] = None
+    root_folder_id: Optional[str] = None
+    root_folder_name: str = "materiais_chatbot_educacional"
+
+
+@app.post("/api/drive/upload")
+async def upload_file_to_drive(
+    file: UploadFile = File(...),
+    discipline: str = Form(...),
+    api_key: Optional[str] = Form(None),
+    root_folder_id: Optional[str] = Form(None),
+    root_folder_name: str = Form("materiais_chatbot_educacional"),
+    current_user: User = Depends(get_current_user)
+):
+    """Upload a file directly to Drive inside materiais_chatbot_educacional/[discipline]/"""
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    folder_id = root_folder_id or os.getenv("GOOGLE_DRIVE_FOLDER_ID")
+    if not folder_id:
+        raise HTTPException(
+            status_code=400,
+            detail="root_folder_id not provided and GOOGLE_DRIVE_FOLDER_ID not set in .env"
+        )
+
+    try:
+        auth_success = drive_handler.authenticate(api_key=api_key or "")
+        if not auth_success:
+            raise HTTPException(status_code=400, detail="Could not authenticate with Google Drive")
+
+        effective_folder_name = root_folder_name or os.getenv("GOOGLE_DRIVE_FOLDER_NAME", "materiais_chatbot_educacional")
+
+        content = await file.read()
+        import tempfile
+        suffix = Path(file.filename).suffix if file.filename else ""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            result = drive_handler.upload_to_materiais_chatbot_educacional(
+                tmp_path, discipline, folder_id, effective_folder_name
+            )
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+        if not result:
+            raise HTTPException(status_code=500, detail="Upload to Drive failed")
+
+        return {
+            "status": "success",
+            "file_id": result.get("id"),
+            "file_name": result.get("name"),
+            "web_view_link": result.get("webViewLink"),
+            "discipline": discipline,
+            "folder": f"{root_folder_name}/{discipline}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Drive upload error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/drive/create-folder")
+async def create_discipline_folder(
+    data: DriveCreateFolder,
+    current_user: User = Depends(get_current_user)
+):
+    """Create a discipline subfolder inside materiais_chatbot_educacional on Drive."""
+    if current_user.role not in ["admin", "instructor"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    folder_id = data.root_folder_id or os.getenv("GOOGLE_DRIVE_FOLDER_ID")
+    if not folder_id:
+        raise HTTPException(
+            status_code=400,
+            detail="root_folder_id not provided and GOOGLE_DRIVE_FOLDER_ID not set in .env"
+        )
+
+    try:
+        auth_success = drive_handler.authenticate(api_key=data.api_key or "")
+        if not auth_success:
+            raise HTTPException(status_code=400, detail="Could not authenticate with Google Drive")
+
+        effective_folder_name = data.root_folder_name or os.getenv("GOOGLE_DRIVE_FOLDER_NAME", "materiais_chatbot_educacional")
+
+        materiais_id = drive_handler.ensure_folder_exists(effective_folder_name, folder_id)
+        if not materiais_id:
+            raise HTTPException(status_code=500, detail=f"Could not find/create '{effective_folder_name}' folder")
+
+        discipline_id = drive_handler.ensure_folder_exists(data.discipline, materiais_id)
+        if not discipline_id:
+            raise HTTPException(status_code=500, detail=f"Could not create discipline folder '{data.discipline}'")
+
+        return {
+            "status": "success",
+            "discipline": data.discipline,
+            "folder_id": discipline_id,
+            "path": f"{effective_folder_name}/{data.discipline}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Create discipline folder error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/drive/disciplines")
+async def list_discipline_folders(
+    root_folder_id: Optional[str] = None,
+    root_folder_name: str = "materiais_chatbot_educacional",
+    current_user: User = Depends(get_current_user)
+):
+    """List discipline subfolders inside materiais_chatbot_educacional on Drive."""
+    folder_id = root_folder_id or os.getenv("GOOGLE_DRIVE_FOLDER_ID")
+    if not folder_id:
+        raise HTTPException(
+            status_code=400,
+            detail="root_folder_id not provided and GOOGLE_DRIVE_FOLDER_ID not set in .env"
+        )
+
+    try:
+        auth_success = drive_handler.authenticate(api_key="")
+        if not auth_success:
+            raise HTTPException(status_code=400, detail="Could not authenticate with Google Drive")
+
+        effective_folder_name = root_folder_name or os.getenv("GOOGLE_DRIVE_FOLDER_NAME", "materiais_chatbot_educacional")
+        folders = drive_handler.list_discipline_folders(folder_id, effective_folder_name)
+        return {
+            "status": "success",
+            "root_folder_id": folder_id,
+            "root_folder_name": root_folder_name,
+            "disciplines": folders
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ List disciplines error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========================================
 # STARTUP EVENT
 # ========================================
 

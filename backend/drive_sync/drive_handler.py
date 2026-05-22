@@ -43,10 +43,9 @@ class DriveHandler:
             'errors': 0
         }
 
-        # Updated scopes for better access
+        # Full drive access needed for bidirectional sync (read + write)
         self.scopes = [
-            'https://www.googleapis.com/auth/drive.readonly',
-            'https://www.googleapis.com/auth/drive.metadata.readonly'
+            'https://www.googleapis.com/auth/drive'
         ]
 
         # Adicionar cache de autenticação
