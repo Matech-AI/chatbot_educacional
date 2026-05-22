@@ -46,7 +46,7 @@ export const DriveSync: React.FC<DriveSyncProps> = ({ onSync, isLoading }) => {
   // Carregar valores do localStorage se disponíveis
   const [folderInput, setFolderInput] = useState(
     localStorage.getItem("lastDriveFolderId") ||
-      "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
+      "1T67sTJgCvz-PDSDS2NUnhPSTjhDXnscg"
   );
   const [apiKey, setApiKey] = useState(
     localStorage.getItem("lastDriveApiKey") || ""

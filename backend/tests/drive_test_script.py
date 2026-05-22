@@ -35,7 +35,7 @@ def main():
     logger.info("=" * 60)
     
     # Target folder ID from the URL provided
-    FOLDER_ID = "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
+    FOLDER_ID = "1T67sTJgCvz-PDSDS2NUnhPSTjhDXnscg"
     logger.info(f"🎯 Pasta alvo: {FOLDER_ID}")
     
     # Initialize Drive Handler

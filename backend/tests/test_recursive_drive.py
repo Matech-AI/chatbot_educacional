@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script para testar a funcionalidade de download recursivo do Google Drive
-Pasta alvo: https://drive.google.com/drive/folders/1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ
+Pasta alvo: https://drive.google.com/drive/folders/1T67sTJgCvz-PDSDS2NUnhPSTjhDXnscg
 
 Este script testa o download recursivo completo da estrutura de pastas.
 """
@@ -36,7 +36,7 @@ def test_recursive_download():
     logger.info("=" * 80)
     
     # Target folder ID from the URL provided
-    ROOT_FOLDER_ID = "1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
+    ROOT_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
     logger.info(f"🎯 Pasta raiz: {ROOT_FOLDER_ID}")
     logger.info(f"🔗 URL: https://drive.google.com/drive/folders/{ROOT_FOLDER_ID}")
     
@@ -250,7 +250,7 @@ def show_setup_instructions():
     print("   • Coloque o arquivo na pasta do projeto")
     
     print("\n📁 PASTA DE TESTE:")
-    print("   • URL: https://drive.google.com/drive/folders/1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ")
+    print(f"   • URL: https://drive.google.com/drive/folders/{os.getenv('GOOGLE_DRIVE_FOLDER_ID')}")
     print("   • Verifique se a pasta é pública ou configure as credenciais")
     
     print("\n🚀 EXECUTAR:")
