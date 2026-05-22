@@ -28,6 +28,19 @@ body {
   background: #a8a8a8;
 }
 
+/* Scrollbar em sidebars escuros */
+.sidebar-dark-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-dark-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.sidebar-dark-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
 /* Typing indicator animation */
 .typing-indicator {
   display: flex;

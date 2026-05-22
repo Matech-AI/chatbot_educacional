@@ -45,7 +45,7 @@ const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className="h-screen w-full bg-slate-100 text-slate-900 overflow-hidden flex">
+    <div className="h-screen w-full bg-slate-50 text-slate-900 overflow-hidden flex">
       {/* Verificação de senha temporária */}
       <TemporaryPasswordCheck />
       
@@ -54,7 +54,7 @@ const AppLayout: React.FC = () => {
         <button
           type="button"
           onClick={toggleSidebar}
-          className="p-2.5 bg-white text-slate-700 border border-slate-200 shadow-md rounded-xl hover:bg-slate-50 transition-colors"
+          className="p-2.5 bg-[#0f1419] text-white border border-white/10 shadow-lg rounded-xl hover:bg-[#161d2b] transition-colors"
           aria-label="Abrir menu"
         >
           <Menu size={20} />
@@ -66,7 +66,7 @@ const AppLayout: React.FC = () => {
         className={`fixed lg:relative z-40 h-full transition-transform duration-300 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
-        style={{ width: isMobile ? "260px" : "240px" }}
+        style={{ width: isMobile ? "min(100vw, 300px)" : "280px" }}
       >
         <Sidebar onClose={() => isMobile && setSidebarOpen(false)} />
       </div>
