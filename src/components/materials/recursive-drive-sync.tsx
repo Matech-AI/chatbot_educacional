@@ -616,7 +616,7 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
             <Input
               value={folderInput}
               onChange={handleInputChange}
-              placeholder="Ex: 1s00SfrQ04z0YIheq1ub0Dj1GpA_3TVNJ"
+              placeholder="Ex: 1T67sTJgCvz-PDSDS2NUnhPSTjhDXnscg"
               disabled={isProcessing || isLoading || isAnalyzing}
             />
           </div>
