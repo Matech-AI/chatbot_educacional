@@ -20,7 +20,6 @@ import { Button } from "../components/ui/button";
 import { BackButton } from "../components/ui/back-button";
 import {
   PlusCircle,
-  Trash2,
   BookOpen,
   Target,
   TrendingUp,
@@ -61,7 +60,6 @@ const EnhancedChatPage: React.FC = () => {
   const {
     createSession,
     setActiveSession,
-    deleteSession,
     sendMessage,
     addMessage,
   } = useChatActions();
@@ -311,31 +309,6 @@ Desculpe, ocorreu um erro ao processar sua pergunta.
     }, 100);
   }, [createSession, setSearchParams]);
 
-  const handleDeleteSession = useCallback(
-    (sessionId: string) => {
-      if (sessions.length <= 1) return;
-
-      deleteSession(sessionId);
-      if (sessionId === activeSessionId) {
-        const remainingSessions = sessions.filter((s) => s.id !== sessionId);
-        if (remainingSessions.length > 0) {
-          setActiveSession(remainingSessions[0].id);
-          setSearchParams(
-            { session: remainingSessions[0].id },
-            { replace: true }
-          );
-        }
-      }
-    },
-    [
-      sessions,
-      activeSessionId,
-      deleteSession,
-      setActiveSession,
-      setSearchParams,
-    ]
-  );
-
   const currentSession = sessions.find((s) => s.id === activeSessionId);
 
   // Hook para pegar mensagens da sessão ativa
@@ -426,40 +399,6 @@ Desculpe, ocorreu um erro ao processar sua pergunta.
             </div>
           </div>
 
-          {/* Session Tabs */}
-          {sessions.length > 1 && (
-            <div className="flex items-center gap-2 overflow-x-auto mt-4 pt-3 border-t border-slate-100">
-              {sessions.map((session) => (
-                <motion.div
-                  key={session.id}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm whitespace-nowrap cursor-pointer transition-colors ${
-                    session.id === activeSessionId
-                      ? "bg-slate-900 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                  onClick={() => {
-                    setActiveSession(session.id);
-                    setSearchParams({ session: session.id }, { replace: true });
-                  }}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <span>{session.title}</span>
-                  {sessions.length > 1 && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteSession(session.id);
-                      }}
-                      className="text-gray-400 hover:text-red-500 ml-1"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                </motion.div>
-              ))}
-            </div>
-          )}
         </header>
 
         {/* Messages Area */}
