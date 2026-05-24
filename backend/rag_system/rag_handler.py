@@ -10,6 +10,7 @@ from langchain_community.document_loaders import (
     DirectoryLoader,
     TextLoader,
     UnstructuredMarkdownLoader,
+    UnstructuredPowerPointLoader,
 )
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -1275,6 +1276,20 @@ class RAGHandler:
                 documents.extend(loaded_md)
             except Exception as e:
                 logger.warning(f"⚠️ Error loading Markdown from {train_dir}: {e}")
+
+            # PPTX (PowerPoint slides)
+            try:
+                pptx_loader = DirectoryLoader(
+                    str(train_dir),
+                    glob="**/*.pptx",
+                    loader_cls=UnstructuredPowerPointLoader,
+                    show_progress=True,
+                )
+                loaded_pptx = pptx_loader.load()
+                logger.info(f"📥 {len(loaded_pptx)} PPTX files from: {train_dir.name}")
+                documents.extend(loaded_pptx)
+            except Exception as e:
+                logger.warning(f"⚠️ Error loading PPTX from {train_dir}: {e}")
 
         # XLSX via pandas (e.g., course catalog)
         try:

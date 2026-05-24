@@ -61,6 +61,10 @@ class ProcessResponse(BaseModel):
     message: str
 
 
+class ReprocessRequest(BaseModel):
+    training_dirs: Optional[List[str]] = None  # subfolder names inside materials dir
+
+
 class QueryRequest(BaseModel):
     question: str
     user_level: str = "intermediate"
@@ -678,45 +682,63 @@ async def process_materials(request: ProcessMaterialsRequest, background_tasks: 
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/reprocess-enhanced-materials", response_model=ProcessResponse)
-async def reprocess_enhanced_materials(background_tasks: BackgroundTasks):
-    """
-    Reprocess all materials using the enhanced RAG system.
+@app.get("/materials/subfolders")
+async def list_materials_subfolders():
+    """List immediate subfolders inside the materials directory."""
+    global rag_handler
+    materials_dir = rag_handler.materials_dir if rag_handler else Path(
+        os.getenv("MATERIALS_DIR", "data/materials"))
+    try:
+        subfolders = sorted([
+            {"name": d.name, "file_count": sum(1 for f in d.rglob("*") if f.is_file())}
+            for d in Path(materials_dir).iterdir()
+            if d.is_dir()
+        ], key=lambda x: x["name"])
+        return {"subfolders": subfolders, "materials_dir": str(materials_dir)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    This endpoint forces reprocessing of all documents with educational features enabled,
-    such as extracting key concepts, assessing difficulty, and creating summaries.
+
+@app.post("/reprocess-enhanced-materials", response_model=ProcessResponse)
+async def reprocess_enhanced_materials(
+    background_tasks: BackgroundTasks,
+    request: ReprocessRequest = ReprocessRequest()
+):
+    """
+    Reprocess materials using the enhanced RAG system.
+    Accepts optional list of subfolder names to restrict training scope.
     """
     global rag_handler
     if not rag_handler:
-        raise HTTPException(
-            status_code=503, detail="RAG handler not initialized.")
+        raise HTTPException(status_code=503, detail="RAG handler not initialized.")
 
     try:
         logger.info("🚀 Starting enhanced material reprocessing...")
-        
-        # Verificar se rag_handler está inicializado
-        if not rag_handler:
-            logger.error("❌ RAG handler not initialized")
-            raise HTTPException(status_code=503, detail="RAG handler not initialized")
 
-        # Forçar a ativação de recursos educacionais para este processo
+        # Update training dirs if specified
+        if request.training_dirs:
+            rag_handler.training_dirs = [
+                rag_handler.materials_dir / d for d in request.training_dirs
+            ]
+            logger.info(f"🎯 Training restricted to: {request.training_dirs}")
+        else:
+            rag_handler.training_dirs = [rag_handler.materials_dir]
+            logger.info("📂 Training on full materials directory")
+
         rag_handler.config.enable_educational_features = True
-        logger.info("✅ Educational features enabled")
 
-        # Adicionar a tarefa de reprocessamento em segundo plano
-        background_tasks.add_task(
-            rag_handler.process_documents, force_reprocess=True)
+        background_tasks.add_task(rag_handler.process_documents, force_reprocess=True)
         logger.info("✅ Background task added successfully")
 
+        dirs_label = ", ".join(request.training_dirs) if request.training_dirs else "todos os materiais"
         return ProcessResponse(
             success=True,
-            message="Enhanced material reprocessing started in the background."
+            message=f"Reprocessamento iniciado em background para: {dirs_label}."
         )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error starting enhanced reprocessing: {e}")
-        logger.error(f"❌ Traceback: ", exc_info=True)
+        logger.error(f"❌ Error starting enhanced reprocessing: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
