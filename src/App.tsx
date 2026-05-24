@@ -46,6 +46,8 @@ const AssistantPage = lazy(() => import("./pages/assistant-page"));
 
 const ResetPasswordPage = lazy(() => import("./pages/reset-password-page"));
 
+const GoogleCallbackPage = lazy(() => import("./pages/google-callback-page"));
+
 // ========================================
 // COMPONENTE DE LOADING
 // ========================================
@@ -368,6 +370,17 @@ function App() {
                 }
               >
                 <ResetPasswordPage />
+              </Suspense>
+            }
+          />
+
+          <Route
+            path="/auth/google/callback"
+            element={
+              <Suspense
+                fallback={<LoadingSpinner message="Conectando Drive..." />}
+              >
+                <GoogleCallbackPage />
               </Suspense>
             }
           />

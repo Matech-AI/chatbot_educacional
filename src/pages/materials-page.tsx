@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMaterialsStore } from "../store/materials-store";
 import { useAuthStore } from "../store/auth-store";
 import { MaterialCard } from "../components/materials/material-card";
 import { UploadForm } from "../components/materials/upload-form";
 import { DriveSync } from "../components/materials/drive-sync";
 import { RecursiveDriveSync } from "../components/materials/recursive-drive-sync";
+import { PrivateDriveSync } from "../components/materials/private-drive-sync";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { BackButton } from "../components/ui/back-button";
@@ -20,6 +22,7 @@ import {
   RefreshCw,
   HardDrive,
   Database,
+  UserCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Material } from "../types";
@@ -39,9 +42,12 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
   const { user } = useAuthStore();
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<
-    "materials" | "upload" | "sync" | "recursive" | "stats" | "edit" // Adicionar "edit"
-  >("materials");
+    "materials" | "upload" | "sync" | "recursive" | "stats" | "edit" | "private-drive"
+  >(
+    searchParams.get("tab") === "private-drive" ? "private-drive" : "materials"
+  );
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [folderStructure, setFolderStructure] = useState<any>(null);
   const [driveStats, setDriveStats] = useState<any>(null);
@@ -226,6 +232,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
           { id: "upload" as const, label: "📤 Upload", icon: Upload },
           { id: "sync" as const, label: "☁️ Sync Simples", icon: Cloud },
           { id: "recursive" as const, label: "⚡ Sync Recursivo", icon: Zap },
+          { id: "private-drive" as const, label: "🔐 Drive Privado", icon: UserCircle },
           { id: "stats" as const, label: "📊 Estatísticas", icon: BarChart3 },
         ]
       : []),
@@ -473,6 +480,27 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
             exit={{ opacity: 0, y: -20 }}
           >
             <RecursiveDriveSync onSync={handleSync} isLoading={isProcessing} />
+          </motion.div>
+        )}
+
+        {activeTab === "private-drive" && canManage && (
+          <motion.div
+            key="private-drive"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="bg-white rounded-xl border border-gray-200 p-6"
+          >
+            <div className="mb-5">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <UserCircle size={20} className="text-red-600" />
+                Sincronizar Drive Pessoal
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Baixe arquivos do seu Google Drive pessoal autorizando acesso com sua conta Google.
+              </p>
+            </div>
+            <PrivateDriveSync onSync={handleSync} />
           </motion.div>
         )}
 

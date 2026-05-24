@@ -54,22 +54,22 @@ class User(BaseModel):
     disabled: Optional[bool] = False
     created_at: datetime
     updated_at: datetime
-    external_id: Optional[str] = None  # ID from external platform
+    external_id: Optional[str] = None
     approved: bool = True
     last_login: Optional[datetime] = None
-    is_temporary_password: bool = False  # Adicionar este campo
+    is_temporary_password: bool = False
+    instructor_username: Optional[str] = None  # Para alunos: vincula ao professor responsável
 
 
 class UserCreate(BaseModel):
     username: str
-    # Alterado de Optional[EmailStr] para EmailStr (obrigatório)
     email: EmailStr
     full_name: Optional[str] = None
     role: str = "student"
     external_id: Optional[str] = None
     approved: bool = True
-    # Novo campo para indicar se deve gerar senha aleatória
     generate_password: bool = True
+    instructor_username: Optional[str] = None
 
 
 class UserUpdate(BaseModel):
@@ -78,6 +78,7 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     disabled: Optional[bool] = None
     approved: Optional[bool] = None
+    instructor_username: Optional[str] = None
 
 
 class PasswordChange(BaseModel):
@@ -278,8 +279,8 @@ def create_user(user_data: UserCreate, password: str = None, send_email: bool = 
         "external_id": user_data.external_id,
         "approved": False,  # Inicialmente não aprovado até confirmação por e-mail
         "last_login": None,
-        # Marcar como senha temporária
-        "is_temporary_password": user_data.generate_password or password == "changeme"
+        "is_temporary_password": user_data.generate_password or password == "changeme",
+        "instructor_username": user_data.instructor_username,
     }
 
     users_db[user_data.username] = user_dict
@@ -345,6 +346,8 @@ def update_user(username: str, user_update: UserUpdate) -> Optional[User]:
         user_dict['disabled'] = user_update.disabled
     if user_update.approved is not None:
         user_dict['approved'] = user_update.approved
+    if user_update.instructor_username is not None:
+        user_dict['instructor_username'] = user_update.instructor_username if user_update.instructor_username != "" else None
 
     user_dict['updated_at'] = datetime.utcnow().isoformat()
 

@@ -25,9 +25,10 @@ from dotenv import load_dotenv
 import aiohttp
 from drive_sync.drive_handler import DriveHandler
 from drive_sync.drive_handler_recursive import RecursiveDriveHandler
-from auth.auth import get_current_user, User, router as auth_router
+from auth.auth import get_current_user, User, router as auth_router, get_all_users
 from auth.auth import get_optional_current_user
 from auth.user_management import router as user_management_router
+from auth.google_oauth import router as google_oauth_router
 # Educational agent router is now part of the RAG server
 from chat_agents.educational_agent import router as educational_agent_router
 import threading
@@ -66,6 +67,8 @@ app.add_middleware(
 app.include_router(user_management_router, prefix="/api/auth")
 # Inclua o router de autenticação para endpoints públicos como redefinição de senha
 app.include_router(auth_router, prefix="/api/auth")
+# Google OAuth2 para Drive Privado por usuário
+app.include_router(google_oauth_router, prefix="/api")
 # The educational agent router is now exposed via the RAG server
 app.include_router(educational_agent_router, prefix="/api")
 
@@ -107,6 +110,62 @@ archive_progress_lock = threading.Lock()
 
 # User authentication status cache
 user_auth_status = {}  # Armazenar status de autenticação por usuário
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MULTI-TENANT MATERIALS ISOLATION
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Per-user asyncio locks — prevent concurrent writes to the same user directory
+_user_write_locks: Dict[str, asyncio.Lock] = {}
+
+
+def _get_write_lock(username: str) -> asyncio.Lock:
+    if username not in _user_write_locks:
+        _user_write_locks[username] = asyncio.Lock()
+    return _user_write_locks[username]
+
+
+def _materials_base() -> Path:
+    return Path(os.getenv("MATERIALS_DIR", "data/materials"))
+
+
+def get_user_write_dir(user: User) -> Path:
+    """Directory where this user writes new files."""
+    base = _materials_base()
+    if user.role == "admin":
+        return base / "_shared"
+    return base / user.username
+
+
+def _legacy_shared_dirs(base: Path) -> List[Path]:
+    """Directories that exist but belong to no user — treated as shared (backward compat)."""
+    try:
+        known = {u.username for u in get_all_users()} | {"_shared"}
+    except Exception:
+        known = {"_shared"}
+    if not base.exists():
+        return []
+    return [d for d in base.iterdir() if d.is_dir() and d.name not in known]
+
+
+def get_user_visible_dirs(user: User) -> List[Path]:
+    """Directories whose files this user can see."""
+    base = _materials_base()
+    shared = base / "_shared"
+    legacy = _legacy_shared_dirs(base)
+
+    if user.role == "admin":
+        return [base]  # Admin sees everything via rglob
+    if user.role == "instructor":
+        return [shared] + legacy + [base / user.username]
+    # student
+    dirs = [shared] + legacy
+    instructor = getattr(user, "instructor_username", None)
+    if instructor:
+        dirs.append(base / instructor)
+    return dirs
+
+# ──────────────────────────────────────────────────────────────────────────────
 
 # Sistema de persistência para configurações do sistema
 system_settings_file = Path("data/system_settings.json")
@@ -1679,6 +1738,38 @@ async def get_drive_stats(current_user: User = Depends(get_current_user)):
 # ========================================
 
 
+@app.post("/api/admin/migrate-to-shared")
+async def migrate_existing_to_shared(current_user: User = Depends(get_current_user)):
+    """Move all legacy materials (not in a user dir) to _shared/. Run once after deploy."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    base = _materials_base()
+    shared = base / "_shared"
+    shared.mkdir(parents=True, exist_ok=True)
+
+    known_user_dirs = {u.username for u in get_all_users()}
+    known_user_dirs.add("_shared")
+
+    moved, skipped, errors = [], [], []
+
+    for item in list(base.iterdir()):
+        if item.name in known_user_dirs:
+            skipped.append(item.name)
+            continue
+        dest = shared / item.name
+        # If dest already exists, add suffix
+        if dest.exists():
+            dest = shared / f"{item.stem}_migrated{item.suffix if item.is_file() else ''}"
+        try:
+            shutil.move(str(item), str(dest))
+            moved.append(item.name)
+        except Exception as e:
+            errors.append({"item": item.name, "error": str(e)})
+
+    return {"moved": moved, "skipped": skipped, "errors": errors}
+
+
 @app.post("/api/maintenance/cleanup-duplicates")
 async def cleanup_duplicate_files(current_user: User = Depends(get_current_user)):
     """Remove duplicate files based on content hash"""
@@ -2371,19 +2462,35 @@ async def get_download_report(current_user: User = Depends(get_current_user)):
 
 @app.get("/api/materials")
 async def list_materials(current_user: User = Depends(get_current_user)):
-    """List all available materials"""
-    logger.info(f"📚 Materials list requested by: {current_user.username}")
+    """List materials visible to the requesting user."""
+    logger.info(f"📚 Materials list requested by: {current_user.username} (role={current_user.role})")
 
-    materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
-    materials_dir.mkdir(parents=True, exist_ok=True)
+    base = _materials_base()
+    base.mkdir(parents=True, exist_ok=True)
+    (base / "_shared").mkdir(exist_ok=True)
 
+    search_dirs = get_user_visible_dirs(current_user)
     materials = []
+    seen: set = set()
 
-    for file_path in materials_dir.rglob("*"):
-        if file_path.is_file():
-            materials.append(format_file_info(file_path, "user"))
+    for directory in search_dirs:
+        if not directory.exists():
+            continue
+        for file_path in directory.rglob("*"):
+            if not file_path.is_file() or file_path in seen:
+                continue
+            seen.add(file_path)
+            info = format_file_info(file_path, current_user.username)
+            # Inject owner: first path segment relative to base
+            try:
+                owner_segment = file_path.relative_to(base).parts[0]
+            except (ValueError, IndexError):
+                owner_segment = "_shared"
+            info["owner"] = owner_segment
+            info["is_own"] = (owner_segment == current_user.username)
+            materials.append(info)
 
-    logger.info(f"📚 Returning {len(materials)} materials")
+    logger.info(f"📚 Returning {len(materials)} materials to {current_user.username}")
     return materials
 
 
@@ -2412,17 +2519,19 @@ async def upload_material(
             detail=f"File type not allowed. Supported: {', '.join(allowed_extensions)}"
         )
 
-    materials_dir = Path(os.getenv("MATERIALS_DIR", "data/materials"))
-    materials_dir.mkdir(parents=True, exist_ok=True)
+    # Save to user-scoped directory (admin → _shared, instructor → own dir)
+    user_dir = get_user_write_dir(current_user)
+    user_dir.mkdir(parents=True, exist_ok=True)
 
-    file_path = materials_dir / file.filename
+    safe_name = Path(file.filename).name  # strip any path components
+    file_path = user_dir / safe_name
     counter = 1
     original_path = file_path
 
     while file_path.exists():
         stem = original_path.stem
         suffix = original_path.suffix
-        file_path = materials_dir / f"{stem}_{counter}{suffix}"
+        file_path = user_dir / f"{stem}_{counter}{suffix}"
         counter += 1
 
     try:
@@ -2433,8 +2542,9 @@ async def upload_material(
             raise HTTPException(
                 status_code=400, detail="File too large (max 50MB)")
 
-        with file_path.open("wb") as f:
-            f.write(content)
+        async with _get_write_lock(current_user.username):
+            with file_path.open("wb") as f:
+                f.write(content)
 
         logger.info(f"✅ File uploaded successfully: {file_path}")
 
@@ -2681,30 +2791,35 @@ def should_require_auth(filename: str) -> bool:
 
 @app.delete("/api/materials/{filename:path}")
 async def delete_material(filename: str, current_user: User = Depends(get_current_user)):
-    """Delete a material file"""
+    """Delete a material file — instructors can only delete their own files."""
     if current_user.role not in ["admin", "instructor"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Handle nested file paths with normalization
-    normalized_filename = filename.replace("/", os.path.sep)
-    file_path = Path(os.getenv("MATERIALS_DIR", str(
-        Path(__file__).resolve().parent / "data" / "materials"))) / normalized_filename
+    base = _materials_base()
+    normalized = filename.replace("/", os.path.sep)
+    file_path = base / normalized
 
     if not file_path.exists() or not file_path.is_file():
-        # Try to find file recursively
-        materials_dir = Path(os.getenv("MATERIALS_DIR", str(
-            Path(__file__).resolve().parent / "data" / "materials")))
-        # Fallback: search by basename if exact path not found
-        found_files = list(materials_dir.rglob(Path(normalized_filename).name))
-
-        if found_files:
-            file_path = found_files[0]
+        found = list(base.rglob(Path(normalized).name))
+        if found:
+            file_path = found[0]
         else:
             raise HTTPException(status_code=404, detail="File not found")
 
+    # Ownership check: instructors can only delete files in their own directory
+    if current_user.role == "instructor":
+        user_dir = base / current_user.username
+        try:
+            file_path.relative_to(user_dir)
+        except ValueError:
+            raise HTTPException(
+                status_code=403,
+                detail="Você só pode excluir arquivos da sua própria pasta."
+            )
+
     try:
         file_path.unlink()
-        logger.info(f"🗑️ File deleted by {current_user.username}: {filename}")
+        logger.info(f"🗑️ File deleted by {current_user.username}: {file_path}")
         return {"status": "success", "message": f"File deleted: {filename}"}
     except Exception as e:
         logger.error(f"❌ Delete error: {str(e)}")
