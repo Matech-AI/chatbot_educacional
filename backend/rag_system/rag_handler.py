@@ -8,6 +8,8 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.document_loaders import (
     PyPDFLoader,
     DirectoryLoader,
+    TextLoader,
+    UnstructuredMarkdownLoader,
 )
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -377,6 +379,21 @@ class RAGHandler:
                 self.persist_dir = str(backend_dir / "data" / ".chromadb")
 
         self.materials_dir = Path(materials_dir)
+
+        # Subpastas específicas para treino (RAG_TRAINING_DIRS no .env)
+        # Formato: nomes separados por vírgula, ex: "DNA da Força - Conteúdo para IA"
+        # Se vazio, usa todo o materials_dir
+        training_dirs_env = os.getenv("RAG_TRAINING_DIRS", "").strip()
+        if training_dirs_env:
+            self.training_dirs = [
+                self.materials_dir / d.strip()
+                for d in training_dirs_env.split(",")
+                if d.strip()
+            ]
+            logger.info(f"🎯 RAG treinará apenas nas pastas: {[str(d) for d in self.training_dirs]}")
+        else:
+            self.training_dirs = [self.materials_dir]
+            logger.info(f"📂 RAG treinará em todo o materials_dir: {self.materials_dir}")
 
         # Initialize components
         self.embeddings: Optional[Any] = None
@@ -1220,26 +1237,44 @@ class RAGHandler:
             return False
 
     def _load_all_documents(self) -> List[Document]:
-        """Load PDF and selected XLSX sheets from the materials directory."""
+        """Load documents from training_dirs (configured via RAG_TRAINING_DIRS env var)."""
         documents: List[Document] = []
-        # PDFs
-        try:
-            if not self.materials_dir.exists():
-                logger.warning(f"⚠️ Materials directory does not exist: {self.materials_dir}")
-                return documents
-                
-            loader = DirectoryLoader(
-                str(self.materials_dir),
-                glob="**/*.pdf",
-                loader_cls=PyPDFLoader,
-                show_progress=True,
-                use_multithreading=True,
-            )
-            loaded = loader.load()
-            logger.info(f"📥 Loaded {len(loaded)} docs for pattern **/*.pdf")
-            documents.extend(loaded)
-        except Exception as e:
-            logger.warning(f"⚠️ Error loading PDFs: {e}")
+
+        for train_dir in self.training_dirs:
+            if not train_dir.exists():
+                logger.warning(f"⚠️ Training directory does not exist, skipping: {train_dir}")
+                continue
+
+            logger.info(f"📂 Loading documents from: {train_dir}")
+
+            # PDFs
+            try:
+                loader = DirectoryLoader(
+                    str(train_dir),
+                    glob="**/*.pdf",
+                    loader_cls=PyPDFLoader,
+                    show_progress=True,
+                    use_multithreading=True,
+                )
+                loaded = loader.load()
+                logger.info(f"📥 {len(loaded)} PDFs from: {train_dir.name}")
+                documents.extend(loaded)
+            except Exception as e:
+                logger.warning(f"⚠️ Error loading PDFs from {train_dir}: {e}")
+
+            # Markdown
+            try:
+                md_loader = DirectoryLoader(
+                    str(train_dir),
+                    glob="**/*.md",
+                    loader_cls=UnstructuredMarkdownLoader,
+                    show_progress=True,
+                )
+                loaded_md = md_loader.load()
+                logger.info(f"📥 {len(loaded_md)} Markdown files from: {train_dir.name}")
+                documents.extend(loaded_md)
+            except Exception as e:
+                logger.warning(f"⚠️ Error loading Markdown from {train_dir}: {e}")
 
         # XLSX via pandas (e.g., course catalog)
         try:
@@ -1247,7 +1282,7 @@ class RAGHandler:
         except Exception as e:
             logger.warning(f"⚠️ Error loading XLSX via pandas: {e}")
 
-        logger.info(f"📄 Loaded {len(documents)} total documents.")
+        logger.info(f"📄 Total: {len(documents)} documentos carregados para treino.")
         return documents
 
     def _load_xlsx_with_pandas(self) -> List[Document]:

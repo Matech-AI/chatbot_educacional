@@ -184,6 +184,8 @@ def get_file_type(filename: str) -> str:
         return 'docx'
     elif ext == '.txt':
         return 'txt'
+    elif ext == '.md':
+        return 'md'
     else:
         return 'unknown'
 
@@ -2065,8 +2067,7 @@ async def upload_material(
     if not file.filename:
         raise HTTPException(status_code=400, detail="File has no name")
 
-    allowed_extensions = {'.pdf', '.docx', '.txt',
-                          '.pptx'}
+    allowed_extensions = {'.pdf', '.docx', '.txt', '.pptx', '.md'}
     file_ext = Path(file.filename).suffix.lower()
 
     if file_ext not in allowed_extensions:
@@ -2187,7 +2188,7 @@ def should_require_auth(filename: str) -> bool:
         return False
 
     # Exemplo: certos tipos de arquivo não requerem autenticação
-    if filename.lower().endswith(('.pdf', '.txt')):
+    if filename.lower().endswith(('.pdf', '.txt', '.md')):
         return False
 
     # Por padrão, outros arquivos requerem autenticação

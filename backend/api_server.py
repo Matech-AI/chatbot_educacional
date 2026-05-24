@@ -158,7 +158,7 @@ def get_default_system_settings():
             "language": "pt-BR",
             "timezone": "America/Sao_Paulo",
             "maxFileSize": 50,
-            "allowedFileTypes": ".pdf,.docx,.txt,.pptx",
+            "allowedFileTypes": ".pdf,.docx,.txt,.pptx,.md",
         },
         "security": {
             "sessionTimeout": 180,
@@ -2403,8 +2403,7 @@ async def upload_material(
     if not file.filename:
         raise HTTPException(status_code=400, detail="File has no name")
 
-    allowed_extensions = {'.pdf', '.docx', '.txt',
-                          '.pptx'}
+    allowed_extensions = {'.pdf', '.docx', '.txt', '.pptx', '.md'}
     file_ext = Path(file.filename).suffix.lower()
 
     if file_ext not in allowed_extensions:

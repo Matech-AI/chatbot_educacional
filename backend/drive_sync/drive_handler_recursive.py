@@ -12,6 +12,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload, MediaIoBaseUpload
 
@@ -156,12 +157,13 @@ class RecursiveDriveHandler:
 
         # Tentar outros métodos de autenticação se o token.json não funcionou
         auth_methods = [
+            # Credentials file first: detects Service Account or OAuth2 automatically
+            ("Credentials File (Service Account or OAuth2)",
+             lambda: self.authenticate_with_credentials(self._resolve_credentials_path(credentials_path))),
             ("API Key", lambda: self.authenticate_with_api_key(
                 api_key) if api_key else False),
             ("Environment API Key", lambda: self.authenticate_with_api_key(os.getenv(
                 'GOOGLE_DRIVE_API_KEY')) if os.getenv('GOOGLE_DRIVE_API_KEY') else False),
-            ("OAuth2 Credentials",
-             lambda: self.authenticate_with_credentials(self._resolve_credentials_path(credentials_path))),
             ("Public Access", self.authenticate_public_access)
         ]
 
@@ -221,50 +223,70 @@ class RecursiveDriveHandler:
             logger.error(f"❌ Error authenticating with API Key: {str(e)}")
             return False
 
-    def authenticate_with_credentials(self, credentials_path: str = 'data/credentials.json') -> bool:
-        """Authenticate with Google Drive using OAuth2 credentials with improved flow"""
+    def _is_service_account_file(self, credentials_path: str) -> bool:
+        """Check if the credentials file is a service account JSON."""
         try:
-            # Verificar se já estamos autenticados e o cache ainda é válido
+            with open(credentials_path, 'r') as f:
+                data = json.load(f)
+            return data.get('type') == 'service_account'
+        except Exception:
+            return False
+
+    def authenticate_with_service_account(self, credentials_path: str) -> bool:
+        """Authenticate using a Service Account JSON key — no browser needed."""
+        try:
+            logger.info("🤖 Attempting Service Account authentication...")
+            creds = service_account.Credentials.from_service_account_file(
+                credentials_path,
+                scopes=self.scopes
+            )
+            self.service = build('drive', 'v3', credentials=creds)
+
+            about = self.service.about().get(fields="user").execute()
+            sa_email = about.get('user', {}).get('emailAddress', 'service account')
+            logger.info(f"✅ Authenticated as service account: {sa_email}")
+
+            self.auth_cache['last_auth_time'] = time.time()
+            self.auth_cache['auth_method'] = 'service_account'
+            self.auth_cache['is_authenticated'] = True
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Service Account authentication failed: {e}")
+            return False
+
+    def authenticate_with_credentials(self, credentials_path: str = 'data/credentials.json') -> bool:
+        """Authenticate with Google Drive. Supports Service Account (web) and OAuth2 (desktop)."""
+        try:
             current_time = time.time()
             if (self.service and
                 self.auth_cache['is_authenticated'] and
-                self.auth_cache['auth_method'] == 'oauth2' and
                     current_time - self.auth_cache['last_auth_time'] < self.auth_cache['auth_valid_for']):
-                logger.info("✅ Using cached OAuth2 authentication")
+                logger.info(f"✅ Using cached authentication ({self.auth_cache['auth_method']})")
                 return True
 
-            logger.info("🔐 Attempting OAuth2 authentication...")
-            logger.info(f"📄 Credentials file path: {credentials_path}")
-            logger.info(
-                f"📄 Credentials file exists: {os.path.exists(credentials_path)}")
+            if not os.path.exists(credentials_path):
+                logger.error(f"❌ Credentials file not found: {credentials_path}")
+                return False
 
+            # Service Account — preferred for web/server environments
+            if self._is_service_account_file(credentials_path):
+                return self.authenticate_with_service_account(credentials_path)
+
+            # OAuth2 fallback — only works when running interactively (desktop/local)
+            logger.info("🔐 Attempting OAuth2 authentication (desktop flow)...")
             creds = None
             token_path = self._resolve_token_path()
-            logger.info(f"🎫 Token file path: {token_path}")
-            logger.info(f"🎫 Token file exists: {os.path.exists(token_path)}")
 
-            # Load existing token
             if os.path.exists(token_path):
-                logger.info("📖 Loading existing token from file...")
                 try:
-                    creds = Credentials.from_authorized_user_file(
-                        token_path, self.scopes)
-                    logger.info(
-                        f"🎫 Token loaded. Valid: {creds.valid if creds else False}")
-
-                    if creds and creds.expired:
-                        logger.info(f"🎫 Token expired: {creds.expired}")
+                    creds = Credentials.from_authorized_user_file(token_path, self.scopes)
                 except Exception as e:
                     logger.warning(f"⚠️ Error loading token: {e}")
                     creds = None
 
-            # If there are no (valid) credentials available, let the user log in
             if not creds or not creds.valid:
-                logger.info(
-                    "🔄 Credentials invalid or missing, refreshing/creating new ones...")
-
                 if creds and creds.expired and creds.refresh_token:
-                    logger.info("🔄 Refreshing expired credentials...")
                     try:
                         creds.refresh(Request())
                         logger.info("✅ Credentials refreshed successfully")
@@ -273,113 +295,37 @@ class RecursiveDriveHandler:
                         creds = None
 
                 if not creds:
-                    if not os.path.exists(credentials_path):
-                        logger.error(
-                            f"❌ Credentials file not found: {credentials_path}")
-                        raise FileNotFoundError(
-                            f"Credentials file not found: {credentials_path}")
-
-                    logger.info("🌐 Starting OAuth2 flow...")
-
-                    # Create flow with improved settings
                     flow = InstalledAppFlow.from_client_secrets_file(
-                        credentials_path,
-                        self.scopes,
-                        redirect_uri='http://localhost:8080'  # Explicit redirect URI
-                    )
-
-                    # Run local server with better error handling
+                        credentials_path, self.scopes)
                     try:
-                        logger.info("🖥️ Starting local server for OAuth2...")
-                        # Modificação aqui: Adicionar access_type='offline' e prompt='consent'
-                        # para garantir que recebamos um refresh_token de longa duração
-                        flow.authorization_url(
-                            access_type='offline', prompt='consent')
+                        creds = flow.run_local_server(port=8080, open_browser=False, timeout_seconds=300)
+                    except Exception:
+                        auth_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
+                        print(f"Please go to this URL: {auth_url}")
+                        creds = flow.run_console()
 
-                        creds = flow.run_local_server(
-                            port=8080,
-                            open_browser=False,
-                            success_message='Authentication successful! You can close this window.',
-                            timeout_seconds=300  # 5 minute timeout
-                        )
-                        logger.info("✅ OAuth2 flow completed successfully")
-
-                    except Exception as oauth_error:
-                        logger.error(f"❌ OAuth2 flow failed: {oauth_error}")
-
-                        # Try console flow as fallback
-                        logger.info(
-                            "🔄 Trying console-based authentication as fallback...")
-                        try:
-                            # Também adicionar access_type='offline' e prompt='consent' aqui
-                            auth_url, _ = flow.authorization_url(
-                                access_type='offline', prompt='consent')
-                            print(f"Please go to this URL: {auth_url}")
-                            creds = flow.run_console()  # type: ignore
-                            logger.info("✅ Console authentication successful")
-                        except Exception as console_error:
-                            logger.error(
-                                f"❌ Console authentication also failed: {console_error}")
-                            return False
-
-                # Save the credentials for the next run
                 if creds:
-                    logger.info("💾 Saving credentials to token.json...")
                     try:
-                        writable_candidates = [
-                            token_path,
-                            '/app/data/token.json',
-                            'token.json',
-                        ]
-                        saved = False
-                        for wpath in writable_candidates:
-                            try:
-                                Path(wpath).parent.mkdir(
-                                    parents=True, exist_ok=True)
-                                with open(wpath, 'w') as token:
-                                    token.write(creds.to_json())
-                                logger.info(
-                                    f"✅ Credentials saved successfully at {wpath}")
-                                saved = True
-                                break
-                            except Exception:
-                                continue
-                        if not saved:
-                            logger.warning(
-                                "⚠️ Could not save credentials to any known writable location")
+                        Path(token_path).parent.mkdir(parents=True, exist_ok=True)
+                        with open(token_path, 'w') as token:
+                            token.write(creds.to_json())
+                        logger.info(f"✅ Token saved to {token_path}")
                     except Exception as e:
-                        logger.warning(f"⚠️ Could not save credentials: {e}")
+                        logger.warning(f"⚠️ Could not save token: {e}")
 
             if creds:
-                logger.info("🔨 Building Google Drive service...")
                 self.service = build('drive', 'v3', credentials=creds)
-
-                # Test the service with a simple request
-                try:
-                    about = self.service.about().get(fields="user").execute()
-                    user_email = about.get('user', {}).get(
-                        'emailAddress', 'Unknown')
-                    logger.info(
-                        f"✅ Successfully authenticated as: {user_email}")
-                except Exception as e:
-                    logger.warning(
-                        f"⚠️ Could not get user info, but service created: {e}")
-
-                # Atualizar o cache de autenticação
                 self.auth_cache['last_auth_time'] = time.time()
                 self.auth_cache['auth_method'] = 'oauth2'
                 self.auth_cache['is_authenticated'] = True
-
-                logger.info(
-                    "✅ Successfully authenticated with Google Drive using OAuth2")
+                logger.info("✅ Successfully authenticated with OAuth2")
                 return True
-            else:
-                logger.error("❌ No valid credentials obtained")
-                return False
+
+            logger.error("❌ No valid credentials obtained")
+            return False
 
         except Exception as e:
-            logger.error(f"❌ Error authenticating with OAuth2: {str(e)}")
-            logger.error(f"❌ Error type: {type(e).__name__}")
+            logger.error(f"❌ Error authenticating: {e}")
             return False
 
     def authenticate_public_access(self) -> bool:
@@ -734,39 +680,43 @@ class RecursiveDriveHandler:
 
             # Handle Google Apps files (Docs/Sheets/Slides)
             if mime_type.startswith('application/vnd.google-apps'):
-                if not self.export_google_docs:
-                    logger.info(
-                        f"⏭️ Skipping Google Apps file (export disabled): {filename}")
-                return None
+                if mime_type == 'application/vnd.google-apps.folder':
+                    return None
 
+                if not self.export_google_docs:
+                    logger.info(f"⏭️ Skipping Google Apps file (export disabled): {filename}")
+                    return None
+
+                # For .md files stored as Google Docs, export as plain text keeping .md extension
+                original_ext = Path(filename).suffix.lower()
                 export_map = {
-                    'application/vnd.google-apps.document': ('application/pdf', '.pdf'),
+                    'application/vnd.google-apps.document': ('text/plain', '.txt'),
                     'application/vnd.google-apps.presentation': ('application/pdf', '.pdf'),
                     'application/vnd.google-apps.spreadsheet': ('application/pdf', '.pdf'),
                     'application/vnd.google-apps.drawing': ('application/pdf', '.pdf'),
                 }
-                export_mime, export_ext = export_map.get(
-                    mime_type, ('application/pdf', '.pdf'))
+                export_mime, export_ext = export_map.get(mime_type, ('application/pdf', '.pdf'))
+
+                # Preserve original .md extension when exporting a Google Doc
+                if original_ext == '.md' and mime_type == 'application/vnd.google-apps.document':
+                    export_ext = '.md'
+
                 try:
-                    logger.info(
-                        f"📤 Exporting Google Apps file to {export_ext}: {filename}")
+                    logger.info(f"📤 Exporting Google Apps file to {export_ext}: {filename}")
                     export_request = self.service.files().export(
                         fileId=file_id, mimeType=export_mime
                     ) if self.service else None
                     exported_content = export_request.execute() if export_request else None
                     if not exported_content or len(exported_content) < 100:
-                        logger.warning(
-                            f"⚠️ Export returned empty content for: {filename}")
+                        logger.warning(f"⚠️ Export returned empty content for: {filename}")
                         self.download_stats['errors'] += 1
                         return None
                     file_content = exported_content
                     download_method = "export"
-                    # Adjust filename extension to exported one
                     base_name, _ = os.path.splitext(filename)
                     filename = base_name + export_ext
                 except HttpError as e:
-                    logger.error(
-                        f"❌ Export failed (HTTP {e.resp.status}) for {filename}")
+                    logger.error(f"❌ Export failed (HTTP {e.resp.status}) for {filename}")
                     self.download_stats['errors'] += 1
                     return None
                 except Exception as e:
