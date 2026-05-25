@@ -16,11 +16,8 @@ import {
   X,
   Cloud,
   Zap,
-  FolderTree,
-  BarChart3,
   Settings,
   RefreshCw,
-  HardDrive,
   Database,
   UserCircle,
 } from "lucide-react";
@@ -44,46 +41,19 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<
-    "materials" | "upload" | "sync" | "recursive" | "stats" | "edit" | "private-drive"
+    "materials" | "upload" | "sync" | "recursive" | "edit" | "private-drive"
   >(
     searchParams.get("tab") === "private-drive" ? "private-drive" : "materials"
   );
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [folderStructure, setFolderStructure] = useState<any>(null);
-  const [driveStats, setDriveStats] = useState<any>(null);
-  const [editingMaterial, setEditingMaterial] = useState<Material | null>(null); // Adicionar esta linha
+  const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
 
   // Can manage materials if admin or instructor
   const canManage = user?.role === "admin" || user?.role === "instructor";
 
-  // Fetch materials and stats on mount
   useEffect(() => {
     fetchMaterials();
-    if (canManage) {
-      loadDriveStats();
-    }
-  }, [fetchMaterials, canManage]);
-
-  const loadDriveStats = async () => {
-    try {
-      const base = import.meta.env.VITE_API_BASE_URL || "";
-      const response = await fetch(`${base}/drive-stats-detailed`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-      });
-      const contentType = response.headers.get("content-type") || "";
-      const text = await response.text();
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${text}`);
-      }
-      const stats = contentType.includes("application/json")
-        ? JSON.parse(text)
-        : {};
-      setDriveStats(stats);
-      setFolderStructure(stats.folder_structure);
-    } catch (error) {
-      console.error("Error loading drive stats:", error);
-    }
-  };
+  }, [fetchMaterials]);
 
   // Filter materials based on search term
   const filteredMaterials = materials.filter(
@@ -107,7 +77,6 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
     const success = await uploadMaterial(file, description, tags);
     if (success) {
       setActiveTab("materials");
-      loadDriveStats(); // Refresh stats
     }
     return success;
   };
@@ -115,7 +84,6 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm("Tem certeza que deseja excluir este material?")) {
       await deleteMaterial(id);
-      loadDriveStats(); // Refresh stats
     }
   };
 
@@ -133,96 +101,13 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
     if (success) {
       setActiveTab("materials");
       setEditingMaterial(null);
-      loadDriveStats(); // Refresh stats
     }
     return success;
   };
 
   const handleSync = () => {
     fetchMaterials();
-    loadDriveStats();
     setActiveTab("materials");
-  };
-
-  const handleTabChange = (tab: typeof activeTab) => {
-    setActiveTab(tab);
-    if (tab === "stats") {
-      loadDriveStats();
-    }
-  };
-
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
-
-  const renderFolderStructure = (structure: any) => {
-    if (!structure || Object.keys(structure).length === 0) {
-      return (
-        <p className="text-gray-500 text-center py-4">
-          Nenhuma estrutura de pastas encontrada
-        </p>
-      );
-    }
-
-    return (
-      <div className="space-y-2">
-        {Object.entries(structure).map(
-          ([folderPath, folderData]: [string, any]) => (
-            <div
-              key={folderPath}
-              className="border border-gray-200 rounded-lg p-3"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <FolderTree size={16} className="text-blue-600" />
-                  <span className="font-medium text-sm">
-                    {folderPath === "root"
-                      ? "📁 Pasta Raiz"
-                      : `📂 ${folderPath}`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-4 text-xs text-gray-500">
-                  <span>{folderData.file_count} arquivos</span>
-                  <span>{formatBytes(folderData.total_size)}</span>
-                </div>
-              </div>
-
-              {folderData.files && folderData.files.length > 0 && (
-                <div className="ml-6 space-y-1">
-                  {folderData.files
-                    .slice(0, 5)
-                    .map((file: any, index: number) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between text-xs"
-                      >
-                        <span className="text-gray-600">📄 {file.name}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400">
-                            {file.type.toUpperCase()}
-                          </span>
-                          <span className="text-gray-400">
-                            {formatBytes(file.size)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  {folderData.files.length > 5 && (
-                    <div className="text-xs text-gray-500 italic">
-                      ... e mais {folderData.files.length - 5} arquivos
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        )}
-      </div>
-    );
   };
 
   const tabs = [
@@ -233,7 +118,6 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
           { id: "sync" as const, label: "☁️ Sync Simples", icon: Cloud },
           { id: "recursive" as const, label: "⚡ Sync Recursivo", icon: Zap },
           { id: "private-drive" as const, label: "🔐 Drive Privado", icon: UserCircle },
-          { id: "stats" as const, label: "📊 Estatísticas", icon: BarChart3 },
         ]
       : []),
   ];
@@ -257,7 +141,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
           {canManage && (
             <div className="flex gap-2">
               <Button
-                onClick={() => handleTabChange("recursive")}
+                onClick={() => setActiveTab("recursive")}
                 variant={activeTab === "recursive" ? "default" : "outline"}
                 className="flex items-center gap-2"
               >
@@ -266,10 +150,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
               </Button>
 
               <Button
-                onClick={() => {
-                  fetchMaterials();
-                  loadDriveStats();
-                }}
+                onClick={() => fetchMaterials()}
                 variant="outline"
                 className="flex items-center gap-2"
               >
@@ -288,7 +169,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
+                onClick={() => setActiveTab(tab.id)}
                 className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === tab.id
                     ? "border-red-500 text-red-600"
@@ -350,9 +231,9 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
                   <h3 className="font-medium text-gray-900 mb-3">
                     Opções Avançadas
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Button
-                      onClick={() => handleTabChange("recursive")}
+                      onClick={() => setActiveTab("recursive")}
                       variant="outline"
                       className="flex items-center gap-2"
                     >
@@ -360,15 +241,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
                       Sync Recursivo
                     </Button>
                     <Button
-                      onClick={() => handleTabChange("stats")}
-                      variant="outline"
-                      className="flex items-center gap-2"
-                    >
-                      <BarChart3 size={16} />
-                      Ver Estatísticas
-                    </Button>
-                    <Button
-                      onClick={() => handleTabChange("upload")}
+                      onClick={() => setActiveTab("upload")}
                       variant="outline"
                       className="flex items-center gap-2"
                     >
@@ -426,7 +299,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
                     {canManage && !searchTerm && (
                       <div className="flex justify-center gap-2">
                         <Button
-                          onClick={() => handleTabChange("recursive")}
+                          onClick={() => setActiveTab("recursive")}
                           variant="outline"
                           className="flex items-center gap-2"
                         >
@@ -434,7 +307,7 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
                           Sincronizar Drive
                         </Button>
                         <Button
-                          onClick={() => handleTabChange("upload")}
+                          onClick={() => setActiveTab("upload")}
                           variant="outline"
                           className="flex items-center gap-2"
                         >
@@ -504,137 +377,6 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
           </motion.div>
         )}
 
-        {activeTab === "stats" && canManage && (
-          <motion.div
-            key="stats"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="space-y-6"
-          >
-            {/* Statistics Cards */}
-            {driveStats && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">
-                        Total de Arquivos
-                      </p>
-                      <p className="text-2xl font-bold text-gray-900">
-                        {driveStats.total_files}
-                      </p>
-                    </div>
-                    <Database size={24} className="text-blue-600" />
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">
-                        Tamanho Total
-                      </p>
-                      <p className="text-2xl font-bold text-gray-900">
-                        {formatBytes(driveStats.total_size)}
-                      </p>
-                    </div>
-                    <HardDrive size={24} className="text-green-600" />
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">
-                        Tipos de Arquivo
-                      </p>
-                      <p className="text-2xl font-bold text-gray-900">
-                        {Object.keys(driveStats.file_types || {}).length}
-                      </p>
-                    </div>
-                    <Settings size={24} className="text-purple-600" />
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">
-                        Status Drive
-                      </p>
-                      <p className="text-lg font-bold text-green-600">
-                        {driveStats.drive_authenticated
-                          ? "Conectado"
-                          : "Desconectado"}
-                      </p>
-                    </div>
-                    <Cloud
-                      size={24}
-                      className={
-                        driveStats.drive_authenticated
-                          ? "text-green-600"
-                          : "text-red-600"
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* File Types Distribution */}
-            {driveStats?.file_types && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <BarChart3 size={20} />
-                  Distribuição de Tipos de Arquivo
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {Object.entries(driveStats.file_types).map(
-                    ([type, count]: [string, any]) => (
-                      <div
-                        key={type}
-                        className="text-center p-3 bg-gray-50 rounded-lg"
-                      >
-                        <div className="text-lg font-bold text-gray-900">
-                          {count}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {type || "sem extensão"}
-                        </div>
-                      </div>
-                    )
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Folder Structure */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <FolderTree size={20} />
-                Estrutura de Pastas
-              </h3>
-              <div className="max-h-96 overflow-y-auto">
-                {renderFolderStructure(folderStructure)}
-              </div>
-            </div>
-
-            {/* Refresh Button */}
-            <div className="flex justify-center">
-              <Button
-                onClick={loadDriveStats}
-                variant="outline"
-                className="flex items-center gap-2"
-              >
-                <RefreshCw size={16} />
-                Atualizar Estatísticas
-              </Button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Adicionar esta seção para a aba de edição */}
         {activeTab === "edit" && editingMaterial && (
           <motion.div
             key="edit"
@@ -657,5 +399,4 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
   );
 };
 
-// Export default para funcionar com lazy loading
 export default MaterialsPage;
