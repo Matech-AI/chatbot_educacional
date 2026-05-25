@@ -497,7 +497,7 @@ async def init_admin(request: Request):
         body = await request.json()
         username = body.get("username", "admin")
         password = body.get("password", "")
-        email = body.get("email", "admin@iadnadaforca.com.br")
+        email = body.get("email", "matheusbnas@gmail.com")
 
         if not password or len(password) < 8:
             raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")

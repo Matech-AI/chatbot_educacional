@@ -156,7 +156,7 @@ def initialize_database():
     # Create default admin user on first run if no users exist
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
     admin_password = os.getenv("ADMIN_PASSWORD", "")
-    admin_email = os.getenv("ADMIN_EMAIL", "admin@iadnadaforca.com.br")
+    admin_email = os.getenv("ADMIN_EMAIL", "matheusbnas@gmail.com")
 
     if admin_password:
         from database.models import UserDB
