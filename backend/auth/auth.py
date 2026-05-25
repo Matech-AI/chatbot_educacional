@@ -394,11 +394,14 @@ def _load_approved_users_rows():
 
 
 def load_approved_users() -> List[dict]:
-    return [
-        {"external_id": r.external_id, "username": r.username,
-         "email": r.email, "full_name": r.full_name, "role": r.role}
-        for r in _load_approved_users_rows()
-    ]
+    from database.models import ApprovedUserDB
+    with _db() as db:
+        rows = db.query(ApprovedUserDB).all()
+        return [
+            {"external_id": r.external_id, "username": r.username,
+             "email": r.email, "full_name": r.full_name, "role": r.role}
+            for r in rows
+        ]
 
 
 def save_approved_users(approved_users: List[dict]):
