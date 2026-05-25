@@ -24,7 +24,7 @@ interface ChatState {
 const sendToAI = async (message: string): Promise<{ content: string, sources: Source[] }> => {
   try {
     console.log('🤖 Sending message to AI:', message.substring(0, 50) + '...');
-    const response = await api.chat(message);
+    const response = await api.chatAuth(message);
     
     console.log('✅ AI response received');
     return {

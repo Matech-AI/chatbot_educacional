@@ -9,7 +9,6 @@ from langchain_community.document_loaders import (
     PyPDFLoader,
     DirectoryLoader,
     TextLoader,
-    UnstructuredMarkdownLoader,
     UnstructuredPowerPointLoader,
 )
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -1268,7 +1267,8 @@ class RAGHandler:
                 md_loader = DirectoryLoader(
                     str(train_dir),
                     glob="**/*.md",
-                    loader_cls=UnstructuredMarkdownLoader,
+                    loader_cls=TextLoader,
+                    loader_kwargs={"encoding": "utf-8"},
                     show_progress=True,
                 )
                 loaded_md = md_loader.load()
@@ -1357,6 +1357,14 @@ class RAGHandler:
             f"📥 Loaded {len(xlsx_documents)} docs for pattern **/*.xlsx (pandas)")
         return xlsx_documents
 
+    def _extract_owner(self, source_path: str) -> str:
+        """Return the owner bucket for a document: first subfolder under materials_dir."""
+        try:
+            rel = Path(source_path).relative_to(self.materials_dir)
+            return rel.parts[0] if len(rel.parts) > 1 else "_shared"
+        except ValueError:
+            return "_shared"
+
     def _enhance_document(self, doc: Document) -> Document:
         """Enhance a single document with educational metadata."""
         source_path = doc.metadata.get('source', '')
@@ -1365,6 +1373,7 @@ class RAGHandler:
             **doc.metadata,
             'content_type': self._analyze_content_type(source_path),
             'processed_at': time.time(),
+            'owner': self._extract_owner(source_path),
         }
 
         # ✅ ADICIONAR VALIDAÇÃO DE PÁGINA
@@ -1539,7 +1548,7 @@ class RAGHandler:
             logger.warning(f"⚠️ Reranking falhou, usando ordem original: {e}")
             return documents[:top_k]
 
-    def retrieve_documents(self, question: str, k: Optional[int] = None) -> List[Document]:
+    def retrieve_documents(self, question: str, k: Optional[int] = None, allowed_owners: Optional[List[str]] = None) -> List[Document]:
         """Retrieve documents with automatic fallback on embedding failures."""
         try:
             if not self.retriever:
@@ -1547,11 +1556,16 @@ class RAGHandler:
                 return []
 
             k = k or self.config.retrieval_k
-            logger.info(f"🔍 Retrieving documents for question: '{question}'")
+            logger.info(f"🔍 Retrieving documents for question: '{question}'" + (f" (owners: {allowed_owners})" if allowed_owners else ""))
 
-            # Tentar com o retriever atual
+            chroma_filter = {"owner": {"$in": allowed_owners}} if allowed_owners else None
+
+            # Tentar com o retriever atual (com filtro se fornecido)
             try:
-                docs = self.retriever.invoke(question)
+                if chroma_filter:
+                    docs = self.vector_store.similarity_search(question, k=k, filter=chroma_filter)
+                else:
+                    docs = self.retriever.invoke(question)
                 logger.info(f"📄 Found {len(docs)} relevant documents.")
                 return docs[:k]
             except Exception as e:
@@ -1572,7 +1586,10 @@ class RAGHandler:
                         self._setup_retriever()
 
                         if self.retriever:
-                            docs = self.retriever.invoke(question)
+                            if chroma_filter:
+                                docs = self.vector_store.similarity_search(question, k=k, filter=chroma_filter)
+                            else:
+                                docs = self.retriever.invoke(question)
                             logger.info(
                                 f"✅ Fallback retrieval successful with {self.current_embedding_provider}")
                             logger.info(
@@ -1588,7 +1605,7 @@ class RAGHandler:
             logger.error(f"Failed during retrieval: {e}")
             return []
 
-    def generate_response(self, question: str, user_level: str = "intermediate", return_immediate: bool = False) -> Dict[str, Any]:
+    def generate_response(self, question: str, user_level: str = "intermediate", return_immediate: bool = False, allowed_owners: Optional[List[str]] = None) -> Dict[str, Any]:
         """Generate a response using the RAG system."""
         # 🎯 LOG INICIAL MOSTRANDO QUAL MODELO SERÁ USADO
         logger.info(
@@ -1655,6 +1672,8 @@ O sistema RAG não conseguiu inicializar corretamente.
             except Exception:
                 question_aug = question
 
+            chroma_filter = {"owner": {"$in": allowed_owners}} if allowed_owners else None
+
             retrieved: List[Tuple[Document, Optional[float]]] = []
             try:
                 # ✅ CORREÇÃO: Verificar se vector_store existe E se persist_dir não é None
@@ -1662,7 +1681,7 @@ O sistema RAG não conseguiu inicializar corretamente.
                     try:
                         # Prefer retriever with relevance scores when available
                         vs_results = self.vector_store.similarity_search_with_relevance_scores(
-                            question_aug, k=self.config.retrieval_k
+                            question_aug, k=self.config.retrieval_k, filter=chroma_filter
                         )
                         retrieved = [(doc, score) for doc, score in vs_results]
                         # If no results (e.g., thresholding in some backends), fallback to plain similarity search
@@ -1670,7 +1689,7 @@ O sistema RAG não conseguiu inicializar corretamente.
                             logger.debug(
                                 "No results from relevance_scores; falling back to similarity_search")
                             docs = self.vector_store.similarity_search(
-                                question_aug, k=max(self.config.retrieval_k, 8)
+                                question_aug, k=max(self.config.retrieval_k, 8), filter=chroma_filter
                             )
                             retrieved = [(doc, None) for doc in docs]
                     except Exception as e:
@@ -1678,17 +1697,17 @@ O sistema RAG não conseguiu inicializar corretamente.
                             f"similarity_search_with_relevance_scores unavailable, falling back: {e}")
                         try:
                             docs = self.vector_store.similarity_search(
-                                question_aug, k=max(self.config.retrieval_k, 8)
+                                question_aug, k=max(self.config.retrieval_k, 8), filter=chroma_filter
                             )
                             retrieved = [(doc, None) for doc in docs]
                         except Exception as e2:
                             logger.debug(
                                 f"similarity_search failed: {e2}; using retriever.invoke")
-                            docs = self.retrieve_documents(question_aug)
+                            docs = self.retrieve_documents(question_aug, allowed_owners=allowed_owners)
                             retrieved = [(doc, None) for doc in docs]
                 else:
                     logger.warning(f"⚠️ Vector store não disponível - persist_dir: {self.persist_dir}")
-                    docs = self.retrieve_documents(question_aug)
+                    docs = self.retrieve_documents(question_aug, allowed_owners=allowed_owners)
                     retrieved = [(doc, None) for doc in docs]
             except Exception as e:
                 logger.error(f"Failed during retrieval: {e}")

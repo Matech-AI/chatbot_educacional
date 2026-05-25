@@ -65,9 +65,9 @@ export async function apiRequest(
   try {
     const response = await fetch(url, config);
     
-    // Handle authentication errors
+    // Handle authentication errors — don't clear the token here;
+    // auth-store.checkAuth handles token lifecycle to avoid race conditions.
     if (response.status === 401) {
-      setAuthToken(null);
       const errorData = await response.text();
       throw new Error(`401 Unauthorized: ${errorData}`);
     }

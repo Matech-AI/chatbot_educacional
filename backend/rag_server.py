@@ -68,6 +68,7 @@ class ReprocessRequest(BaseModel):
 class QueryRequest(BaseModel):
     question: str
     user_level: str = "intermediate"
+    allowed_owners: Optional[List[str]] = None
 
 
 class QueryResponse(BaseModel):
@@ -494,6 +495,39 @@ app.add_middleware(
 
 app.include_router(educational_agent_router, prefix="/chat")
 
+# Serializes concurrent process_documents calls — prevents vector store corruption
+_process_lock = asyncio.Lock()
+
+
+class ChatAuthRequest(BaseModel):
+    content: str
+    user_level: str = "intermediate"
+    allowed_owners: Optional[List[str]] = None
+
+
+@app.post("/chat-auth", response_model=Response)
+async def chat_auth(request: ChatAuthRequest):
+    """Authenticated chat — filters RAG results by allowed_owners."""
+    global rag_handler
+
+    if not rag_handler:
+        raise HTTPException(status_code=503, detail="RAG handler não inicializado.")
+
+    try:
+        result = rag_handler.generate_response(
+            question=request.content,
+            user_level=request.user_level,
+            allowed_owners=request.allowed_owners,
+        )
+        return Response(
+            answer=result.get("answer", ""),
+            sources=result.get("sources", []),
+            response_time=0.0,
+        )
+    except Exception as e:
+        logger.error(f"❌ chat-auth error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Banner de funcionamento ao iniciar (movido para dentro do lifespan)
 def startup_banner():
@@ -670,8 +704,11 @@ async def process_materials(request: ProcessMaterialsRequest, background_tasks: 
         # Update the handler's config for this task
         rag_handler.config.enable_educational_features = request.enable_educational_features
 
-        background_tasks.add_task(
-            rag_handler.process_documents, force_reprocess=request.force_reprocess)
+        async def _locked_process(force: bool):
+            async with _process_lock:
+                rag_handler.process_documents(force_reprocess=force)
+
+        background_tasks.add_task(_locked_process, request.force_reprocess)
 
         return ProcessResponse(
             success=True,
@@ -727,7 +764,11 @@ async def reprocess_enhanced_materials(
 
         rag_handler.config.enable_educational_features = True
 
-        background_tasks.add_task(rag_handler.process_documents, force_reprocess=True)
+        async def _locked_reprocess():
+            async with _process_lock:
+                rag_handler.process_documents(force_reprocess=True)
+
+        background_tasks.add_task(_locked_reprocess)
         logger.info("✅ Background task added successfully")
 
         dirs_label = ", ".join(request.training_dirs) if request.training_dirs else "todos os materiais"
@@ -878,7 +919,8 @@ async def query_rag(request: QueryRequest):
         # Realizar consulta
         result = rag_handler.generate_response(
             question=request.question,
-            user_level=request.user_level
+            user_level=request.user_level,
+            allowed_owners=request.allowed_owners,
         )
 
         end_time = asyncio.get_event_loop().time()

@@ -732,15 +732,38 @@ async def chat(question: Question):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _compute_allowed_owners(user: User) -> Optional[List[str]]:
+    """Map the user's visible dirs to ChromaDB owner buckets. Admin = None (no filter)."""
+    if user.role == "admin":
+        return None
+    base = _materials_base()
+    visible = get_user_visible_dirs(user)
+    owners = []
+    for d in visible:
+        try:
+            rel = d.relative_to(base)
+            owners.append(str(rel))
+        except ValueError:
+            # d IS the base (shouldn't happen for non-admin, but be safe)
+            return None
+    return owners or None
+
+
 @app.post("/api/chat-auth", response_model=Response)
 async def chat_auth(question: Question, current_user: User = Depends(get_current_user)):
     """Process a chat question with authentication - forwards to RAG server"""
     logger.info(
         f"💬 Chat request from {current_user.username}: {question.content[:50]}...")
 
+    allowed_owners = _compute_allowed_owners(current_user)
+
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{RAG_SERVER_URL}/chat-auth", json={"content": question.content}) as response:
+            payload = {
+                "content": question.content,
+                "allowed_owners": allowed_owners,
+            }
+            async with session.post(f"{RAG_SERVER_URL}/chat-auth", json=payload) as response:
                 if response.status == 200:
                     data = await response.json()
                     logger.info(

@@ -140,66 +140,65 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   
   checkAuth: () => {
     const token = localStorage.getItem('token');
-    
+
     if (!token) {
       console.log('🔐 No token found — modo visitante');
       useChatStore.getState().setCurrentUser(GUEST_USER_ID);
-      set({ 
-        isAuthenticated: false,
-        user: null,
-        error: null
-      });
+      set({ isAuthenticated: false, user: null, error: null });
       return;
     }
 
+    let payload: any = null;
     try {
-      const payload = decodeToken(token);
-      
-      if (!payload) {
-        throw new Error('Invalid token format');
-      }
+      payload = decodeToken(token);
+    } catch {
+      // ignore decode errors below
+    }
 
-      // Check if token is expired
-      const currentTime = Date.now() / 1000;
-      if (payload.exp && payload.exp < currentTime) {
-        throw new Error('Token expired');
-      }
-
-      const user = createUserFromToken(payload);
-      
-      // Verify token with backend
-      api.getCurrentUser()
-        .then(() => {
-          console.log('✅ Token validated successfully for user:', user.name);
-          set({ 
-            isAuthenticated: true,
-            user,
-            error: null
-          });
-          
-          // Definir o usuário atual no chat store
-          useChatStore.getState().setCurrentUser(user.id);
-        })
-        .catch(error => {
-          console.error('❌ Token validation failed on backend:', error);
-          localStorage.removeItem('token');
-          useChatStore.getState().setCurrentUser(GUEST_USER_ID);
-          set({ 
-            isAuthenticated: false,
-            user: null,
-            error: 'Sessão expirada. Por favor, faça login novamente.'
-          });
-        });
-    } catch (error) {
-      console.error('❌ Token validation failed:', error);
+    if (!payload) {
+      console.warn('❌ Token inválido — limpando');
       localStorage.removeItem('token');
       useChatStore.getState().setCurrentUser(GUEST_USER_ID);
-      set({ 
-        isAuthenticated: false,
-        user: null,
-        error: null
-      });
+      set({ isAuthenticated: false, user: null, error: null });
+      return;
     }
+
+    const currentTime = Date.now() / 1000;
+    if (payload.exp && payload.exp < currentTime) {
+      console.warn('❌ Token expirado — limpando');
+      localStorage.removeItem('token');
+      useChatStore.getState().setCurrentUser(GUEST_USER_ID);
+      set({ isAuthenticated: false, user: null, error: null });
+      return;
+    }
+
+    // Token locally valid → set auth state SYNCHRONOUSLY so ProtectedRoute
+    // and child useEffects already see isAuthenticated: true on first render.
+    const user = createUserFromToken(payload);
+    console.log('✅ Token local válido para:', user.name);
+    set({ isAuthenticated: true, user, error: null });
+    useChatStore.getState().setCurrentUser(user.id);
+
+    // Validate with backend in background — if it fails, log out gracefully.
+    // Do NOT use apiRequest here to avoid the generic setAuthToken(null) side-effect;
+    // handle the 401 ourselves so only an explicit backend rejection clears state.
+    fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (res.status === 401) {
+          console.warn('❌ Backend rejeitou o token — encerrando sessão');
+          localStorage.removeItem('token');
+          useChatStore.getState().setCurrentUser(GUEST_USER_ID);
+          set({ isAuthenticated: false, user: null, error: 'Sessão expirada. Faça login novamente.' });
+        } else {
+          console.log('✅ Token validado pelo backend para:', user.name);
+        }
+      })
+      .catch(() => {
+        // Backend offline — keep the user logged in with the local token.
+        console.warn('⚠️ Não foi possível validar token no backend (offline?). Mantendo sessão local.');
+      });
   },
   
   login: async (username: string, password: string) => {
