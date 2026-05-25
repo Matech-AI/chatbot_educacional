@@ -29,6 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY rag_system/ ./rag_system/
 COPY chat_agents/ ./chat_agents/
 COPY auth/ ./auth/
+COPY database/ ./database/
 COPY video_processing/ ./video_processing/
 COPY config/ ./config/
 
