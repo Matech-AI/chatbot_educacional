@@ -29,11 +29,17 @@ sentence-transformers
 
 # Processamento de documentos
 PyPDF2
+pypdf
 python-docx
 openpyxl
 docx2txt
 unstructured
 python-magic
+python-pptx
+
+# Normalização de documentos para Markdown (markitdown pipeline)
+# Sem [all] para evitar onnxruntime pesado — áudio/OCR não são necessários aqui
+markitdown>=0.1.0
 
 # ChromaDB para vector store
 chromadb

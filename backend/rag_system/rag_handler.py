@@ -11,7 +11,7 @@ from langchain_community.document_loaders import (
     TextLoader,
     UnstructuredPowerPointLoader,
 )
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter, MarkdownHeaderTextSplitter
 from langchain_chroma import Chroma
 import os
 import logging
@@ -30,6 +30,15 @@ import pandas as pd
 
 # Configure logging FIRST
 logger = logging.getLogger(__name__)
+
+# Importar conversor de documentos
+try:
+    from .document_converter import DocumentConverter
+except ImportError:
+    try:
+        from document_converter import DocumentConverter
+    except ImportError:
+        DocumentConverter = None  # type: ignore
 
 # Importar sistema de guardrails
 try:
@@ -302,6 +311,10 @@ class RAGConfig:
     # Vector store
     collection_name: str = "langchain"
 
+    # Document conversion (markitdown pipeline)
+    convert_to_markdown: bool = True  # Use markitdown before indexing
+    converted_dir: str = "data/converted"  # Cache dir for converted Markdown files
+
     # Educational features (can be toggled)
     enable_educational_features: bool = True
     generate_learning_objectives: bool = True
@@ -379,6 +392,19 @@ class RAGHandler:
                 self.persist_dir = str(backend_dir / "data" / ".chromadb")
 
         self.materials_dir = Path(materials_dir)
+
+        # Document converter (markitdown pipeline)
+        if DocumentConverter and self.config.convert_to_markdown:
+            backend_dir = Path(__file__).parent.parent
+            converted_dir = str(backend_dir / self.config.converted_dir)
+            self.doc_converter = DocumentConverter(cache_dir=converted_dir)
+            if self.doc_converter.available:
+                logger.info("✅ markitdown ativado — documentos serão normalizados para Markdown")
+            else:
+                logger.info("⚠️ markitdown não disponível — usando loaders legados para PDF/MD/PPTX")
+        else:
+            self.doc_converter = None
+            logger.info("ℹ️ Conversão para Markdown desabilitada (convert_to_markdown=False)")
 
         # Subpastas específicas para treino (RAG_TRAINING_DIRS no .env)
         # Formato: nomes separados por vírgula, ex: "DNA da Força - Conteúdo para IA"
@@ -1170,11 +1196,38 @@ class RAGHandler:
         # enhanced_documents já está pronto para uso
 
         # Split documents
-        text_splitter = RecursiveCharacterTextSplitter(
+        # When using the markitdown pipeline, first split by Markdown headers so each
+        # chunk carries structural context (section / subsection / topic). Then apply
+        # the character splitter to enforce the size limit.
+        char_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.config.chunk_size,
             chunk_overlap=self.config.chunk_overlap,
         )
-        splits = text_splitter.split_documents(enhanced_documents)
+
+        if self.doc_converter is not None:
+            md_header_splitter = MarkdownHeaderTextSplitter(
+                headers_to_split_on=[
+                    ("#", "section"),
+                    ("##", "subsection"),
+                    ("###", "topic"),
+                ],
+                strip_headers=False,  # keep header text in the chunk content
+            )
+            splits: List[Document] = []
+            for doc in enhanced_documents:
+                try:
+                    header_chunks = md_header_splitter.split_text(doc.page_content)
+                    # Merge original metadata (source, owner, …) into every header chunk
+                    for chunk in header_chunks:
+                        chunk.metadata = {**doc.metadata, **chunk.metadata}
+                    char_chunks = char_splitter.split_documents(header_chunks)
+                    splits.extend(char_chunks)
+                except Exception as split_err:
+                    logger.debug(f"Header split failed, falling back to char split: {split_err}")
+                    splits.extend(char_splitter.split_documents([doc]))
+        else:
+            splits = char_splitter.split_documents(enhanced_documents)
+
         logger.info(f"🔪 Split into {len(splits)} chunks")
 
         # Add to vector store (batched to respect embedding API limits)
@@ -1237,61 +1290,125 @@ class RAGHandler:
             return False
 
     def _load_all_documents(self) -> List[Document]:
-        """Load documents from training_dirs (configured via RAG_TRAINING_DIRS env var)."""
+        """Load and convert documents from training_dirs to normalized Markdown Documents.
+
+        When self.doc_converter is available, every supported file is converted to
+        Markdown before being wrapped in a Document. This ensures consistent structure
+        (headers, sections) regardless of original format (PDF, DOCX, PPTX, SRT, etc.).
+
+        Falls back to legacy format-specific loaders when markitdown is not installed.
+        XLSX files are always handled by the pandas loader (keeps tabular context).
+        """
         documents: List[Document] = []
 
-        for train_dir in self.training_dirs:
-            if not train_dir.exists():
-                logger.warning(f"⚠️ Training directory does not exist, skipping: {train_dir}")
-                continue
+        if self.doc_converter is not None:
+            # ── Unified markitdown pipeline ──────────────────────────────────
+            ext_counts: dict = {}
+            skipped = 0
 
-            logger.info(f"📂 Loading documents from: {train_dir}")
+            for train_dir in self.training_dirs:
+                if not train_dir.exists():
+                    logger.warning(f"⚠️ Training directory does not exist, skipping: {train_dir}")
+                    continue
 
-            # PDFs
-            try:
-                loader = DirectoryLoader(
-                    str(train_dir),
-                    glob="**/*.pdf",
-                    loader_cls=PyPDFLoader,
-                    show_progress=True,
-                    use_multithreading=True,
-                )
-                loaded = loader.load()
-                logger.info(f"📥 {len(loaded)} PDFs from: {train_dir.name}")
-                documents.extend(loaded)
-            except Exception as e:
-                logger.warning(f"⚠️ Error loading PDFs from {train_dir}: {e}")
+                logger.info(f"📂 Converting documents from: {train_dir}")
 
-            # Markdown
-            try:
-                md_loader = DirectoryLoader(
-                    str(train_dir),
-                    glob="**/*.md",
-                    loader_cls=TextLoader,
-                    loader_kwargs={"encoding": "utf-8"},
-                    show_progress=True,
-                )
-                loaded_md = md_loader.load()
-                logger.info(f"📥 {len(loaded_md)} Markdown files from: {train_dir.name}")
-                documents.extend(loaded_md)
-            except Exception as e:
-                logger.warning(f"⚠️ Error loading Markdown from {train_dir}: {e}")
+                for file_path in sorted(train_dir.rglob("*")):
+                    if not file_path.is_file():
+                        continue
 
-            # PPTX (PowerPoint slides)
-            try:
-                pptx_loader = DirectoryLoader(
-                    str(train_dir),
-                    glob="**/*.pptx",
-                    loader_cls=UnstructuredPowerPointLoader,
-                    show_progress=True,
-                )
-                loaded_pptx = pptx_loader.load()
-                logger.info(f"📥 {len(loaded_pptx)} PPTX files from: {train_dir.name}")
-                documents.extend(loaded_pptx)
-            except Exception as e:
-                logger.warning(f"⚠️ Error loading PPTX from {train_dir}: {e}")
+                    ext = file_path.suffix.lower()
 
-        # XLSX via pandas (e.g., course catalog)
+                    # XLSX: handled by pandas loader below
+                    if ext in (".xlsx", ".xls"):
+                        continue
+
+                    if not self.doc_converter.is_supported(file_path):
+                        logger.debug(f"⏭️ Unsupported extension, skipping: {file_path.name}")
+                        skipped += 1
+                        continue
+
+                    try:
+                        md_text = self.doc_converter.convert(file_path)
+                    except Exception as e:
+                        logger.warning(f"⚠️ Conversion error for {file_path.name}: {e}")
+                        continue
+
+                    if not md_text or len(md_text.strip()) < 30:
+                        logger.debug(f"⏭️ Empty/too-short conversion result: {file_path.name}")
+                        skipped += 1
+                        continue
+
+                    doc = Document(
+                        page_content=md_text,
+                        metadata={
+                            "source": str(file_path),
+                            "file_name": file_path.name,
+                            "file_type": ext.lstrip("."),
+                            "converted_to_markdown": True,
+                        },
+                    )
+                    documents.append(doc)
+                    ext_counts[ext] = ext_counts.get(ext, 0) + 1
+
+            logger.info(f"📥 Converted documents by extension: {ext_counts}")
+            if skipped:
+                logger.info(f"⏭️ Skipped {skipped} files (unsupported or empty)")
+
+        else:
+            # ── Legacy loaders (markitdown not installed) ────────────────────
+            for train_dir in self.training_dirs:
+                if not train_dir.exists():
+                    logger.warning(f"⚠️ Training directory does not exist, skipping: {train_dir}")
+                    continue
+
+                logger.info(f"📂 Loading documents (legacy) from: {train_dir}")
+
+                # PDFs
+                try:
+                    loader = DirectoryLoader(
+                        str(train_dir),
+                        glob="**/*.pdf",
+                        loader_cls=PyPDFLoader,
+                        show_progress=True,
+                        use_multithreading=True,
+                    )
+                    loaded = loader.load()
+                    logger.info(f"📥 {len(loaded)} PDFs from: {train_dir.name}")
+                    documents.extend(loaded)
+                except Exception as e:
+                    logger.warning(f"⚠️ Error loading PDFs from {train_dir}: {e}")
+
+                # Markdown
+                try:
+                    md_loader = DirectoryLoader(
+                        str(train_dir),
+                        glob="**/*.md",
+                        loader_cls=TextLoader,
+                        loader_kwargs={"encoding": "utf-8"},
+                        show_progress=True,
+                    )
+                    loaded_md = md_loader.load()
+                    logger.info(f"📥 {len(loaded_md)} Markdown from: {train_dir.name}")
+                    documents.extend(loaded_md)
+                except Exception as e:
+                    logger.warning(f"⚠️ Error loading Markdown from {train_dir}: {e}")
+
+                # PPTX
+                try:
+                    pptx_loader = DirectoryLoader(
+                        str(train_dir),
+                        glob="**/*.pptx",
+                        loader_cls=UnstructuredPowerPointLoader,
+                        show_progress=True,
+                    )
+                    loaded_pptx = pptx_loader.load()
+                    logger.info(f"📥 {len(loaded_pptx)} PPTX from: {train_dir.name}")
+                    documents.extend(loaded_pptx)
+                except Exception as e:
+                    logger.warning(f"⚠️ Error loading PPTX from {train_dir}: {e}")
+
+        # XLSX via pandas (always — keeps tabular/catalog context regardless of pipeline)
         try:
             documents.extend(self._load_xlsx_with_pandas())
         except Exception as e:
