@@ -13,7 +13,7 @@ import {
   Download,
 } from "lucide-react";
 import { formatFileSize } from "../../lib/utils";
-import { ragApiRequest } from "@/lib/api";
+import { ragApiRequest, RAG_API_BASE } from "@/lib/api";
 
 interface ChromaDBUploadProps {
   onUploadSuccess?: () => void;
@@ -102,7 +102,7 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
       formData.append("replace_existing", "true");
 
       const response = await fetch(
-        `${import.meta.env.VITE_RAG_API_BASE_URL}${endpoint}`,
+        `${RAG_API_BASE}${endpoint}`,
         {
           method: "POST",
           body: formData,
@@ -142,7 +142,7 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
 
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_RAG_API_BASE_URL}/chromadb/download`,
+        `${RAG_API_BASE}/chromadb/download`,
         {
           method: "GET",
           headers: {
@@ -206,16 +206,10 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
     try {
       console.log("🚀 Iniciando compressão do ChromaDB...");
 
-      // Verificar se a URL da API RAG está configurada
-      const ragApiUrl = import.meta.env.VITE_RAG_API_BASE_URL;
-      if (!ragApiUrl) {
-        throw new Error("URL da API RAG não configurada");
-      }
+      console.log(`🔗 URL da API RAG: ${RAG_API_BASE}`);
+      console.log(`📡 Endpoint: ${RAG_API_BASE}/chromadb/compress`);
 
-      console.log(`🔗 URL da API RAG: ${ragApiUrl}`);
-      console.log(`📡 Endpoint: ${ragApiUrl}/chromadb/compress`);
-
-      const response = await fetch(`${ragApiUrl}/chromadb/compress`, {
+      const response = await fetch(`${RAG_API_BASE}/chromadb/compress`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -273,23 +267,6 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
     } finally {
       setIsCompressing(false);
     }
-  };
-
-  // Função auxiliar para fazer download de blob
-  const downloadBlob = async (blob: Blob, filename: string) => {
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.style.display = "none";
-    a.href = url;
-    a.download = filename;
-
-    // Adicionar ao DOM e clicar
-    document.body.appendChild(a);
-    a.click();
-
-    // Limpeza
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
   };
 
   // 🆕 NOVO: Compactar pasta .chromadb local em .tar.gz
@@ -355,18 +332,9 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
   // Listar backups do ChromaDB
   const handleListBackups = async () => {
     try {
-      const ragApiUrl = import.meta.env.VITE_RAG_API_BASE_URL;
-      if (!ragApiUrl) {
-        setMessage({
-          type: "error",
-          text: "URL da API RAG não configurada",
-        });
-        return;
-      }
-
       console.log("📋 Listando backups do ChromaDB...");
 
-      const response = await fetch(`${ragApiUrl}/chromadb/backups`);
+      const response = await fetch(`${RAG_API_BASE}/chromadb/backups`);
       const data = await response.json();
 
       console.log("📊 Lista de backups:", data);

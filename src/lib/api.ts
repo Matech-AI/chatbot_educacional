@@ -3,7 +3,7 @@ const API_BASE = process.env.NODE_ENV === 'production'
   ? (import.meta.env.VITE_API_BASE_URL || 'https://iadnadaforca.com.br/api')
   : '/api';  // Usar /api para que o proxy do Vite funcione
 
-const RAG_API_BASE = process.env.NODE_ENV === 'production'
+export const RAG_API_BASE = process.env.NODE_ENV === 'production'
   ? (import.meta.env.VITE_RAG_API_BASE_URL || 'https://iadnadaforca.com.br/rag')
   : '/rag-api'; // Use proxy in development
 
@@ -512,13 +512,7 @@ export const ragApiRequest = async (
   endpoint: string,
   options: RequestInit = {}
 ): Promise<Response> => {
-  const ragBaseUrl = import.meta.env.VITE_RAG_API_BASE_URL;
-  
-  if (!ragBaseUrl) {
-    throw new Error("RAG API base URL not configured");
-  }
-
-  const url = `${ragBaseUrl}${endpoint}`;
+  const url = `${RAG_API_BASE}${endpoint}`;
   
   const defaultHeaders: HeadersInit = {
     "Content-Type": "application/json",

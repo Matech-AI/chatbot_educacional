@@ -30,7 +30,6 @@ from rag_system.rag_handler import RAGHandler, RAGConfig, Source
 import chromadb
 from chromadb.config import Settings
 from chat_agents.educational_agent import router as educational_agent_router
-from config.render_config import is_render_environment, get_chromadb_path, get_materials_path
 # ========================================
 # MODELS PYDANTIC
 # ========================================
