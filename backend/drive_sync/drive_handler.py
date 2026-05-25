@@ -851,13 +851,9 @@ class DriveHandler:
                 file_name = file.get('name', 'Unknown')
                 mime_type = file.get('mimeType', '')
 
-                # Skip Google Apps files and folders
-                if mime_type.startswith('application/vnd.google-apps'):
-                    if mime_type == 'application/vnd.google-apps.folder':
-                        logger.info(f"📁 Skipping subfolder: {file_name}")
-                    else:
-                        logger.warning(
-                            f"⏭️ Skipping Google Apps file: {file_name}")
+                # Skip subfolders (simple sync is non-recursive); Google Docs/etc. are handled by download_file_with_folder_structure
+                if mime_type == 'application/vnd.google-apps.folder':
+                    logger.info(f"📁 Skipping subfolder: {file_name}")
                     continue
 
                 if download_all:
@@ -935,16 +931,50 @@ class DriveHandler:
                     f"⏭️ Skipping video file (include_videos=False): {filename}")
                 return None
 
-            # Skip Google Apps files
-            if mime_type.startswith('application/vnd.google-apps'):
-                logger.warning(f"⏭️ Skipping Google Apps file: {filename}")
-                return None
-
+            # Initialize download tracking (may be set by Google Apps export below)
             file_content = None
             download_method = None
 
-            # Method 1: Standard API download (if service available)
-            if self.service:
+            # Handle Google Apps files (Docs/Sheets/Slides) — export instead of skip
+            if mime_type.startswith('application/vnd.google-apps'):
+                if not self.export_google_docs:
+                    logger.info(f"⏭️ Skipping Google Apps file (export disabled): {filename}")
+                    return None
+                original_ext = Path(filename).suffix.lower()
+                export_map = {
+                    'application/vnd.google-apps.document': ('text/plain', '.txt'),
+                    'application/vnd.google-apps.presentation': ('application/pdf', '.pdf'),
+                    'application/vnd.google-apps.spreadsheet': ('application/pdf', '.pdf'),
+                    'application/vnd.google-apps.drawing': ('application/pdf', '.pdf'),
+                }
+                export_mime, export_ext = export_map.get(mime_type, ('application/pdf', '.pdf'))
+                if original_ext == '.md' and mime_type == 'application/vnd.google-apps.document':
+                    export_ext = '.md'
+                try:
+                    logger.info(f"📤 Exporting Google Apps file to {export_ext}: {filename}")
+                    export_request = self.service.files().export(
+                        fileId=file_id, mimeType=export_mime
+                    ) if self.service else None
+                    exported_content = export_request.execute() if export_request else None
+                    if not exported_content or len(exported_content) < 100:
+                        logger.warning(f"⚠️ Export returned empty content for: {filename}")
+                        self.download_stats['errors'] += 1
+                        return None
+                    file_content = exported_content
+                    download_method = "export"
+                    base_name, _ = os.path.splitext(filename)
+                    filename = base_name + export_ext
+                except HttpError as e:
+                    logger.error(f"❌ Export failed (HTTP {e.resp.status}) for {filename}")
+                    self.download_stats['errors'] += 1
+                    return None
+                except Exception as e:
+                    logger.error(f"❌ Export failed for {filename}: {e}")
+                    self.download_stats['errors'] += 1
+                    return None
+
+            # Method 1: Standard API download (skip if already set by Google Apps export)
+            if file_content is None and self.service:
                 try:
                     logger.info("🔄 Attempting API download...")
                     request = self.service.files().get_media(fileId=file_id)

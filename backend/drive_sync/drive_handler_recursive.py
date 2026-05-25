@@ -678,6 +678,10 @@ class RecursiveDriveHandler:
             file_size = int(file_metadata.get('size', 0)
                             ) if file_metadata.get('size') else 0
 
+            # Initialize download tracking (may be set by Google Apps export below)
+            file_content = None
+            download_method = None
+
             # Handle Google Apps files (Docs/Sheets/Slides)
             if mime_type.startswith('application/vnd.google-apps'):
                 if mime_type == 'application/vnd.google-apps.folder':
@@ -732,11 +736,8 @@ class RecursiveDriveHandler:
                     f"⏭️ Skipping video file (include_videos=False): {filename}")
                 return None
 
-            # Download file content
-            file_content = None
-            download_method = None
-
-            if self.service:
+            # Download file content (skip if already set by Google Apps export above)
+            if file_content is None and self.service:
                 try:
                     request = self.service.files().get_media(fileId=file_id)
                     file = io.BytesIO()
