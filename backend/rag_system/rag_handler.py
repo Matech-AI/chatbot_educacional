@@ -63,6 +63,17 @@ except ImportError:
     logger.warning(
         "⚠️ Google Generative AI not available. Install with: pip install langchain-google-genai")
 
+# Importações para NVIDIA (lib oficial)
+try:
+    from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings as NVIDIAEmbeddingsOfficial
+    NVIDIA_ENDPOINTS_AVAILABLE = True
+    logger.info("✅ langchain-nvidia-ai-endpoints disponível")
+except ImportError:
+    ChatNVIDIA = None
+    NVIDIAEmbeddingsOfficial = None
+    NVIDIA_ENDPOINTS_AVAILABLE = False
+    logger.warning("⚠️ langchain-nvidia-ai-endpoints não disponível. Execute: pip install langchain-nvidia-ai-endpoints")
+
 # NOVO: Classe personalizada para NVIDIA API
 
 
@@ -458,28 +469,23 @@ class RAGHandler:
         logger.info(
             f"   - Gemini API Key: {'✅ Configurada' if self.gemini_api_key else '❌ Não configurada'}")
 
-        # NVIDIA DESABILITADO TEMPORARIAMENTE devido a erro na API
-        # Descomentar quando a API NVIDIA estiver funcionando:
-        # if self.nvidia_api_key:
-        #     providers_to_try.append(("nvidia", self.nvidia_api_key))
-        #     logger.info("🎯 Adicionando NVIDIA como PRIMEIRA PRIORIDADE (melhor para Q&A)")
-        
-        # TEMPORÁRIO: Pular NVIDIA e usar OpenAI como padrão
-        logger.warning("⚠️ NVIDIA temporariamente desabilitado - usando OpenAI como padrão")
+        # NVIDIA como PRIMEIRA PRIORIDADE quando prefer_nvidia=true
+        if self.config.prefer_nvidia and self.nvidia_api_key:
+            providers_to_try.append(("nvidia", self.nvidia_api_key))
+            logger.info("🎯 Adicionando NVIDIA como PRIMEIRA PRIORIDADE para embeddings")
 
-        # OpenAI como PRIMEIRA PRIORIDADE (NVIDIA desabilitado)
         if self.openai_api_key:
             providers_to_try.append(("openai", self.openai_api_key))
-            logger.info("🎯 Adicionando OpenAI como PRIMEIRA PRIORIDADE")
-        
+            logger.info("🔄 Adicionando OpenAI como fallback para embeddings")
+
         if self.gemini_api_key and GoogleGenerativeAIEmbeddings:
             providers_to_try.append(("gemini", self.gemini_api_key))
-            logger.info("🔄 Adicionando Gemini como fallback")
+            logger.info("🔄 Adicionando Gemini como fallback para embeddings")
 
-        # Open Source como ÚLTIMO fallback (só se todos os outros falharem)
+        # Open Source como ÚLTIMO fallback
         if OpenSourceEmbeddings:
             providers_to_try.append(("open_source", None))
-            logger.info("🔄 Adicionando Open Source como último fallback")
+            logger.info("🔄 Adicionando Open Source como último fallback para embeddings")
 
         logger.info(
             f"📋 Ordem de tentativa dos providers: {[p[0] for p in providers_to_try]}")
@@ -499,13 +505,11 @@ class RAGHandler:
                     return
 
                 elif provider == "nvidia":
-                    self.embeddings = NVIDIAEmbeddings(
-                        nvidia_api_key=api_key,
+                    if not NVIDIA_ENDPOINTS_AVAILABLE:
+                        raise ImportError("langchain-nvidia-ai-endpoints não instalado")
+                    self.embeddings = NVIDIAEmbeddingsOfficial(
                         model=self.config.nvidia_embedding_model,
-                        model_name=self.config.nvidia_embedding_model,
-                        base_url=self.config.nvidia_base_url,
-                        retry_attempts=self.config.nvidia_retry_attempts,
-                        retry_delay=self.config.nvidia_retry_delay
+                        api_key=api_key,
                     )
                     self.current_embedding_provider = "NVIDIA"
                     logger.info(
@@ -567,14 +571,13 @@ class RAGHandler:
         for provider, api_key in providers_to_try:
             try:
                 if provider == "nvidia":
-                    self.llm = NVIDIAChatOpenAI(
-                        nvidia_api_key=api_key,
+                    if not NVIDIA_ENDPOINTS_AVAILABLE:
+                        raise ImportError("langchain-nvidia-ai-endpoints não instalado")
+                    self.llm = ChatNVIDIA(
                         model=self.config.nvidia_model_name,
-                        base_url=self.config.nvidia_base_url,
+                        api_key=api_key,
                         temperature=self.config.temperature,
                         max_tokens=self.config.max_tokens,
-                        retry_attempts=self.config.nvidia_retry_attempts,
-                        retry_delay=self.config.nvidia_retry_delay
                     )
                     self.current_llm_provider = "NVIDIA"
                     logger.info(
