@@ -123,19 +123,10 @@ class EducationalAgent:
             return
 
         try:
-            # ✅ CORREÇÃO: Determinar persist_dir baseado no ambiente
-            if os.getenv("RENDER", "").lower() == "true":
-                # Render: usar caminho configurado
-                persist_dir = os.getenv(
-                    "CHROMA_PERSIST_DIR", "/app/data/.chromadb")
-                logger.info(
-                    f"🚀 Render detectado - usando persist_dir: {persist_dir}")
-            else:
-                # Local: usar caminho padrão
-                backend_dir = Path(__file__).parent.parent
-                persist_dir = str(backend_dir / "data" / ".chromadb")
-                logger.info(
-                    f"💻 Local detectado - usando persist_dir: {persist_dir}")
+            backend_dir = Path(__file__).parent.parent
+            persist_dir = os.getenv(
+                "CHROMA_PERSIST_DIR", str(backend_dir / "data" / ".chromadb"))
+            logger.info(f"💻 persist_dir: {persist_dir}")
 
             # ✅ CORREÇÃO: Inicializar RAG handler com persist_dir correto
             self.rag_handler = RAGHandler(

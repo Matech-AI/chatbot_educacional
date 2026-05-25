@@ -78,6 +78,7 @@ supabase
 # Dependências adicionais
 langsmith
 sqlalchemy
+psycopg2-binary  # driver Postgres (SQLite não precisa)
 
 # Dependências específicas do LangChain (versões compatíveis)
 langchain-community>=0.0.10

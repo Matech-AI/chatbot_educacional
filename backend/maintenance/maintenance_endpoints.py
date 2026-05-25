@@ -177,18 +177,10 @@ async def reset_chromadb(current_user: User = Depends(get_current_user)):
             logger.info("🔄 RAG handler reset")
 
         # Remove ChromaDB directory
-        # 🚨 CORREÇÃO: Não remover .chromadb automaticamente no Render
-        is_render = os.getenv("RENDER", "").lower() == "true"
-        if is_render:
-            logger.info(
-                "🚨 Render detectado - NÃO removendo .chromadb automaticamente")
-            logger.info(
-                "💡 Use a interface para gerenciar o ChromaDB manualmente")
-        else:
-            chromadb_dir = Path("data/.chromadb")
-            if chromadb_dir.exists():
-                shutil.rmtree(chromadb_dir)
-                logger.info("🗑️ Removed ChromaDB directory")
+        chromadb_dir = Path("data/.chromadb")
+        if chromadb_dir.exists():
+            shutil.rmtree(chromadb_dir)
+            logger.info("🗑️ Removed ChromaDB directory")
 
         # Reset global RAG handler
         rag_handler = None
@@ -232,12 +224,7 @@ async def generate_system_report(current_user: User = Depends(get_current_user))
         # Directory analysis
         materials_dir = Path("data/materials")
 
-        # 🚨 CORREÇÃO: Não verificar .chromadb automaticamente no Render
-        is_render = os.getenv("RENDER", "").lower() == "true"
-        if is_render:
-            chromadb_dir = None
-        else:
-            chromadb_dir = Path("data/.chromadb")
+        chromadb_dir = Path("data/.chromadb")
 
         if materials_dir.exists():
             all_files = list(materials_dir.rglob("*"))

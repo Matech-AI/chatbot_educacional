@@ -275,7 +275,7 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
     setMessage(null);
 
     try {
-      // Em produção (Render), não podemos acessar caminhos locais do usuário
+      // Em produção, não podemos acessar caminhos locais do usuário
       // Mostrar instruções para compactação manual
       setMessage({
         type: "info",
@@ -303,7 +303,7 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
     setMessage(null);
 
     try {
-      // Em produção (Render), não podemos acessar caminhos locais do usuário
+      // Em produção, não podemos acessar caminhos locais do usuário
       // Mostrar instruções para compactação manual
       setMessage({
         type: "info",
@@ -719,9 +719,8 @@ export const ChromaDBUpload: React.FC<ChromaDBUploadProps> = ({
             /home/usuario/.chromadb ou /opt/projetos\.chromadb
           </p>
           <p>
-            • <strong>⚠️ Importante:</strong> Em produção (Render), o servidor
-            não pode acessar arquivos do seu PC diretamente. Use compactação
-            manual.
+            • <strong>⚠️ Importante:</strong> Em produção, o servidor não pode
+            acessar arquivos do seu PC diretamente. Use compactação manual.
           </p>
         </div>
       </div>

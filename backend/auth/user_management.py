@@ -13,8 +13,8 @@ from auth.auth import (
     create_user, update_user, delete_user, get_all_users, get_user,
     change_password, reset_password, is_user_approved,
     load_approved_users, save_approved_users, get_user_by_external_id,
-    ACCESS_TOKEN_EXPIRE_MINUTES, WEBHOOK_SECRET, load_users_db, save_users_db,
-    verify_password, update_last_login  # Adicionando estas duas funções
+    ACCESS_TOKEN_EXPIRE_MINUTES, WEBHOOK_SECRET,
+    verify_password, update_last_login, _get_hashed_password,
 )
 from .auth_token_manager import verify_auth_token, mark_token_as_used, clean_expired_tokens
 
@@ -40,10 +40,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Verificar se o usuário está usando senha temporária
-    users_db = load_users_db()
-    is_temp_password = users_db[form_data.username].get(
-        "is_temporary_password", False)
+    is_temp_password = user_db.is_temporary_password
 
     # Se o usuário não está aprovado, mas está usando senha temporária, permitir o login
     if not user_db.approved and not is_temp_password:
@@ -54,8 +51,9 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         raise HTTPException(
             status_code=403, detail="Sua conta está desativada.")
 
-    # Now, authenticate the password
-    if not verify_password(form_data.password, users_db[form_data.username]["hashed_password"]):
+    # Verify password against stored hash
+    hashed = _get_hashed_password(form_data.username)
+    if not hashed or not verify_password(form_data.password, hashed):
         raise HTTPException(
             status_code=401, detail="Usuário ou senha incorretos")
 

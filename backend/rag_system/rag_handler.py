@@ -282,9 +282,7 @@ class RAGConfig:
     temperature: float = 0.1  # MUITO baixa para evitar criatividade e alucinações
     max_tokens: int = 2048  # Reduzido para respostas mais focadas
 
-    # Provider preference - LER VARIÁVEIS DE AMBIENTE DO RENDER
-    prefer_nvidia: bool = os.getenv(
-        "PREFER_NVIDIA", "true").lower() == "true"  # NOVO: Preferir NVIDIA
+    prefer_nvidia: bool = os.getenv("PREFER_NVIDIA", "true").lower() == "true"
     prefer_openai: bool = os.getenv(
         "PREFER_OPENAI", "false").lower() == "true"  # Mantido False
     prefer_open_source: bool = os.getenv("PREFER_OPEN_SOURCE_EMBEDDINGS", "false").lower(
@@ -379,17 +377,9 @@ class RAGHandler:
         if persist_dir:
             self.persist_dir = persist_dir
         else:
-            # 🚨 CORREÇÃO: Não criar .chromadb automaticamente no Render
-            is_render = os.getenv("RENDER", "").lower() == "true"
-            if is_render:
-                logger.warning(
-                    "🚨 Render detectado - persist_dir não configurado")
-                logger.warning(
-                    "💡 Configure persist_dir manualmente ou faça upload de um arquivo .chromadb")
-                self.persist_dir = None
-            else:
-                backend_dir = Path(__file__).parent.parent
-                self.persist_dir = str(backend_dir / "data" / ".chromadb")
+            backend_dir = Path(__file__).parent.parent
+            self.persist_dir = os.getenv(
+                "CHROMA_PERSIST_DIR", str(backend_dir / "data" / ".chromadb"))
 
         self.materials_dir = Path(materials_dir)
 
@@ -859,31 +849,14 @@ class RAGHandler:
 
     def _initialize_vector_store(self):
         try:
-            # 🚨 CORREÇÃO: NÃO criar diretório automaticamente no Render
-            # Verificar se persist_dir não é None antes de verificar existência
             if not self.persist_dir:
                 logger.error("❌ persist_dir é None - não é possível inicializar vector store")
                 return
-            
-            # Verificar se o diretório existe antes de tentar usar
+
             if not os.path.exists(self.persist_dir):
-                # Verificar se está no ambiente Render
-                is_render = os.getenv("RENDER", "").lower() == "true"
-                
-                if is_render:
-                    logger.warning(
-                        f"⚠️ Diretório ChromaDB não encontrado: {self.persist_dir}")
-                    logger.warning(
-                        "💡 Crie manualmente o diretório ou faça upload via frontend")
-                    # Não criar automaticamente no Render
-                    return
-                else:
-                    # Criar diretório automaticamente em desenvolvimento local
-                    logger.info(
-                        f"📁 Criando diretório ChromaDB: {self.persist_dir}")
-                    os.makedirs(self.persist_dir, exist_ok=True)
-                    logger.info(
-                        f"✅ Diretório ChromaDB criado com sucesso: {self.persist_dir}")
+                logger.info(f"📁 Criando diretório ChromaDB: {self.persist_dir}")
+                os.makedirs(self.persist_dir, exist_ok=True)
+                logger.info(f"✅ Diretório ChromaDB criado: {self.persist_dir}")
             # Tenta carregar a coleção configurada (default: "langchain")
             try:
                 # ✅ CORREÇÃO: persist_dir já foi verificado acima
@@ -1770,7 +1743,7 @@ O sistema RAG não conseguiu inicializar corretamente.
 
 **Possíveis causas:**
 1. Diretório ChromaDB não configurado corretamente
-2. persist_dir é None no ambiente Render
+2. persist_dir é None ou inválido
 3. Problema na inicialização do banco de dados vetorial
 
 **Soluções:**

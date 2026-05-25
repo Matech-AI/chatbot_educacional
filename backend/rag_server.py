@@ -267,96 +267,20 @@ async def lifespan(app: FastAPI):
 
     logger.info("🚀 Iniciando servidor RAG...")
 
-    # Configurar diretórios (usar variáveis de ambiente se definidas; caso contrário, relativos ao diretório deste arquivo)
     base_dir = Path(__file__).parent
-
-    # 🎯 CORREÇÃO: CAMINHOS DINÂMICOS para Render vs Local
-    # Detectar se está rodando no Render ou localmente
-    is_render = (
-        os.getenv("RENDER") or
-        os.getenv("RENDER_ENVIRONMENT") or
-        "onrender.com" in str(base_dir).lower() or
-        "app" in str(base_dir).lower() or
-        "\\app\\" in str(base_dir) or
-        "/app/" in str(base_dir)
-    )
-
-    if is_render:
-        # 🚀 RENDER: app/data (sem .chromadb automático) e app/data/materials
-        default_chroma = None  # Não criar .chromadb automaticamente
-        default_materials = base_dir / "data" / "materials"
-        logger.info("🌐 Ambiente detectado: RENDER")
-    else:
-        # 💻 LOCAL: backend/data/.chromadb e backend/data/materials
-        default_chroma = base_dir / "data" / ".chromadb"
-        default_materials = base_dir / "data" / "materials"
-        logger.info("💻 Ambiente detectado: LOCAL")
-
-    # 🚨 CORREÇÃO CRÍTICA: Garantir que os caminhos sejam absolutos e corretos
-    logger.info(f"🔍 Caminhos base:")
-    logger.info(f"   - Base dir: {base_dir}")
-    logger.info(f"   - Ambiente: {'RENDER' if is_render else 'LOCAL'}")
-    logger.info(f"   - Default ChromaDB: {default_chroma}")
-    logger.info(f"   - Default Materials: {default_materials}")
-    logger.info(f"   - Base dir exists: {base_dir.exists()}")
-    logger.info(f"   - Data dir exists: {(base_dir / 'data').exists()}")
-
-    # Verificar ChromaDB apenas se existir
-    if default_chroma:
-        logger.info(f"   - ChromaDB dir exists: {default_chroma.exists()}")
-        logger.info(f"   - ChromaDB path resolved: {default_chroma.resolve()}")
-    else:
-        logger.info(f"   - ChromaDB: Não configurado (ambiente RENDER)")
-
-    logger.info(f"   - Materials dir exists: {default_materials.exists()}")
-    logger.info(f"   - Materials path resolved: {default_materials.resolve()}")
-
-    # 🚨 VERIFICAÇÃO ADICIONAL: Usar configuração do Render
-    if is_render_environment():
-        logger.info("🚨 Configuração do Render detectada:")
-        logger.info("   - Auto-create ChromaDB: False")
-        logger.info("   - ChromaDB será criado apenas via upload")
-        logger.info("   - Diretório /app/data será mantido limpo")
 
     env_chroma = os.getenv("CHROMA_PERSIST_DIR")
     env_materials = os.getenv("MATERIALS_DIR")
 
-    # 🎯 CORREÇÃO: Não criar .chromadb automaticamente no Render
-    if env_chroma:
-        chroma_persist_dir = Path(env_chroma)
-    elif default_chroma:
-        chroma_persist_dir = default_chroma
-    else:
-        chroma_persist_dir = None  # Render: deixar None até ser necessário
+    chroma_persist_dir = Path(env_chroma) if env_chroma else base_dir / "data" / ".chromadb"
+    materials_dir = Path(env_materials) if env_materials else base_dir / "data" / "materials"
 
-    materials_dir = Path(env_materials) if env_materials else default_materials
-
-    # Criar diretórios se não existirem (apenas estrutura básica, sem .chromadb)
     materials_dir.mkdir(parents=True, exist_ok=True)
-    Path("/app/logs").mkdir(parents=True, exist_ok=True)
+    chroma_persist_dir.mkdir(parents=True, exist_ok=True)
 
-    # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente no Render
-    if chroma_persist_dir and not str(chroma_persist_dir).endswith('.chromadb'):
-        # Verificar se estamos no Render
-        is_render = os.getenv("RENDER", "").lower() == "true"
-        if not is_render:
-            chroma_persist_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            logger.info(
-                "🚨 Render detectado - NÃO criando diretório .chromadb automaticamente")
-            logger.info(
-                "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
-
-    # 🎯 VERIFICAÇÃO: Garantir que o caminho está correto
-    logger.info(f"🔍 Verificando caminhos:")
-    logger.info(f"   - Base dir: {base_dir}")
-    logger.info(f"   - ChromaDB path: {chroma_persist_dir}")
-    if chroma_persist_dir:
-        logger.info(f"   - ChromaDB exists: {chroma_persist_dir.exists()}")
-        logger.info(f"   - ChromaDB is_dir: {chroma_persist_dir.is_dir()}")
-    else:
-        logger.info(
-            f"   - ChromaDB: Não configurado (será criado quando necessário)")
+    logger.info(f"📁 Diretórios:")
+    logger.info(f"   - ChromaDB: {chroma_persist_dir}")
+    logger.info(f"   - Materiais: {materials_dir}")
 
     # Carregar configurações do assistente
     load_assistant_configs()
@@ -474,14 +398,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configurar CORS (permitir origem do frontend no Render e locais; também suportar regex e env var)
+# Configurar CORS
 cors_origins_env = os.getenv(
     "CORS_ORIGINS",
     "https://iadnadaforca.com.br,https://www.iadnadaforca.com.br,http://localhost:3000,http://127.0.0.1:3000",
 )
 cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
-cors_origin_regex = os.getenv(
-    "CORS_ORIGIN_REGEX", r"https://.*\\.onrender\\.com$")
+cors_origin_regex = os.getenv("CORS_ORIGIN_REGEX") or None
 
 app.add_middleware(
     CORSMiddleware,
@@ -945,44 +868,11 @@ async def initialize_rag(api_key: str):
     try:
         logger.info("🔧 Inicializando RAG handler...")
 
-        # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
         if not chroma_persist_dir:
-            # No Render, NÃO definir caminho padrão automaticamente
-            is_render = os.getenv("RENDER", "").lower() == "true"
-            if is_render:
-                # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente no Render
-                logger.info(
-                    "🚨 Render detectado - NÃO criando .chromadb automaticamente")
-                logger.info(
-                    "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
-                logger.info("💡 Ou configure CHROMA_PERSIST_DIR manualmente")
-
-                # Verificar se o diretório /app/data existe (apenas para logs)
-                data_dir = Path("/app/data")
-                if not data_dir.exists():
-                    logger.info(
-                        "ℹ️ Diretório /app/data não existe - será criado apenas quando necessário")
-                else:
-                    logger.info(f"ℹ️ Diretório /app/data existe: {data_dir}")
-                    # Listar conteúdo para debug
-                    try:
-                        contents = list(data_dir.iterdir())
-                        logger.info(
-                            f"📁 Conteúdo de /app/data: {[item.name for item in contents]}")
-                    except Exception as e:
-                        logger.warning(
-                            f"⚠️ Não foi possível listar conteúdo de /app/data: {e}")
-
-                # NÃO definir chroma_persist_dir automaticamente
-                raise HTTPException(
-                    status_code=400,
-                    detail="ChromaDB não configurado no Render. Faça upload de um arquivo .chromadb existente ou configure CHROMA_PERSIST_DIR manualmente."
-                )
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
-                )
+            raise HTTPException(
+                status_code=400,
+                detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
+            )
 
         rag_handler = RAGHandler(
             api_key=api_key,
@@ -1079,44 +969,11 @@ async def upload_chromadb_archive(
                 status_code=400,
                 detail="Parâmetro replace_existing deve ser um booleano"
             )
-        # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
         if not chroma_persist_dir:
-            # No Render, NÃO definir caminho padrão automaticamente
-            is_render = os.getenv("RENDER", "").lower() == "true"
-            if is_render:
-                # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente no Render
-                logger.info(
-                    "🚨 Render detectado - NÃO criando .chromadb automaticamente")
-                logger.info(
-                    "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
-                logger.info("💡 Ou configure CHROMA_PERSIST_DIR manualmente")
-
-                # Verificar se o diretório /app/data existe (apenas para logs)
-                data_dir = Path("/app/data")
-                if not data_dir.exists():
-                    logger.info(
-                        "ℹ️ Diretório /app/data não existe - será criado apenas quando necessário")
-                else:
-                    logger.info(f"ℹ️ Diretório /app/data existe: {data_dir}")
-                    # Listar conteúdo para debug
-                    try:
-                        contents = list(data_dir.iterdir())
-                        logger.info(
-                            f"📁 Conteúdo de /app/data: {[item.name for item in contents]}")
-                    except Exception as e:
-                        logger.warning(
-                            f"⚠️ Não foi possível listar conteúdo de /app/data: {e}")
-
-                # NÃO definir chroma_persist_dir automaticamente
-                raise HTTPException(
-                    status_code=400,
-                    detail="ChromaDB não configurado no Render. Faça upload de um arquivo .chromadb existente ou configure CHROMA_PERSIST_DIR manualmente."
-                )
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
-                )
+            raise HTTPException(
+                status_code=400,
+                detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
+            )
 
         # Verificar se o arquivo é um .tar.gz válido
         logger.info(f"🔍 Validando arquivo: {archive.filename}")
@@ -1162,22 +1019,7 @@ async def upload_chromadb_archive(
 
         # Extrair o arquivo
         logger.info(f"📂 Extraindo ChromaDB para {chroma_path}")
-        # 🚨 CORREÇÃO: NÃO criar diretório automaticamente no Render
-        is_render = os.getenv("RENDER", "").lower() == "true"
-        if not is_render:
-            chroma_path.mkdir(parents=True, exist_ok=True)
-        else:
-            logger.info(
-                "🚨 Render detectado - NÃO criando diretório .chromadb automaticamente")
-            logger.info(
-                "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
-            # Verificar se o diretório pai existe e criar apenas se necessário
-            parent_dir = chroma_path.parent
-            if not parent_dir.exists():
-                logger.info(f"📁 Criando diretório pai: {parent_dir}")
-                parent_dir.mkdir(parents=True, exist_ok=True)
-            else:
-                logger.info(f"📁 Diretório pai já existe: {parent_dir}")
+        chroma_path.mkdir(parents=True, exist_ok=True)
 
         # Validar se o arquivo é um tar.gz válido
         logger.info("🔍 Validando arquivo tar.gz...")
@@ -1281,7 +1123,6 @@ async def upload_chromadb_archive(
             "error_type": type(e).__name__,
             "error_message": str(e),
             "chroma_persist_dir": str(chroma_persist_dir) if chroma_persist_dir else None,
-            "is_render": os.getenv("RENDER", "").lower() == "true",
             "current_working_directory": str(Path.cwd()),
             "timestamp": time.time()
         }
@@ -1756,44 +1597,11 @@ async def upload_chromadb_folder(
                 status_code=400,
                 detail="Parâmetro replace_existing deve ser um booleano"
             )
-        # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
         if not chroma_persist_dir:
-            # No Render, NÃO definir caminho padrão automaticamente
-            is_render = os.getenv("RENDER", "").lower() == "true"
-            if is_render:
-                # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente no Render
-                logger.info(
-                    "🚨 Render detectado - NÃO criando .chromadb automaticamente")
-                logger.info(
-                    "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
-                logger.info("💡 Ou configure CHROMA_PERSIST_DIR manualmente")
-
-                # Verificar se o diretório /app/data existe (apenas para logs)
-                data_dir = Path("/app/data")
-                if not data_dir.exists():
-                    logger.info(
-                        "ℹ️ Diretório /app/data não existe - será criado apenas quando necessário")
-                else:
-                    logger.info(f"ℹ️ Diretório /app/data existe: {data_dir}")
-                    # Listar conteúdo para debug
-                    try:
-                        contents = list(data_dir.iterdir())
-                        logger.info(
-                            f"📁 Conteúdo de /app/data: {[item.name for item in contents]}")
-                    except Exception as e:
-                        logger.warning(
-                            f"⚠️ Não foi possível listar conteúdo de /app/data: {e}")
-
-                # NÃO definir chroma_persist_dir automaticamente
-                raise HTTPException(
-                    status_code=400,
-                    detail="ChromaDB não configurado no Render. Faça upload de um arquivo .chromadb existente ou configure CHROMA_PERSIST_DIR manualmente."
-                )
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
-                )
+            raise HTTPException(
+                status_code=400,
+                detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
+            )
 
         # Verificar se é um arquivo zip válido
         logger.info(f"🔍 Validando arquivo: {folder.filename}")
@@ -1839,22 +1647,7 @@ async def upload_chromadb_folder(
 
         # Extrair o arquivo zip
         logger.info(f"📂 Extraindo pasta .chromadb do zip para {chroma_path}")
-        # 🚨 CORREÇÃO: NÃO criar diretório automaticamente no Render
-        is_render = os.getenv("RENDER", "").lower() == "true"
-        if not is_render:
-            chroma_path.mkdir(parents=True, exist_ok=True)
-        else:
-            logger.info(
-                "🚨 Render detectado - NÃO criando diretório .chromadb automaticamente")
-            logger.info(
-                "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
-            # Verificar se o diretório pai existe e criar apenas se necessário
-            parent_dir = chroma_path.parent
-            if not parent_dir.exists():
-                logger.info(f"📁 Criando diretório pai: {parent_dir}")
-                parent_dir.mkdir(parents=True, exist_ok=True)
-            else:
-                logger.info(f"📁 Diretório pai já existe: {parent_dir}")
+        chroma_path.mkdir(parents=True, exist_ok=True)
 
         # Validar se o arquivo é um zip válido
         logger.info("🔍 Validando arquivo zip...")
@@ -1959,8 +1752,6 @@ async def debug_system():
     try:
         # Verificar variáveis de ambiente
         env_vars = {
-            "RENDER": os.getenv("RENDER"),
-            "RENDER_ENVIRONMENT": os.getenv("RENDER_ENVIRONMENT"),
             "CHROMA_PERSIST_DIR": os.getenv("CHROMA_PERSIST_DIR"),
             "MATERIALS_DIR": os.getenv("MATERIALS_DIR"),
             "PORT": os.getenv("PORT"),
@@ -2036,7 +1827,6 @@ async def test_connection():
             "chroma_persist_dir": str(chroma_persist_dir) if chroma_persist_dir else None,
             "materials_dir": str(materials_dir) if materials_dir else None,
             "rag_handler_active": rag_handler is not None,
-            "environment": "RENDER" if os.getenv("RENDER") else "LOCAL"
         }
     except Exception as e:
         logger.error(f"❌ Erro no teste de conexão: {e}")
@@ -2096,44 +1886,11 @@ async def initialize_rag(api_key: str):
     try:
         logger.info("🔧 Inicializando RAG handler...")
 
-        # 🚨 CORREÇÃO: Verificar se chroma_persist_dir está configurado
         if not chroma_persist_dir:
-            # No Render, NÃO definir caminho padrão automaticamente
-            is_render = os.getenv("RENDER", "").lower() == "true"
-            if is_render:
-                # 🚨 IMPORTANTE: NÃO criar .chromadb automaticamente no Render
-                logger.info(
-                    "🚨 Render detectado - NÃO criando .chromadb automaticamente")
-                logger.info(
-                    "💡 Use a interface para fazer upload de um arquivo .chromadb existente")
-                logger.info("💡 Ou configure CHROMA_PERSIST_DIR manualmente")
-
-                # Verificar se o diretório /app/data existe (apenas para logs)
-                data_dir = Path("/app/data")
-                if not data_dir.exists():
-                    logger.info(
-                        "ℹ️ Diretório /app/data não existe - será criado apenas quando necessário")
-                else:
-                    logger.info(f"ℹ️ Diretório /app/data existe: {data_dir}")
-                    # Listar conteúdo para debug
-                    try:
-                        contents = list(data_dir.iterdir())
-                        logger.info(
-                            f"📁 Conteúdo de /app/data: {[item.name for item in contents]}")
-                    except Exception as e:
-                        logger.warning(
-                            f"⚠️ Não foi possível listar conteúdo de /app/data: {e}")
-
-                # NÃO definir chroma_persist_dir automaticamente
-                raise HTTPException(
-                    status_code=400,
-                    detail="ChromaDB não configurado no Render. Faça upload de um arquivo .chromadb existente ou configure CHROMA_PERSIST_DIR manualmente."
-                )
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
-                )
+            raise HTTPException(
+                status_code=400,
+                detail="ChromaDB não configurado. Configure CHROMA_PERSIST_DIR ou use a rota /initialize"
+            )
 
         rag_handler = RAGHandler(
             api_key=api_key,
@@ -2264,8 +2021,6 @@ async def debug_upload_test():
         debug_info = {
             "timestamp": time.time(),
             "environment": {
-                "is_render": os.getenv("RENDER", "").lower() == "true",
-                "render_environment": os.getenv("RENDER_ENVIRONMENT"),
                 "current_working_directory": str(Path.cwd()),
                 "script_location": str(Path(__file__).parent)
             },
@@ -2359,7 +2114,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="DNA da Força RAG Server")
     parser.add_argument("--host", default="0.0.0.0",
                         help="Host para o servidor")
-    # Permitir que o Render defina a PORT
     default_port = int(os.getenv("PORT", "8001"))
     parser.add_argument("--port", type=int, default=default_port,
                         help="Porta para o servidor")

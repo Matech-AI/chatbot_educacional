@@ -332,16 +332,9 @@ async def get_status():
     """Get detailed system status"""
     materials_dir = Path("data/materials")
 
-    # 🚨 CORREÇÃO: Não verificar .chromadb automaticamente no Render
-    is_render = os.getenv("RENDER", "").lower() == "true"
-    if is_render:
-        chromadb_dir = None
-        chromadb_exists = False
-        chromadb_path = None
-    else:
-        chromadb_dir = Path(".chromadb")
-        chromadb_exists = chromadb_dir.exists() if chromadb_dir else False
-        chromadb_path = str(chromadb_dir) if chromadb_dir else None
+    chromadb_dir = Path(".chromadb")
+    chromadb_exists = chromadb_dir.exists()
+    chromadb_path = str(chromadb_dir)
 
     return {
         "backend": "online",
@@ -1575,23 +1568,15 @@ async def reset_chromadb(current_user: User = Depends(get_current_user)):
             # Add a small delay to allow the OS to release file locks
             time.sleep(1)
 
-        # 🚨 CORREÇÃO: Não remover .chromadb automaticamente no Render
-        is_render = os.getenv("RENDER", "").lower() == "true"
-        if is_render:
-            logger.info(
-                "🚨 Render detectado - NÃO removendo .chromadb automaticamente")
-            logger.info(
-                "💡 Use a interface para gerenciar o ChromaDB manualmente")
-        else:
-            chromadb_dir = Path(".chromadb")
-            if chromadb_dir.exists():
-                try:
-                    shutil.rmtree(chromadb_dir)
-                    logger.info("🗑️ Removed ChromaDB directory")
-                except Exception as e:
-                    logger.error(f"❌ Failed to remove ChromaDB directory: {e}")
-                    raise HTTPException(
-                        status_code=500, detail=f"Could not remove ChromaDB directory. It might be locked. Error: {e}")
+        chromadb_dir = Path(".chromadb")
+        if chromadb_dir.exists():
+            try:
+                shutil.rmtree(chromadb_dir)
+                logger.info("🗑️ Removed ChromaDB directory")
+            except Exception as e:
+                logger.error(f"❌ Failed to remove ChromaDB directory: {e}")
+                raise HTTPException(
+                    status_code=500, detail=f"Could not remove ChromaDB directory. It might be locked. Error: {e}")
 
         return {
             "status": "success",
@@ -1675,12 +1660,7 @@ async def generate_system_report(current_user: User = Depends(get_current_user))
         # Directory analysis
         materials_dir = Path("data/materials")
 
-        # 🚨 CORREÇÃO: Não verificar .chromadb automaticamente no Render
-        is_render = os.getenv("RENDER", "").lower() == "true"
-        if is_render:
-            chromadb_dir = None
-        else:
-            chromadb_dir = Path(".chromadb")
+        chromadb_dir = Path(".chromadb")
 
         if materials_dir.exists():
             all_files = list(materials_dir.rglob("*"))
@@ -1804,18 +1784,11 @@ async def health_check(current_user: User = Depends(get_current_user)):
             issues.append("Materials directory does not exist")
 
         # Check ChromaDB
-        # 🚨 CORREÇÃO: Não verificar .chromadb automaticamente no Render
-        is_render = os.getenv("RENDER", "").lower() == "true"
-        if is_render:
-            chromadb_dir = None
-            checks["chromadb"] = False
-            issues.append("ChromaDB not configured in Render environment")
+        chromadb_dir = Path(".chromadb")
+        if chromadb_dir.exists():
+            checks["chromadb"] = True
         else:
-            chromadb_dir = Path(".chromadb")
-            if chromadb_dir.exists():
-                checks["chromadb"] = True
-            else:
-                issues.append("ChromaDB directory not found")
+            issues.append("ChromaDB directory not found")
 
         # Check drive handler
         if drive_handler and hasattr(drive_handler, 'service'):
