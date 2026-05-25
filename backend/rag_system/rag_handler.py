@@ -284,7 +284,7 @@ class RAGConfig:
     gemini_model_name: str = "gemini-2.5-flash"
     # Modelo NVIDIA (sem prefixo openai/)
     # Modelo NVIDIA (nome correto da API)
-    nvidia_model_name: str = "openai/gpt-oss-120b"
+    nvidia_model_name: str = "meta/llama-3.3-70b-instruct"  # suporta tool calling
     embedding_model: str = "text-embedding-3-small"
     gemini_embedding_model: str = "models/text-embedding-004"
     nvidia_embedding_model: str = "nvidia/nv-embedqa-e5-v5"  # NOVO: Embedding NVIDIA
@@ -577,7 +577,7 @@ class RAGHandler:
                         model=self.config.nvidia_model_name,
                         api_key=api_key,
                         temperature=self.config.temperature,
-                        max_tokens=self.config.max_tokens,
+                        max_completion_tokens=self.config.max_tokens,
                     )
                     self.current_llm_provider = "NVIDIA"
                     logger.info(

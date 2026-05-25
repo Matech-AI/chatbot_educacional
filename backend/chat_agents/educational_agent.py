@@ -167,18 +167,16 @@ class EducationalAgent:
         openai_api_key = os.getenv("OPENAI_API_KEY")
         nvidia_api_key = os.getenv("NVIDIA_API_KEY")
 
-        # Tentar NVIDIA primeiro
+        # Tentar NVIDIA primeiro (usando lib oficial com modelo que suporta tool calling)
         if nvidia_api_key:
             try:
-                from rag_system.rag_handler import NVIDIAChatOpenAI
-                model_name = "openai/gpt-oss-120b"
-                self.model = NVIDIAChatOpenAI(
-                    nvidia_api_key=nvidia_api_key,
+                from langchain_nvidia_ai_endpoints import ChatNVIDIA
+                model_name = "meta/llama-3.3-70b-instruct"
+                self.model = ChatNVIDIA(
                     model=model_name,
-                    base_url="https://integrate.api.nvidia.com/v1",
+                    api_key=nvidia_api_key,
                     temperature=0.3,
-                    retry_attempts=2,  # ✅ REDUZIDO: de 3 para 2
-                    retry_delay=0.5
+                    max_completion_tokens=2048,
                 )
                 self.model_provider = "NVIDIA"
                 self.model_name = model_name
