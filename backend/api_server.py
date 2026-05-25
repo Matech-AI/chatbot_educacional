@@ -879,8 +879,10 @@ async def get_user_drive_handler(username: str, api_key: Optional[str] = None):
     with user_handler_locks[username]:
         # Create handler if it doesn't exist
         if username not in user_drive_handlers:
-            user_drive_handlers[username] = RecursiveDriveHandler()
-            logger.info(f"Created new drive handler for user: {username}")
+            # admin → "_shared" bucket; instructor → own subfolder
+            subfolder = "_shared" if username == "admin" else username
+            user_drive_handlers[username] = RecursiveDriveHandler(user_subfolder=subfolder)
+            logger.info(f"Created new drive handler for user: {username} (subfolder={subfolder})")
 
         # Get the user's handler
         handler = user_drive_handlers[username]
@@ -954,7 +956,8 @@ async def sync_drive_recursive(
 
             # Create an isolated copy of the handler for the background task
             # to avoid concurrency issues with the user's main handler
-            task_handler = RecursiveDriveHandler()
+            _subfolder = "_shared" if current_user.username == "admin" else current_user.username
+            task_handler = RecursiveDriveHandler(user_subfolder=_subfolder)
             task_handler.authenticate(api_key=data.api_key or "")
 
             async def run_recursive_download():
@@ -1152,7 +1155,8 @@ async def recursive_drive_sync(
                 active_downloads[download_id] = True
 
             # Create an isolated handler for the background task
-            task_handler = RecursiveDriveHandler()
+            _subfolder = "_shared" if current_user.username == "admin" else current_user.username
+            task_handler = RecursiveDriveHandler(user_subfolder=_subfolder)
             task_handler.authenticate(api_key=data.api_key or "")
 
             async def run_recursive_download():
@@ -1687,14 +1691,16 @@ async def sync_drive(
             api_key=data.api_key
         )
 
-        # Authenticate with Drive
-        auth_success = drive_handler.authenticate(api_key=data.api_key or "")
+        # Create a per-user handler for this sync
+        _subfolder = "_shared" if current_user.username == "admin" else current_user.username
+        user_sync_handler = RecursiveDriveHandler(user_subfolder=_subfolder)
+        auth_success = user_sync_handler.authenticate(api_key=data.api_key or "")
         if not auth_success:
             raise HTTPException(
                 status_code=400, detail="Could not authenticate with Google Drive")
 
         # Perform recursive download
-        result = drive_handler.download_drive_recursive(data.folder_id)
+        result = user_sync_handler.download_drive_recursive(data.folder_id)
 
         if result['status'] == 'success':
             # Re-index materials in RAG server
@@ -1708,7 +1714,7 @@ async def sync_drive(
             except Exception as e:
                 logger.warning(f"⚠️ Could not trigger re-indexing: {str(e)}")
 
-            stats = drive_handler.get_download_stats()
+            stats = user_sync_handler.get_download_stats()
             return {
                 "status": "success",
                 "message": f"Processed {result['statistics']['downloaded_files']} files from Google Drive",

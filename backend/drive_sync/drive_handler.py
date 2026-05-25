@@ -26,11 +26,13 @@ logger = logging.getLogger(__name__)
 class DriveHandler:
     """Handles downloading and managing files from Google Drive with enhanced error handling"""
 
-    def __init__(self, materials_dir: str = "data/materials"):
+    def __init__(self, materials_dir: str = "data/materials", user_subfolder: str = None):
         # Allow overriding materials dir via environment variable
         resolved_dir = os.getenv('MATERIALS_DIR', materials_dir)
         self.materials_dir = Path(resolved_dir)
         self.materials_dir.mkdir(parents=True, exist_ok=True)
+        # Per-user isolation: files go to materials_dir/<user_subfolder>/
+        self.user_subfolder = user_subfolder
         self.service = None
         self.api_key = None
 
@@ -752,7 +754,11 @@ class DriveHandler:
                 filename += extension
                 logger.info(f"📝 Added extension: {filename}")
 
-        file_path = self.materials_dir / filename
+        # Resolve save directory (per-user subfolder when set)
+        save_dir = self.materials_dir / self.user_subfolder if self.user_subfolder else self.materials_dir
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = save_dir / filename
 
         # Avoid overwriting - add number suffix if file exists
         counter = 1
@@ -760,7 +766,7 @@ class DriveHandler:
         while file_path.exists():
             stem = original_path.stem
             suffix = original_path.suffix
-            file_path = self.materials_dir / f"{stem}_{counter}{suffix}"
+            file_path = save_dir / f"{stem}_{counter}{suffix}"
             counter += 1
             logger.info(f"📝 File exists, using new name: {file_path.name}")
 

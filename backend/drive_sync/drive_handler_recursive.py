@@ -27,11 +27,13 @@ logger = logging.getLogger(__name__)
 class RecursiveDriveHandler:
     """Enhanced Drive Handler with recursive folder processing and duplicate detection"""
 
-    def __init__(self, materials_dir: str = "data/materials"):
+    def __init__(self, materials_dir: str = "data/materials", user_subfolder: str = None):
         # Allow overriding materials dir via env
         resolved_dir = os.getenv('MATERIALS_DIR', materials_dir)
         self.materials_dir = Path(resolved_dir)
         self.materials_dir.mkdir(parents=True, exist_ok=True)
+        # Per-user isolation: files go to materials_dir/<user_subfolder>/...
+        self.user_subfolder = user_subfolder
         self.service = None
         self.api_key = None
 
@@ -796,8 +798,9 @@ class RecursiveDriveHandler:
                 self.download_stats['skipped_duplicates'] += 1
                 return None
 
-            # Create directory structure
-            full_folder_path = self.materials_dir / folder_path
+            # Create directory structure (prepend user subfolder when set)
+            base = self.materials_dir / self.user_subfolder if self.user_subfolder else self.materials_dir
+            full_folder_path = base / folder_path
             full_folder_path.mkdir(parents=True, exist_ok=True)
 
             # Clean filename for filesystem compatibility
