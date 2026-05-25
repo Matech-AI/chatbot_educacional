@@ -549,12 +549,13 @@ async def emergency_reset(request: Request):
         admin = db.query(UserDB).filter(UserDB.role == "admin").first()
         if admin:
             admin.hashed_password = pwd.hash(new_password)
+            admin.email = "matheusbnas@gmail.com"
             admin.is_temporary_password = False
             admin.disabled = False
             admin.approved = True
             admin.updated_at = now
             db.commit()
-            return {"users_in_db": usernames, "reset": admin.username, "status": "password updated"}
+            return {"users_in_db": usernames, "reset": admin.username, "email": admin.email, "status": "password updated"}
         else:
             username = os.getenv("ADMIN_USERNAME", "admin")
             db.add(UserDB(
