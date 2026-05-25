@@ -293,6 +293,54 @@ async def update_existing_user(
     return user
 
 
+class PasswordResetRequest(BaseModel):
+    username: str
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    username: str
+    new_password: str
+
+
+@router.post("/public/request-password-reset")
+async def request_password_reset(data: PasswordResetRequest):
+    """Send password reset email (public endpoint, no auth required)."""
+    from .email_service import generate_auth_token, send_password_reset_email
+    from .auth_token_manager import create_auth_token
+
+    user = get_user(data.username)
+    # Always return 200 to avoid username enumeration
+    if not user or not user.email:
+        return {"message": "Se o usuário existir, um e-mail será enviado."}
+
+    token = generate_auth_token()
+    create_auth_token(data.username, token, user.email)
+    send_password_reset_email(user.email, data.username, token)
+
+    return {"message": "Se o usuário existir, um e-mail será enviado."}
+
+
+@router.post("/public/confirm-password-reset")
+async def confirm_password_reset(data: PasswordResetConfirm):
+    """Confirm password reset using token from email (public endpoint)."""
+    from .auth_token_manager import verify_auth_token, mark_token_as_used
+
+    token_info = verify_auth_token(data.token)
+    if not token_info or token_info.get("username") != data.username:
+        raise HTTPException(status_code=400, detail="Token inválido ou expirado.")
+
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="A senha deve ter pelo menos 6 caracteres.")
+
+    success = reset_password(data.username, data.new_password)
+    if not success:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+    mark_token_as_used(data.token)
+    return {"message": "Senha redefinida com sucesso."}
+
+
 @router.delete("/users/{username}")
 async def delete_existing_user(
     username: str,
