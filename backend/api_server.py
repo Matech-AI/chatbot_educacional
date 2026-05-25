@@ -480,6 +480,44 @@ def root():
     }
 
 
+@app.post("/api/setup/init-admin")
+async def init_admin(request: Request):
+    """One-time endpoint to create the first admin user. Disabled once any user exists."""
+    from database.db import SessionLocal, engine, Base
+    from database.models import UserDB
+    from passlib.context import CryptContext
+    from datetime import datetime as _dt
+
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        if db.query(UserDB).count() > 0:
+            raise HTTPException(status_code=403, detail="Setup already completed. Endpoint disabled.")
+
+        body = await request.json()
+        username = body.get("username", "admin")
+        password = body.get("password", "")
+        email = body.get("email", "admin@iadnadaforca.com.br")
+
+        if not password or len(password) < 8:
+            raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+
+        pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        now = _dt.utcnow()
+        db.add(UserDB(
+            id=username, username=username, email=email,
+            full_name="Administrador", role="admin",
+            hashed_password=pwd.hash(password),
+            disabled=False, created_at=now, updated_at=now,
+            external_id="ext_admin_001", approved=True,
+            is_temporary_password=False,
+        ))
+        db.commit()
+        return {"status": "ok", "message": f"Admin '{username}' created successfully."}
+    finally:
+        db.close()
+
+
 @app.get("/api/health")
 async def health():
     """Health check endpoint"""
