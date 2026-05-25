@@ -518,6 +518,58 @@ async def init_admin(request: Request):
         db.close()
 
 
+@app.post("/api/setup/emergency-reset")
+async def emergency_reset(request: Request):
+    """Emergency: list all users and force-reset admin password. Protected by ADMIN_PASSWORD env var."""
+    from database.db import SessionLocal, engine, Base
+    from database.models import UserDB
+    from passlib.context import CryptContext
+    from datetime import datetime as _dt
+
+    body = await request.json()
+    secret = body.get("secret", "")
+    expected = os.getenv("ADMIN_PASSWORD", "")
+
+    if not expected or secret != expected:
+        raise HTTPException(status_code=403, detail="Invalid secret.")
+
+    new_password = body.get("new_password", "")
+    if not new_password or len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="new_password must be at least 8 characters.")
+
+    db = SessionLocal()
+    try:
+        users = db.query(UserDB).all()
+        usernames = [u.username for u in users]
+
+        # Reset or create admin
+        pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        now = _dt.utcnow()
+        admin = db.query(UserDB).filter(UserDB.role == "admin").first()
+        if admin:
+            admin.hashed_password = pwd.hash(new_password)
+            admin.is_temporary_password = False
+            admin.disabled = False
+            admin.approved = True
+            admin.updated_at = now
+            db.commit()
+            return {"users_in_db": usernames, "reset": admin.username, "status": "password updated"}
+        else:
+            username = os.getenv("ADMIN_USERNAME", "admin")
+            db.add(UserDB(
+                id=username, username=username, email="matheusbnas@gmail.com",
+                full_name="Administrador", role="admin",
+                hashed_password=pwd.hash(new_password),
+                disabled=False, created_at=now, updated_at=now,
+                external_id="ext_admin_001", approved=True,
+                is_temporary_password=False,
+            ))
+            db.commit()
+            return {"users_in_db": usernames, "created": username, "status": "admin created"}
+    finally:
+        db.close()
+
+
 @app.get("/api/health")
 async def health():
     """Health check endpoint"""
