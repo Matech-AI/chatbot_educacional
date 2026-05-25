@@ -190,12 +190,12 @@ const ResetPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <h2 className="text-lg font-bold mb-4">Esqueci minha senha</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-800">
-            Digite seu nome de usuário abaixo. Se a conta existir, enviaremos um
+            Digite seu usuário ou e-mail. Se a conta existir, enviaremos um
             email com instruções para redefinir sua senha.
           </div>
           <Input
             type="text"
-            placeholder="Nome de usuário"
+            placeholder="Usuário ou e-mail"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required

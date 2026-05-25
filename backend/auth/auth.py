@@ -219,6 +219,13 @@ def get_user_by_external_id(external_id: str) -> Optional[User]:
         return _row_to_user(row) if row else None
 
 
+def get_user_by_email(email: str) -> Optional[User]:
+    from database.models import UserDB
+    with _db() as db:
+        row = db.query(UserDB).filter(UserDB.email == email).first()
+        return _row_to_user(row) if row else None
+
+
 def get_all_users() -> List[User]:
     from database.models import UserDB
     with _db() as db:

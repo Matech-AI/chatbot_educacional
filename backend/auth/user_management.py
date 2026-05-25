@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from auth.auth import (
     User, UserCreate, UserUpdate, WebhookUser, PasswordChange, PasswordReset, Token,
     authenticate_user, create_access_token, get_current_user,
-    create_user, update_user, delete_user, get_all_users, get_user,
+    create_user, update_user, delete_user, get_all_users, get_user, get_user_by_email,
     change_password, reset_password, is_user_approved,
     load_approved_users, save_approved_users, get_user_by_external_id,
     ACCESS_TOKEN_EXPIRE_MINUTES, WEBHOOK_SECRET,
@@ -305,11 +305,13 @@ class PasswordResetConfirm(BaseModel):
 
 @router.post("/public/request-password-reset")
 async def request_password_reset(data: PasswordResetRequest):
-    """Send password reset email (public endpoint, no auth required)."""
+    """Send password reset email (public endpoint, no auth required).
+    Accepts username or email in the username field."""
     from .email_service import generate_auth_token, send_password_reset_email
     from .auth_token_manager import create_auth_token
 
-    user = get_user(data.username)
+    # Accept both username and email
+    user = get_user(data.username) or get_user_by_email(data.username)
     # Always return 200 to avoid username enumeration
     if not user or not user.email:
         return {"message": "Se o usuário existir, um e-mail será enviado."}
