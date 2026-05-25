@@ -136,7 +136,7 @@ def _row_to_user(row) -> User:
 # ── Database initialisation ───────────────────────────────────────────────────
 
 def initialize_database():
-    """Create tables and seed approved-users list if needed."""
+    """Create tables, seed approved-users list, and create default admin if needed."""
     from database.db import engine, Base
     from database.models import UserDB, ApprovedUserDB  # noqa: F401 — needed for metadata
     Base.metadata.create_all(bind=engine)
@@ -152,6 +152,31 @@ def initialize_database():
                                email="aluno2@example.com", full_name="Aluno Dois", role="student"),
             ]
             db.add_all(seed)
+
+    # Create default admin user on first run if no users exist
+    admin_username = os.getenv("ADMIN_USERNAME", "admin")
+    admin_password = os.getenv("ADMIN_PASSWORD", "")
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@iadnadaforca.com.br")
+
+    if admin_password:
+        from database.models import UserDB
+        with _db() as db:
+            if db.query(UserDB).count() == 0:
+                now = datetime.utcnow()
+                db.add(UserDB(
+                    id=admin_username,
+                    username=admin_username,
+                    email=admin_email,
+                    full_name="Administrador",
+                    role="admin",
+                    hashed_password=pwd_context.hash(admin_password),
+                    disabled=False,
+                    created_at=now,
+                    updated_at=now,
+                    external_id="ext_admin_001",
+                    approved=True,
+                    is_temporary_password=False,
+                ))
 
 
 initialize_database()
