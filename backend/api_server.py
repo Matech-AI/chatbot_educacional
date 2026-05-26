@@ -3226,11 +3226,29 @@ async def list_discipline_folders(
 # ========================================
 
 
+def _restore_credentials_from_env():
+    """Decode GOOGLE_CREDENTIALS_JSON (base64) and write to disk if set."""
+    import base64
+    b64 = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if not b64:
+        return
+    dest = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
+    try:
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest).write_bytes(base64.b64decode(b64))
+        logger.info(f"✅ credentials.json restaurado de GOOGLE_CREDENTIALS_JSON → {dest}")
+    except Exception as e:
+        logger.error(f"❌ Falha ao restaurar credentials.json: {e}")
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize application on startup"""
     logger.info(
         "🚀 DNA da Força Backend v1.7 - Complete Recursive Drive Integration Starting...")
+
+    # Restore credentials file from env var if present
+    _restore_credentials_from_env()
 
     # Create necessary directories
     Path("data/materials").mkdir(parents=True, exist_ok=True)

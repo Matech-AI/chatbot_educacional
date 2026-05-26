@@ -44,6 +44,27 @@ services:
       - HOST=0.0.0.0
       - CORS_ORIGINS=https://iadnadaforca.com.br,https://www.iadnadaforca.com.br,http://localhost:3000,http://127.0.0.1:3000
       - RAG_SERVER_URL=http://rag-server:8001
+      # Auth
+      - SECRET_KEY=${SECRET_KEY}
+      # IA
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Google Drive / OAuth
+      - GOOGLE_DRIVE_API_KEY=${GOOGLE_DRIVE_API_KEY}
+      - GOOGLE_CREDENTIALS_PATH=/app/data/credentials.json
+      - GOOGLE_CREDENTIALS_JSON=${GOOGLE_CREDENTIALS_JSON}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      # Email
+      - EMAIL_HOST=${EMAIL_HOST:-smtp.gmail.com}
+      - EMAIL_PORT=${EMAIL_PORT:-587}
+      - EMAIL_USERNAME=${EMAIL_USERNAME}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_FROM=${EMAIL_FROM}
+      # Database
+      - DATABASE_URL=${DATABASE_URL}
+      - ENVIRONMENT=production
     volumes:
       - ./backend/data:/app/data
     networks:

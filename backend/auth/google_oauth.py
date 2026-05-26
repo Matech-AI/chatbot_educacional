@@ -15,8 +15,6 @@ from .auth import get_current_user, User
 
 router = APIRouter(tags=["google-oauth"])
 
-GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
-GOOGLE_OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
 GOOGLE_OAUTH_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/drive.readonly",
@@ -41,15 +39,17 @@ def save_user_tokens(tokens: dict):
 
 
 def build_flow(redirect_uri: str) -> Flow:
-    if not GOOGLE_OAUTH_CLIENT_ID or not GOOGLE_OAUTH_CLIENT_SECRET:
+    client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+    client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Google OAuth não configurado. Adicione GOOGLE_OAUTH_CLIENT_ID e GOOGLE_OAUTH_CLIENT_SECRET ao .env",
         )
     client_config = {
         "web": {
-            "client_id": GOOGLE_OAUTH_CLIENT_ID,
-            "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+            "client_id": client_id,
+            "client_secret": client_secret,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "redirect_uris": [redirect_uri],

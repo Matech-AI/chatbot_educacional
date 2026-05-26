@@ -225,6 +225,51 @@ class EducationalAgent:
         if not self.model:
             raise ValueError("❌ No valid AI model could be initialized")
 
+    def _is_auth_error(self, error: Exception) -> bool:
+        """Check if the error is an authentication/authorization error from a provider."""
+        error_str = str(error).lower()
+        return any(tok in error_str for tok in ["403", "401", "forbidden", "unauthorized", "authorization failed"])
+
+    def _try_fallback_model(self) -> bool:
+        """Attempt to reinitialize with the next available provider after an auth failure."""
+        current_provider = self.model_provider
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+
+        candidates = []
+        if current_provider == "NVIDIA":
+            candidates = [("Gemini", gemini_api_key), ("OpenAI", openai_api_key)]
+        elif current_provider == "Gemini":
+            candidates = [("OpenAI", openai_api_key)]
+
+        for provider, key in candidates:
+            if not key:
+                continue
+            try:
+                if provider == "Gemini":
+                    model_name = "gemini-2.5-flash"
+                    self.model = ChatGoogleGenerativeAI(
+                        model=model_name,
+                        temperature=0.3,
+                        api_key=SecretStr(key),
+                    )
+                else:
+                    model_name = "gpt-4o-mini"
+                    self.model = ChatOpenAI(
+                        model=model_name,
+                        temperature=0.3,
+                        api_key=SecretStr(key),
+                    )
+                self.model_provider = provider
+                self.model_name = model_name
+                logger.info(f"✅ Switched to fallback provider: {provider} ({model_name})")
+                return True
+            except Exception as e:
+                logger.warning(f"{provider} fallback initialization failed: {e}")
+
+        logger.error("❌ All fallback providers exhausted.")
+        return False
+
     def _get_educational_system_prompt(self, learning_context: LearningContext) -> str:
         """Generate contextual system prompt based on learning context"""
 
@@ -290,12 +335,13 @@ class EducationalAgent:
         if self.rag_tool:
             tools.append(self.rag_tool)
 
+        self._graph_tools = tools  # stored so fallback can rebind
         tool_node = ToolNode(tools)
 
         if not self.model:
             raise ValueError("Model not initialized")
 
-        model_with_tools = self.model.bind_tools(tools)
+        agent = self  # explicit reference for the closure
 
         def agent_node(state: EducationalState):
             """The primary agent node that decides what to do."""
@@ -305,23 +351,28 @@ class EducationalAgent:
                     user_id="default", session_id="default")
 
             system_prompt = SystemMessage(
-                content=self._get_educational_system_prompt(learning_context))
+                content=agent._get_educational_system_prompt(learning_context))
 
             messages = [system_prompt] + state["messages"]
 
-            # Gentle insistence on using RAG tool when question needs grounding
-            # Add a lightweight instruction message to bias tool usage
             insistence = SystemMessage(content=(
                 "Quando a pergunta envolver conteúdo do curso ou fatos verificáveis, "
                 "utilize a tool 'search_educational_materials' para buscar contexto antes de responder. "
                 "Sempre prefira citar fontes dos materiais quando disponíveis."
             ))
 
-            response = model_with_tools.invoke([insistence] + messages)
+            model_with_tools = agent.model.bind_tools(agent._graph_tools)
+            try:
+                response = model_with_tools.invoke([insistence] + messages)
+            except Exception as e:
+                if agent._is_auth_error(e) and agent._try_fallback_model():
+                    logger.warning(f"Auth error with {agent.model_provider} predecessor, retrying with fallback.")
+                    model_with_tools = agent.model.bind_tools(agent._graph_tools)
+                    response = model_with_tools.invoke([insistence] + messages)
+                else:
+                    raise
 
-            # Log which model is responding
-            logger.info(
-                f"🤖 Generating response with: {self.model_provider} ({self.model_name})")
+            logger.info(f"🤖 Generating response with: {agent.model_provider} ({agent.model_name})")
 
             return {"messages": [response]}
 
