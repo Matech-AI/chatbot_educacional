@@ -63,7 +63,7 @@ services:
       - EMAIL_PASSWORD=${EMAIL_PASSWORD}
       - EMAIL_FROM=${EMAIL_FROM}
       # Database
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:password@postgres:5432/bd_chatbot_educacional}
+      - DATABASE_URL=${DATABASE_URL}
       - ENVIRONMENT=production
     volumes:
       - ./backend/data:/app/data
@@ -90,7 +90,7 @@ services:
     environment:
       - POSTGRES_DB=bd_chatbot_educacional
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
