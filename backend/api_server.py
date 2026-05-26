@@ -3007,8 +3007,8 @@ async def debug_drive(current_user: User = Depends(get_current_user)):
         },
         "environment": {
             "google_drive_api_key": bool(os.getenv('GOOGLE_DRIVE_API_KEY')),
-            "credentials_file_exists": os.path.exists('credentials.json'),
-            "token_file_exists": os.path.exists('token.json')
+            "credentials_file_exists": os.path.exists(os.getenv('GOOGLE_CREDENTIALS_PATH', 'data/credentials.json')),
+            "token_file_exists": os.path.exists(os.getenv('GOOGLE_TOKEN_PATH', 'data/token.json'))
         },
         "download_system": {
             "active_downloads": len(active_downloads),
@@ -3261,7 +3261,7 @@ async def startup_event():
     logger.info(
         f"  - Google Drive API Key: {'✅' if os.getenv('GOOGLE_DRIVE_API_KEY') else '❌'}")
     logger.info(
-        f"  - Credentials file: {'✅' if os.path.exists('credentials.json') else '❌'}")
+        f"  - Credentials file: {'✅' if os.path.exists(os.getenv('GOOGLE_CREDENTIALS_PATH', 'data/credentials.json')) else '❌'}")
     logger.info(
         f"  - Materials directory: {Path('data/materials').absolute()}")
     logger.info(

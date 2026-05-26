@@ -43,6 +43,8 @@ backend/auth_simple.py
 
 # Backend environment
 backend/.env
+backend/coolify.env
+coolify.env
 
 # Google Drive OAuth credentials and tokens (NEVER commit these)
 credentials.json
