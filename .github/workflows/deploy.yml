@@ -78,6 +78,10 @@ jobs:
             # Dar permissão de execução aos scripts
             chmod +x *.sh
 
+            # Instalar dependências npm se necessário
+            echo "📦 Instalando dependências do frontend..."
+            npm install --frozen-lockfile 2>/dev/null || npm install
+
             # Iniciar sistema
             echo "🚀 Iniciando sistema atualizado..."
             ./start_all.sh

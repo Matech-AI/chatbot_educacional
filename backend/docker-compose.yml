@@ -51,13 +51,11 @@ services:
       - redis_data:/data
 
   frontend:
-    image: matheusbnas/frontend:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile.frontend
     ports:
       - "3000:80"
-    environment:
-      - NODE_ENV=production
-      - VITE_API_BASE_URL=http://31.97.16.142:8002
-      - VITE_RAG_API_BASE_URL=http://31.97.16.142:8001
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=network_swarm_public"
