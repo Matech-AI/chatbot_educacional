@@ -34,6 +34,9 @@ COPY maintenance/ ./maintenance/
 COPY config/ ./config/
 COPY rag_system/ ./rag_system/
 
+# Copiar scripts utilitários (seed, migrations)
+COPY scripts/ ./scripts/
+
 # Copiar arquivo principal da API
 COPY api_server.py .
 

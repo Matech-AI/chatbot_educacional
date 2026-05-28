@@ -30,7 +30,9 @@ services:
       start_period: 40s
 
   api-server:
-    image: matheusbnas/api-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.api
     ports:
       - "8002:8002"
     environment:
