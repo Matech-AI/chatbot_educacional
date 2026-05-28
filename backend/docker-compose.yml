@@ -13,6 +13,15 @@ services:
       - ./data:/app/data
     networks:
       - network_swarm_public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=network_swarm_public"
+      - "traefik.http.routers.rag.rule=Host(`iadnadaforca.com.br`) && PathPrefix(`/rag`)"
+      - "traefik.http.routers.rag.entrypoints=web,websecure"
+      - "traefik.http.services.rag.loadbalancer.server.port=8001"
+      - "traefik.http.routers.rag.tls.certresolver=letsencryptresolver"
+      - "traefik.http.middlewares.rag-stripprefix.stripprefix.prefixes=/rag"
+      - "traefik.http.routers.rag.middlewares=rag-stripprefix"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -29,12 +38,35 @@ services:
       - PORT=8002
       - HOST=0.0.0.0
       - CORS_ORIGINS=http://31.97.16.142:3000,http://localhost:3000,http://127.0.0.1:3000,https://iadnadaforca.com.br,https://www.iadnadaforca.com.br
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_DRIVE_API_KEY=${GOOGLE_DRIVE_API_KEY}
+      - GOOGLE_CREDENTIALS_PATH=/app/data/credentials.json
+      - GOOGLE_CREDENTIALS_JSON=${GOOGLE_CREDENTIALS_JSON}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      - EMAIL_HOST=${EMAIL_HOST:-smtp.gmail.com}
+      - EMAIL_PORT=${EMAIL_PORT:-587}
+      - EMAIL_USERNAME=${EMAIL_USERNAME}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_FROM=${EMAIL_FROM}
+      - ENVIRONMENT=production
     volumes:
       - ./data:/app/data
     networks:
       - network_swarm_public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=network_swarm_public"
+      - "traefik.http.routers.api.rule=Host(`iadnadaforca.com.br`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.api.entrypoints=web,websecure"
+      - "traefik.http.services.api.loadbalancer.server.port=8002"
+      - "traefik.http.routers.api.tls.certresolver=letsencryptresolver"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8002/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
