@@ -179,7 +179,13 @@ def initialize_database():
                 ))
 
 
-initialize_database()
+try:
+    initialize_database()
+except Exception as _db_init_err:
+    import logging as _logging
+    _logging.getLogger(__name__).error(
+        "Database initialization failed (check DATABASE_URL): %s", _db_init_err
+    )
 
 
 # ── Password helpers ──────────────────────────────────────────────────────────

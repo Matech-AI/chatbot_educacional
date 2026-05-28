@@ -19,7 +19,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { apiRequest, apiRequestJson } from "../../lib/api";
 
 interface RecursiveDriveSyncProps {
-  onSync: () => void;
+  onSync: (options?: { navigateToMaterials?: boolean }) => void;
   isLoading: boolean;
 }
 
@@ -330,9 +330,9 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
                 `🎉 Sincronização recursiva concluída! ${progressResult.statistics.downloaded_files} arquivos baixados, ${progressResult.statistics.skipped_duplicates} duplicatas evitadas`
               );
 
-              // Refresh materials list
+              // Refresh materials list e navegar para aba de materiais se necessário
               setTimeout(() => {
-                onSync();
+                onSync({ navigateToMaterials: true });
               }, 2000);
 
               // Finalizar o processamento
@@ -352,6 +352,7 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
               setCurrentDownloadId(null);
               setIsProcessing(false);
               setSuccess("❌ Download cancelado");
+              onSync({ navigateToMaterials: false });
             }
           } catch (err) {
             clearInterval(interval);
@@ -502,6 +503,7 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
       if (isAnalyzing) {
         setIsAnalyzing(false);
         setSuccess("❌ Análise cancelada pelo usuário");
+        onSync({ navigateToMaterials: false });
         return;
       }
 
@@ -529,6 +531,7 @@ export const RecursiveDriveSync: React.FC<RecursiveDriveSyncProps> = ({
       setCurrentDownloadId(null);
       setIsProcessing(false);
       setSuccess("❌ Download cancelado pelo usuário");
+      onSync({ navigateToMaterials: false });
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Erro desconhecido";

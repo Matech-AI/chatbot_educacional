@@ -27,14 +27,12 @@ import { Material } from "../types";
 interface MaterialsPageProps {}
 
 const MaterialsPage: React.FC<MaterialsPageProps> = () => {
-  const {
-    materials,
-    isLoading,
-    isProcessing,
-    fetchMaterials,
-    uploadMaterial,
-    deleteMaterial,
-  } = useMaterialsStore();
+  const materials = useMaterialsStore((state) => state.materials);
+  const isLoading = useMaterialsStore((state) => state.isLoading);
+  const isProcessing = useMaterialsStore((state) => state.isProcessing);
+  const fetchMaterials = useMaterialsStore((state) => state.fetchMaterials);
+  const uploadMaterial = useMaterialsStore((state) => state.uploadMaterial);
+  const deleteMaterial = useMaterialsStore((state) => state.deleteMaterial);
   const { user } = useAuthStore();
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -110,10 +108,13 @@ const MaterialsPage: React.FC<MaterialsPageProps> = () => {
     console.log("Edit material:", material);
   };
 
-  const handleSync = () => {
+  const handleSync = (options?: { navigateToMaterials?: boolean }) => {
     fetchMaterials();
     loadDriveStats();
-    setActiveTab("materials");
+    const shouldNavigate = options?.navigateToMaterials ?? true;
+    if (shouldNavigate) {
+      setActiveTab("materials");
+    }
   };
 
   const handleTabChange = (tab: typeof activeTab) => {
