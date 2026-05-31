@@ -31,8 +31,14 @@ class TokenVerification(BaseModel):
 @router.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """Login endpoint to get access token"""
+    try:
+        user_db = get_user(form_data.username)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("DB error on login for %s: %s", form_data.username, e)
+        raise HTTPException(status_code=503, detail="Serviço temporariamente indisponível. Tente novamente.")
+
     # Check user status before attempting to authenticate
-    user_db = get_user(form_data.username)
     if not user_db:
         raise HTTPException(
             status_code=401,
@@ -52,13 +58,22 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             status_code=403, detail="Sua conta está desativada.")
 
     # Verify password against stored hash
-    hashed = _get_hashed_password(form_data.username)
+    try:
+        hashed = _get_hashed_password(form_data.username)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("DB error fetching hash for %s: %s", form_data.username, e)
+        raise HTTPException(status_code=503, detail="Serviço temporariamente indisponível. Tente novamente.")
+
     if not hashed or not verify_password(form_data.password, hashed):
         raise HTTPException(
             status_code=401, detail="Usuário ou senha incorretos")
 
     # Atualizar último login
-    update_last_login(form_data.username)
+    try:
+        update_last_login(form_data.username)
+    except Exception:
+        pass  # falha não-crítica, não bloquear o login
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(

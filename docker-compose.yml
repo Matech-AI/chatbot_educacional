@@ -70,6 +70,10 @@ services:
       # Database
       - DATABASE_URL=${DATABASE_URL}
       - ENVIRONMENT=production
+      # Admin seed (cria usuário admin no primeiro start se a tabela estiver vazia)
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-matheusbnas@gmail.com}
     volumes:
       - ./backend/data:/app/data
     networks:

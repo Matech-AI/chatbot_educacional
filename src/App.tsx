@@ -48,6 +48,8 @@ const ResetPasswordPage = lazy(() => import("./pages/reset-password-page"));
 
 const GoogleCallbackPage = lazy(() => import("./pages/google-callback-page"));
 
+const PrivacyPolicyPage = lazy(() => import("./pages/privacy-policy-page"));
+
 // ========================================
 // COMPONENTE DE LOADING
 // ========================================
@@ -381,6 +383,15 @@ function App() {
                 fallback={<LoadingSpinner message="Conectando Drive..." />}
               >
                 <GoogleCallbackPage />
+              </Suspense>
+            }
+          />
+
+          <Route
+            path="/privacy-policy"
+            element={
+              <Suspense fallback={<LoadingSpinner message="Carregando..." />}>
+                <PrivacyPolicyPage />
               </Suspense>
             }
           />
