@@ -480,6 +480,11 @@ def root():
     }
 
 
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+
+
 @app.post("/api/setup/init-admin")
 async def init_admin(request: Request):
     """One-time endpoint to create the first admin user. Disabled once any user exists."""
