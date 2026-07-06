@@ -64,19 +64,19 @@ app.add_middleware(
 )
 
 # Inclua o router de user_management para expor /auth/users e outros endpoints de autenticação
-app.include_router(user_management_router, prefix="/api/auth")
+app.include_router(user_management_router, prefix="/auth")
 # Inclua o router de autenticação para endpoints públicos como redefinição de senha
-app.include_router(auth_router, prefix="/api/auth")
+app.include_router(auth_router, prefix="/auth")
 # Google OAuth2 para Drive Privado por usuário
-app.include_router(google_oauth_router, prefix="/api")
+app.include_router(google_oauth_router)
 # The educational agent router is now exposed via the RAG server
-app.include_router(educational_agent_router, prefix="/api")
+app.include_router(educational_agent_router)
 
 # Create drive router
 drive_router = APIRouter()
 
 # Include drive router
-app.include_router(drive_router, prefix="/api", tags=["drive"])
+app.include_router(drive_router, tags=["drive"])
 
 # RAG Server URL
 RAG_SERVER_URL = os.getenv("RAG_SERVER_URL", "http://localhost:8001")
