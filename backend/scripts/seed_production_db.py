@@ -1,24 +1,20 @@
 #!/usr/bin/env python3
 """
-Seed da base de dados de produção com usuários do users_db.json local.
+Seed da base de dados com usuários do users_db.json / approved_users.json.
 
 Como usar:
-  1. Garanta que a senha do postgres está correta no banco (veja instrução abaixo)
-  2. Execute com a DATABASE_URL de produção:
+  Banco local (SQLite em backend/data/app.db):
+    python backend/scripts/seed_production_db.py
 
-     Windows:
-       set DATABASE_URL=postgresql://postgres:Ip%%40DeM%%402214@<HOST>:5432/bd_chatbot_educacional
-       python backend/scripts/seed_production_db.py
+  Produção (Postgres/Supabase) — a senha vem da variável, nunca do código:
+    DATABASE_URL="postgresql://postgres.<ref>:<SENHA>@<HOST>:5432/postgres?sslmode=require" \
+      python backend/scripts/seed_production_db.py
 
-     Linux/Mac:
-       DATABASE_URL="postgresql://postgres:Ip%40DeM%402214@<HOST>:5432/bd_chatbot_educacional" python backend/scripts/seed_production_db.py
+  Restaurar um backup gerado pelo backup_db.py:
+    python backend/scripts/seed_production_db.py --from backend/data/backups/<data_hora>
 
-     Ou, no servidor (dentro do container api-server ou direto):
-       python -m backend.scripts.seed_production_db
-
-IMPORTANTE — Para corrigir a senha do postgres primeiro, execute no terminal
-do container postgres no Coolify:
-  psql -U postgres -c "ALTER USER postgres WITH PASSWORD 'Ip@DeM@2214';"
+  Usuários que já existem no banco são mantidos. Para substituí-los pelos do
+  JSON (inclusive a senha), acrescente --overwrite.
 """
 
 import os
@@ -53,21 +49,23 @@ def _parse_dt(value) -> datetime:
     return datetime.fromisoformat(str(value))
 
 
-def seed_users(session, users_raw: dict):
+def seed_users(session, users_raw: dict, overwrite: bool = False):
     from database.models import UserDB
 
     imported = skipped = updated = 0
     for username, u in users_raw.items():
         existing = session.query(UserDB).filter(UserDB.username == username).first()
         if existing:
-            # Atualiza senha e role caso já exista
+            # Por padrão não mexe em quem já existe, para não voltar senhas antigas
+            if not overwrite:
+                skipped += 1
+                continue
             existing.hashed_password = u.get("hashed_password", existing.hashed_password)
             existing.role = u.get("role", existing.role)
             existing.email = u.get("email", existing.email)
             existing.full_name = u.get("full_name", existing.full_name)
             existing.approved = u.get("approved", existing.approved)
             existing.updated_at = datetime.utcnow()
-            skipped += 1
             updated += 1
             continue
 
@@ -91,7 +89,7 @@ def seed_users(session, users_raw: dict):
         imported += 1
 
     session.commit()
-    print(f"  Usuários: {imported} importados, {updated} atualizados")
+    print(f"  Usuários: {imported} importados, {updated} atualizados, {skipped} já existiam (mantidos)")
 
 
 def seed_approved_users(session, approved_raw: list):
@@ -120,6 +118,8 @@ def seed_approved_users(session, approved_raw: list):
 
 
 def main():
+    # Terminal do Windows (cp1252) não imprime emoji
+    sys.stdout.reconfigure(encoding="utf-8")
     print(f"🔌 Conectando em: {DATABASE_URL[:60]}...")
 
     engine = _get_engine()
@@ -133,6 +133,8 @@ def main():
     from sqlalchemy.orm import Session
 
     DATA_DIR = _BACKEND / "data"
+    if "--from" in sys.argv:
+        DATA_DIR = Path(sys.argv[sys.argv.index("--from") + 1]).resolve()
     users_file = DATA_DIR / "users_db.json"
     approved_file = DATA_DIR / "approved_users.json"
 
@@ -141,7 +143,7 @@ def main():
         if users_file.exists():
             print("\n📋 Importando users_db.json...")
             users_raw = json.loads(users_file.read_text(encoding="utf-8"))
-            seed_users(session, users_raw)
+            seed_users(session, users_raw, overwrite="--overwrite" in sys.argv)
         else:
             print("⚠️  users_db.json não encontrado — pulando")
 
