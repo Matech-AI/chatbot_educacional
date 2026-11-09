@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import time
+import warnings
 from typing import Annotated, TypedDict, List, Dict, Any, Optional
 from datetime import datetime
 from dotenv import load_dotenv
@@ -19,6 +20,12 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from rag_system.rag_handler import RAGHandler, RAGQueryTool
+
+# langchain-nvidia-ai-endpoints só conhece tool calling dos modelos da sua lista estática.
+# Modelos mais novos (ex.: nvidia/nemotron-3-ultra-550b-a55b) suportam tools na API,
+# mas disparam este aviso falso a cada bind_tools.
+warnings.filterwarnings(
+    "ignore", message=r"Model '.*' is not known to support tools", category=UserWarning)
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
@@ -172,7 +179,7 @@ class EducationalAgent:
             try:
                 from langchain_nvidia_ai_endpoints import ChatNVIDIA
                 model_name = os.getenv(
-                    "NVIDIA_MODEL_NAME", "nvidia/nemotron-3-super-120b-a12b")
+                    "NVIDIA_MODEL_NAME", "nvidia/nemotron-3-ultra-550b-a55b")
                 self.model = ChatNVIDIA(
                     model=model_name,
                     api_key=nvidia_api_key,
@@ -235,6 +242,8 @@ class EducationalAgent:
             "api key not valid", "incorrect api key", "invalid api key",
             "410", "gone", "end of life", "no longer available",
             "404", "model not found", "does not exist",
+            # alguns modelos NVIDIA rejeitam qualquer texto em português no filtro de segurança
+            "content safety screening",
         ])
 
     def _try_fallback_model(self) -> bool:

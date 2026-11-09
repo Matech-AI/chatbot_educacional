@@ -285,7 +285,7 @@ class RAGConfig:
     # Modelo NVIDIA (configurável via NVIDIA_MODEL_NAME; precisa suportar tool calling)
     # meta/llama-3.3-70b-instruct foi descontinuado em 2026-08-26
     nvidia_model_name: str = os.getenv(
-        "NVIDIA_MODEL_NAME", "nvidia/nemotron-3-super-120b-a12b")
+        "NVIDIA_MODEL_NAME", "nvidia/nemotron-3-ultra-550b-a55b")
     embedding_model: str = "text-embedding-3-small"
     gemini_embedding_model: str = "models/text-embedding-004"
     nvidia_embedding_model: str = "nvidia/nv-embedqa-e5-v5"  # NOVO: Embedding NVIDIA
