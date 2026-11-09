@@ -92,3 +92,6 @@ transformers
 torch
 torchvision
 torchaudio
+
+# Busca na web (fallback quando o acervo não cobre a pergunta)
+ddgs>=9.16

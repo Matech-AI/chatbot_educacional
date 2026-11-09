@@ -27,7 +27,19 @@ interface EducationalSource {
   source: string;
   chunk: string;
   page?: number | null;
+  type?: "web" | string;
 }
+
+const isWebSource = (source: EducationalSource) =>
+  source.type === "web" || /^https?:\/\//.test(source.source);
+
+const sourceHostname = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+};
 
 interface VideoSuggestion {
   topic: string;
@@ -604,14 +616,25 @@ export const EducationalMessageBubble: React.FC<
             <div className="mt-3 lg:mt-4 pt-3 border-t border-gray-200">
               <div className="flex items-center space-x-2 text-xs lg:text-sm font-semibold text-gray-700 mb-2">
                 <BookOpen size={12} />
-                <span>Contexto do RAG ({message.sources.length})</span>
+                <span>
+                  {message.sources.every(isWebSource)
+                    ? "Fontes da web"
+                    : message.sources.some(isWebSource)
+                      ? "Materiais do curso e web"
+                      : "Contexto do RAG"}{" "}
+                  ({message.sources.length})
+                </span>
               </div>
               <div className="space-y-2">
                 {message.sources.map((source, index) => (
                   <div
                     key={index}
                     className="bg-gray-50 rounded-lg p-2 lg:p-3 border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors"
-                    onClick={() => onSourceClick?.(source)}
+                    onClick={() =>
+                      isWebSource(source)
+                        ? window.open(source.source, "_blank", "noopener,noreferrer")
+                        : onSourceClick?.(source)
+                    }
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -619,8 +642,14 @@ export const EducationalMessageBubble: React.FC<
                           {source.title}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
-                          {source.page && `Página ${source.page} • `}
-                          {source.source.split("/").pop()}
+                          {isWebSource(source) ? (
+                            <>🌐 Web • {sourceHostname(source.source)}</>
+                          ) : (
+                            <>
+                              {source.page && `Página ${source.page} • `}
+                              {source.source.split("/").pop()}
+                            </>
+                          )}
                         </div>
                         <p className="text-xs lg:text-sm text-gray-700 mt-2 whitespace-pre-wrap">
                           {source.chunk}

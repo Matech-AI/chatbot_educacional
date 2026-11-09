@@ -71,6 +71,32 @@ try:
 except ImportError:
     ChatNVIDIA = None
     NVIDIAEmbeddingsOfficial = None
+
+
+NVIDIA_HTTP_TIMEOUT = float(os.getenv("NVIDIA_TIMEOUT_SECONDS", "90"))
+
+
+def apply_nvidia_http_timeout(nvidia_obj, seconds: float = NVIDIA_HTTP_TIMEOUT):
+    """langchain-nvidia-ai-endpoints não define timeout HTTP: uma chamada travada na
+    NVIDIA bloqueia a pergunta para sempre. Força um timeout padrão nas sessões."""
+    client = getattr(nvidia_obj, "_client", None)
+    if client is None or not hasattr(client, "get_session_fn"):
+        return nvidia_obj
+    original = client.get_session_fn
+
+    def session_with_timeout():
+        session = original()
+        base_request = session.request
+
+        def request(method, url, **kwargs):
+            kwargs.setdefault("timeout", seconds)
+            return base_request(method, url, **kwargs)
+
+        session.request = request
+        return session
+
+    client.get_session_fn = session_with_timeout
+    return nvidia_obj
     NVIDIA_ENDPOINTS_AVAILABLE = False
     logger.warning("⚠️ langchain-nvidia-ai-endpoints não disponível. Execute: pip install langchain-nvidia-ai-endpoints")
 
@@ -288,7 +314,9 @@ class RAGConfig:
         "NVIDIA_MODEL_NAME", "nvidia/nemotron-3-ultra-550b-a55b")
     embedding_model: str = "text-embedding-3-small"
     gemini_embedding_model: str = "models/text-embedding-004"
-    nvidia_embedding_model: str = "nvidia/nv-embedqa-e5-v5"  # NOVO: Embedding NVIDIA
+    # nvidia/nv-embedqa-e5-v5 foi descontinuado em 2026-08-25 (trocar exige reindexar)
+    nvidia_embedding_model: str = os.getenv(
+        "NVIDIA_EMBEDDING_MODEL", "nvidia/nemotron-3.5-embed-1b")
     # NOVO: Embedding Open Source de alta qualidade (768d) - versão BASE para menos memória
     open_source_embedding_model: str = "intfloat/multilingual-e5-base"  # Mudado de -large para -base para evitar erro de memória
     temperature: float = 0.1  # MUITO baixa para evitar criatividade e alucinações
@@ -508,10 +536,10 @@ class RAGHandler:
                 elif provider == "nvidia":
                     if not NVIDIA_ENDPOINTS_AVAILABLE:
                         raise ImportError("langchain-nvidia-ai-endpoints não instalado")
-                    self.embeddings = NVIDIAEmbeddingsOfficial(
+                    self.embeddings = apply_nvidia_http_timeout(NVIDIAEmbeddingsOfficial(
                         model=self.config.nvidia_embedding_model,
                         api_key=api_key,
-                    )
+                    ))
                     self.current_embedding_provider = "NVIDIA"
                     logger.info(
                         f"✅ Embeddings initialized: NVIDIA ({self.config.nvidia_embedding_model})")
@@ -574,12 +602,12 @@ class RAGHandler:
                 if provider == "nvidia":
                     if not NVIDIA_ENDPOINTS_AVAILABLE:
                         raise ImportError("langchain-nvidia-ai-endpoints não instalado")
-                    self.llm = ChatNVIDIA(
+                    self.llm = apply_nvidia_http_timeout(ChatNVIDIA(
                         model=self.config.nvidia_model_name,
                         api_key=api_key,
                         temperature=self.config.temperature,
                         max_completion_tokens=self.config.max_tokens,
-                    )
+                    ))
                     self.current_llm_provider = "NVIDIA"
                     logger.info(
                         f"✅ LLM initialized: NVIDIA ({self.config.nvidia_model_name})")
@@ -1821,7 +1849,12 @@ O sistema RAG não conseguiu inicializar corretamente.
 
             if not retrieved:
                 logger.warning("No documents found for the question.")
-                return {"answer": immediate_processing_message + "No relevant information found.", "sources": []}
+                return {"answer": immediate_processing_message + (
+                    "Nenhum material do curso foi encontrado para esta busca. "
+                    "Não repita esta busca com outros termos. Se a ferramenta 'search_web' estiver "
+                    "disponível, use-a; senão responda com seu conhecimento geral de educação física. "
+                    "Em ambos os casos, avise o aluno que a resposta não vem do material do curso."),
+                    "sources": []}
 
             sources = []
             valid_documents = []
@@ -2573,4 +2606,4 @@ class RAGQueryTool(BaseTool):
         return self._run(query, user_level)
 
 
-__all__ = ['RAGHandler', 'RAGConfig', 'Source', 'RAGQueryTool']
+__all__ = ['RAGHandler', 'RAGConfig', 'Source', 'RAGQueryTool', 'apply_nvidia_http_timeout']

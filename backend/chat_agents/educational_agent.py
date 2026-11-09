@@ -19,7 +19,8 @@ from langchain_core.tools.retriever import create_retriever_tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
-from rag_system.rag_handler import RAGHandler, RAGQueryTool
+from rag_system.rag_handler import RAGHandler, RAGQueryTool, apply_nvidia_http_timeout
+from chat_agents.web_search_tool import WebSearchTool, web_search_enabled
 
 # langchain-nvidia-ai-endpoints só conhece tool calling dos modelos da sua lista estática.
 # Modelos mais novos (ex.: nvidia/nemotron-3-ultra-550b-a55b) suportam tools na API,
@@ -180,12 +181,12 @@ class EducationalAgent:
                 from langchain_nvidia_ai_endpoints import ChatNVIDIA
                 model_name = os.getenv(
                     "NVIDIA_MODEL_NAME", "nvidia/nemotron-3-ultra-550b-a55b")
-                self.model = ChatNVIDIA(
+                self.model = apply_nvidia_http_timeout(ChatNVIDIA(
                     model=model_name,
                     api_key=nvidia_api_key,
                     temperature=0.3,
                     max_completion_tokens=2048,
-                )
+                ))
                 self.model_provider = "NVIDIA"
                 self.model_name = model_name
                 logger.info(
@@ -233,6 +234,62 @@ class EducationalAgent:
         if not self.model:
             raise ValueError("❌ No valid AI model could be initialized")
 
+    @staticmethod
+    def _collect_turn_sources(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
+        """Collect sources from every tool call of the latest turn (material and web).
+        ToolNode serializes dict outputs to JSON strings in ToolMessage.content."""
+        sources: List[Dict[str, Any]] = []
+        seen = set()
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                break  # stop at the start of the current turn
+            if getattr(msg, "type", None) != "tool":
+                continue
+            content = msg.content
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)
+                except (ValueError, TypeError):
+                    continue
+            if not isinstance(content, dict):
+                continue
+            for src in content.get("sources") or []:
+                if not isinstance(src, dict):
+                    continue
+                key = (src.get("source"), src.get("chunk"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                sources.append(src)
+        sources.reverse()
+        return sources
+
+    @staticmethod
+    def _ensure_sources_in_response(text: str, sources: List[Dict[str, Any]]) -> str:
+        """Garante que toda resposta mostre suas fontes, mesmo que a busca tenha falhado
+        ou o modelo tenha esquecido de citá-las. Fontes já citadas não são repetidas."""
+        missing = []
+        for src in sources:
+            title = (src.get("title") or "").strip() or "Material do curso"
+            ref = src.get("source") or ""
+            if src.get("type") == "web" or ref.startswith(("http://", "https://")):
+                if ref and ref not in text:
+                    missing.append(f"- 🌐 [{title}]({ref})")
+            else:
+                # material do curso: nunca expor caminho de arquivo, só título e página
+                if title not in text:
+                    page = f", p. {src['page']}" if src.get("page") else ""
+                    missing.append(f"- 📘 {title}{page} (material do DNA da Força)")
+
+        if missing:
+            return (f"{text.rstrip()}\n\n---\n**Fontes consultadas**\n"
+                    + "\n".join(dict.fromkeys(missing)))
+        if not sources:
+            return (f"{text.rstrip()}\n\n---\n**Fonte:** conhecimento geral do modelo de IA. "
+                    "Não foi possível consultar os materiais do curso nem fontes na web para esta "
+                    "resposta; confirme as informações em uma referência confiável.")
+        return text
+
     def _is_auth_error(self, error: Exception) -> bool:
         """Check if the error means the current provider/model is unusable
         (auth failure, invalid key, or model retired/not found) and a fallback should be tried."""
@@ -244,6 +301,8 @@ class EducationalAgent:
             "404", "model not found", "does not exist",
             # alguns modelos NVIDIA rejeitam qualquer texto em português no filtro de segurança
             "content safety screening",
+            # provedor travado (timeout HTTP)
+            "timed out", "timeout",
         ])
 
     def _try_fallback_model(self) -> bool:
@@ -336,7 +395,9 @@ class EducationalAgent:
 
         IMPORTANTE:
         - Padrão DNA-only: responda com base exclusiva nos materiais do DNA da Força quando disponíveis.
+        - SEMPRE cite as fontes usadas na resposta (materiais do curso e/ou links da web), mesmo que alguma busca tenha falhado. Nunca invente fontes, autores ou links que não vieram das ferramentas.
         - Se não houver cobertura suficiente no acervo, diga explicitamente: "Não encontrei essa informação nos materiais do DNA da Força" e, se útil, inclua um bloco separado "Informação complementar (fora do acervo)".
+        - Se a ferramenta 'search_web' estiver disponível e o acervo não cobrir a pergunta, use-a uma vez e baseie o bloco "Informação complementar (fora do acervo)" nos resultados confiáveis, citando os links usados no formato [Título](URL). Nunca apresente conteúdo da web como se fosse do curso.
         - Nunca exiba caminhos de arquivos ou códigos internos (ex.: M13A52). Para o aluno, utilize: "Módulo X, Aula Y — 'Título' (PDF)" e inclua a página apenas quando houver metadado real.
         - Gere perguntas de acompanhamento que ajudem o aluno a explorar mais profundamente.
         - Mantenha o foco educacional, precisão biomecânica e coerência com o curso.
@@ -350,6 +411,8 @@ class EducationalAgent:
         tools = []
         if self.rag_tool:
             tools.append(self.rag_tool)
+        if web_search_enabled():
+            tools.append(WebSearchTool())
 
         self._graph_tools = tools  # stored so fallback can rebind
         tool_node = ToolNode(tools)
@@ -511,24 +574,8 @@ Estou aqui para ajudar com qualquer dúvida sobre educação física, treinament
                 logger.warning(
                     f"⚠️ Empty response generated for message: {message[:50]}... - Using fallback response")
 
-            sources = []
-            if self.rag_tool and hasattr(assistant_message, 'tool_calls') and assistant_message.tool_calls:
-                tool_call = assistant_message.tool_calls[0]
-                if tool_call['name'] == self.rag_tool.name:
-                    for msg in reversed(final_state["messages"]):
-                        if getattr(msg, 'type', None) == "tool":
-                            tool_output = getattr(msg, 'content', {})
-                            try:
-                                # The tool output is a dictionary, not a JSON string
-                                if isinstance(tool_output, dict):
-                                    sources = tool_output.get("sources", [])
-                                else:
-                                    logger.warning(
-                                        f"Tool output is not a dict: {type(tool_output)}")
-                            except Exception as e:
-                                logger.warning(
-                                    f"Could not extract sources from tool output: {e}")
-                            break
+            sources = self._collect_turn_sources(final_state["messages"])
+            response_content = self._ensure_sources_in_response(response_content, sources)
 
             follow_up_questions = self.generate_follow_up_questions(
                 learning_context.current_topic or "treinamento",
