@@ -171,7 +171,8 @@ class EducationalAgent:
         if nvidia_api_key:
             try:
                 from langchain_nvidia_ai_endpoints import ChatNVIDIA
-                model_name = "meta/llama-3.3-70b-instruct"
+                model_name = os.getenv(
+                    "NVIDIA_MODEL_NAME", "nvidia/nemotron-3-super-120b-a12b")
                 self.model = ChatNVIDIA(
                     model=model_name,
                     api_key=nvidia_api_key,
@@ -226,9 +227,15 @@ class EducationalAgent:
             raise ValueError("❌ No valid AI model could be initialized")
 
     def _is_auth_error(self, error: Exception) -> bool:
-        """Check if the error is an authentication/authorization error from a provider."""
+        """Check if the error means the current provider/model is unusable
+        (auth failure, invalid key, or model retired/not found) and a fallback should be tried."""
         error_str = str(error).lower()
-        return any(tok in error_str for tok in ["403", "401", "forbidden", "unauthorized", "authorization failed"])
+        return any(tok in error_str for tok in [
+            "403", "401", "forbidden", "unauthorized", "authorization failed",
+            "api key not valid", "incorrect api key", "invalid api key",
+            "410", "gone", "end of life", "no longer available",
+            "404", "model not found", "does not exist",
+        ])
 
     def _try_fallback_model(self) -> bool:
         """Attempt to reinitialize with the next available provider after an auth failure."""
@@ -362,14 +369,17 @@ class EducationalAgent:
             ))
 
             model_with_tools = agent.model.bind_tools(agent._graph_tools)
-            try:
-                response = model_with_tools.invoke([insistence] + messages)
-            except Exception as e:
-                if agent._is_auth_error(e) and agent._try_fallback_model():
-                    logger.warning(f"Auth error with {agent.model_provider} predecessor, retrying with fallback.")
-                    model_with_tools = agent.model.bind_tools(agent._graph_tools)
+            while True:
+                try:
                     response = model_with_tools.invoke([insistence] + messages)
-                else:
+                    break
+                except Exception as e:
+                    failed = f"{agent.model_provider} ({agent.model_name})"
+                    if agent._is_auth_error(e) and agent._try_fallback_model():
+                        logger.warning(
+                            f"Provider {failed} unusable ({e}); retrying with {agent.model_provider}.")
+                        model_with_tools = agent.model.bind_tools(agent._graph_tools)
+                        continue
                     raise
 
             logger.info(f"🤖 Generating response with: {agent.model_provider} ({agent.model_name})")

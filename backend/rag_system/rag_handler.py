@@ -282,9 +282,10 @@ class RAGConfig:
     # Model configuration
     model_name: str = "gpt-4o-mini"
     gemini_model_name: str = "gemini-2.5-flash"
-    # Modelo NVIDIA (sem prefixo openai/)
-    # Modelo NVIDIA (nome correto da API)
-    nvidia_model_name: str = "meta/llama-3.3-70b-instruct"  # suporta tool calling
+    # Modelo NVIDIA (configurável via NVIDIA_MODEL_NAME; precisa suportar tool calling)
+    # meta/llama-3.3-70b-instruct foi descontinuado em 2026-08-26
+    nvidia_model_name: str = os.getenv(
+        "NVIDIA_MODEL_NAME", "nvidia/nemotron-3-super-120b-a12b")
     embedding_model: str = "text-embedding-3-small"
     gemini_embedding_model: str = "models/text-embedding-004"
     nvidia_embedding_model: str = "nvidia/nv-embedqa-e5-v5"  # NOVO: Embedding NVIDIA

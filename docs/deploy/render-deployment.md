@@ -115,7 +115,7 @@ envVars:
 
   # 🤖 MODELOS ESPECÍFICOS
   - key: NVIDIA_MODEL_NAME
-    value: "openai/gpt-oss-120b"
+    value: "nvidia/nemotron-3-super-120b-a12b"
   - key: OPENAI_MODEL_NAME
     value: "gpt-4o-mini"
   - key: GEMINI_MODEL_NAME
